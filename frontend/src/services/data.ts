@@ -12,9 +12,11 @@ export async function fetchTasks(status?: Task['status']): Promise<Task[]> {
   if (USE_MOCKS || !supabase) {
     return status ? mock.mockTasks.filter((t) => t.status === status) : mock.mockTasks
   }
+  // ВАЖНО: FK tasks→teams в схеме нет, поэтому embed teams(...) даёт 400.
+  // Имя бригады подтягиваем отдельным запросом и резолвим по team_id на клиенте.
   let q = supabase
     .from('tasks')
-    .select('*, projects(name,address,project_manager,latitude,longitude), teams(name)')
+    .select('*, projects(name,address,project_manager,latitude,longitude)')
     .order('stop_number', { ascending: true })
   if (status) q = q.eq('status', status)
   const { data, error } = await q
@@ -23,11 +25,14 @@ export async function fetchTasks(status?: Task['status']): Promise<Task[]> {
   if (!data || data.length === 0) {
     return status ? mock.mockTasks.filter((t) => t.status === status) : mock.mockTasks
   }
-  return data.map(mapDbTask)
+  // карта team_id → name для подстановки имени бригады
+  const { data: teamRows } = await supabase.from('teams').select('id, name')
+  const teamName = new Map((teamRows ?? []).map((t) => [t.id as string, t.name as string]))
+  return data.map((r) => mapDbTask(r, teamName))
 }
 
 /** Маппинг реальной строки tasks → доменный Task (по подтверждённой схеме БД). */
-function mapDbTask(r: Record<string, any>): Task {
+function mapDbTask(r: Record<string, any>, teamName?: Map<string, string>): Task {
   const st = r.scheduled_time ?? null // jsonb {start,end,anchor,anchor_time}
   const isAnchor = st?.anchor === true || st?.type === 'exact'
   const proj = r.projects ?? null
@@ -53,7 +58,7 @@ function mapDbTask(r: Record<string, any>): Task {
     lng: proj?.longitude ?? null,
     project_manager: r.project_manager ?? proj?.project_manager ?? '',
     assigned_team_id: r.team_id ?? null,
-    assigned_team_name: r.teams?.name,
+    assigned_team_name: r.teams?.name ?? (r.team_id ? teamName?.get(r.team_id) : undefined),
     priority: r.priority ?? 5,
     required_skill_ids: r.skill_requirements ?? r.required_skills ?? [],
     schedule_prompt: r.schedule_prompt ?? null,
@@ -121,6 +126,104 @@ export async function fetchAvailability(): Promise<TeamAvailability[]> {
     team_name: (r.teams as { name?: string } | null)?.name ?? '',
     start_date: r.start_date as string, end_date: r.end_date as string,
   }))
+}
+
+/* ---------------- Запись (фаза 2) ---------------- */
+
+/** Полезная нагрузка для создания задачи (Create Task → INSERT в tasks). */
+export interface CreateTaskInput {
+  task_type: string
+  project_id: string | null
+  description: string
+  title?: string
+  scheduled_date: string
+  /** jsonb {start,end} для timeframe; {anchor:true,anchor_time} для exact; null если без времени */
+  scheduled_time: Record<string, unknown> | null
+  estimated_duration_min: number
+  address: string
+  project_manager?: string
+  team_id?: string | null
+  priority?: number
+  skill_requirements?: string[]
+  schedule_prompt?: string | null
+  additional_stop?: Record<string, unknown> | null
+  created_by?: string | null
+}
+
+/** INSERT новой задачи (status=requested). Возвращает id. */
+export async function createTask(input: CreateTaskInput): Promise<string> {
+  if (USE_MOCKS || !supabase) {
+    console.info('[mock] createTask:', input)
+    return 'mock-' + input.description.slice(0, 8)
+  }
+  const row = {
+    status: 'requested',
+    task_type: input.task_type,
+    project_id: input.project_id,
+    description: input.description,
+    title: input.title ?? null,
+    scheduled_date: input.scheduled_date,
+    scheduled_time: input.scheduled_time,
+    estimated_duration: input.estimated_duration_min / 60, // минуты → часы (схема хранит часы)
+    address: input.address,
+    project_manager: input.project_manager ?? null,
+    team_id: input.team_id ?? null,
+    priority: input.priority ?? 5,
+    skill_requirements: input.skill_requirements ?? [],
+    schedule_prompt: input.schedule_prompt ?? null,
+    additional_stop: input.additional_stop ?? null,
+    created_by: input.created_by ?? null,
+  }
+  const { data, error } = await supabase.from('tasks').insert(row).select('id').single()
+  if (error) throw error
+  return (data as { id: string }).id
+}
+
+/** Массовая смена статуса задач (requested→proposed, proposed→scheduled, →archived). */
+export async function updateTasksStatus(ids: string[], status: Task['status']): Promise<void> {
+  if (!ids.length) return
+  if (USE_MOCKS || !supabase) {
+    console.info('[mock] updateTasksStatus:', status, ids)
+    return
+  }
+  const { error } = await supabase.from('tasks').update({ status }).in('id', ids)
+  if (error) throw error
+}
+
+/**
+ * Применить одобренное расписание к задачам: записать время/бригаду/порядок и
+ * перевести в status=scheduled. Источник — (возможно отредактированные) TeamDay[].
+ */
+export async function applyScheduleToTasks(days: import('../domain/types').TeamDay[]): Promise<void> {
+  if (USE_MOCKS || !supabase) {
+    console.info('[mock] applyScheduleToTasks:', days)
+    return
+  }
+  const updates: Promise<void>[] = []
+  for (const day of days) {
+    for (const t of day.tasks) {
+      const scheduled_time = t.anchor
+        ? { start: t.start_time, end: t.end_time, anchor: true, anchor_time: t.anchor_time }
+        : { start: t.start_time, end: t.end_time }
+      updates.push(
+        (async () => {
+          const { error } = await supabase!
+            .from('tasks')
+            .update({
+              status: 'scheduled',
+              team_id: day.team_id === 'unassigned' ? null : day.team_id,
+              stop_number: t.scheduled_order,
+              scheduled_time,
+              estimated_duration: t.duration_minutes / 60,
+              travel_time: t.drive_minutes_from_previous,
+            })
+            .eq('id', t.task_id)
+          if (error) throw error
+        })(),
+      )
+    }
+  }
+  await Promise.all(updates)
 }
 
 export async function fetchScheduleRun(requestId?: string): Promise<ScheduleRun | null> {

@@ -18,16 +18,61 @@ export interface SendToAiParams {
   test?: boolean
 }
 
+/** scheduled_time по контракту прод-планировщика: {type,start,end} или null. */
+function buildScheduledTime(t: Task): Record<string, string> | null {
+  if (t.anchor || t.exact_time) {
+    return { type: 'exact', start: t.exact_time ?? t.anchor_time ?? '', end: '' }
+  }
+  if (t.timeframe_start || t.timeframe_end) {
+    return { type: 'timeframe', start: t.timeframe_start ?? '', end: t.timeframe_end ?? '' }
+  }
+  return null
+}
+
+/** Task → элемент tasks[] в форме, которую ждёт прод-воркфлоу (вложенные project/team). */
+function toWebhookTask(t: Task, teamsById: Map<string, Team>) {
+  const tm = t.assigned_team_id ? teamsById.get(t.assigned_team_id) : undefined
+  return {
+    id: t.id,
+    description: t.description,
+    estimated_duration: t.estimated_duration_min / 60, // минуты → часы (контракт)
+    priority: t.priority,
+    task_type: t.task_type,
+    scheduled_date: t.scheduled_date,
+    scheduled_time: buildScheduledTime(t),
+    stop_number: t.stop_number ?? null,
+    schedule_prompt: t.schedule_prompt ?? null,
+    additional_stop: t.additional_stop ?? null,
+    skill_requirements: t.required_skill_ids ?? [],
+    project: {
+      project_id: t.project_id,
+      project_name: t.project_name ?? '',
+      project_address: t.task_address,
+      project_latitude: t.lat,
+      project_longitude: t.lng,
+    },
+    team: tm
+      ? {
+          team_id: tm.id,
+          team_name: tm.name,
+          team_address: tm.home_address,
+          team_airtable_id: tm.airtable_id,
+        }
+      : null,
+  }
+}
+
 /** Send to AI → вебхук планировщика. Возвращает ack. */
 export async function sendToAi(p: SendToAiParams): Promise<{ request_ID: string }> {
   const url = p.test ? PLANNER_TEST || PLANNER : PLANNER
+  const teamsById = new Map(p.teams.map((t) => [t.id, t]))
   const payload = {
     request_ID: p.requestId,
     date: p.date,
     source: 'requested',
     'Persistent Prompt': p.persistentPrompt ?? null,
     'One-time Prompt': p.oneTimePrompt ?? null,
-    tasks: p.tasks,
+    tasks: p.tasks.map((t) => toWebhookTask(t, teamsById)),
     Teams: p.teams.map((t) => ({
       team_name: t.name, team_address: t.home_address,
       team_latitude: t.lat, team_longitude: t.lng, skills: t.skills,

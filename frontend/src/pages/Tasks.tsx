@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent,
 } from '@dnd-kit/core'
@@ -7,13 +7,25 @@ import {
   SortableContext, arrayMove, useSortable, verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVertical, SquarePen, Clock, Calendar, Users, Wrench, MapPin } from 'lucide-react'
+import { GripVertical, SquarePen, Clock, Calendar, Users, Wrench, MapPin, Loader2 } from 'lucide-react'
 import { Button, Card, Input, Badge, Modal } from '../components/ui'
 import { cn } from '../lib/utils'
-import { fetchTasks } from '../services/data'
+import {
+  fetchTasks, fetchTeams, fetchSkills, fetchAvailability,
+  fetchScheduleRun, updateTasksStatus, applyScheduleToTasks,
+} from '../services/data'
+import { sendToAi, sendToSlack } from '../services/n8n'
+import { pollScheduleRun } from '../services/aiPoller'
+import { buildTravelMatrix, matrixProvider, edgeKey, type MatrixPoint } from '../services/maps'
 import { recomputeTeamDay, type Point } from '../domain/scheduling-engine'
 import { minToAmPm, hhmmToMin, minToHm, minToHoursLabel } from '../lib/time'
 import type { ScheduledTask, TeamDay, Task } from '../domain/types'
+
+/** Простой генератор request_ID для запуска планировщика. */
+function newRequestId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+  return 'req-' + Math.abs(Date.now()).toString(36)
+}
 
 /** Task → ScheduledTask (строка расписания). */
 function taskToScheduled(t: Task): ScheduledTask {
@@ -77,8 +89,8 @@ export function TasksPage() {
           </button>
         ))}
       </div>
-      {tab === 'requested' && <Requested />}
-      {tab === 'proposed' && <Proposed />}
+      {tab === 'requested' && <Requested goProposed={() => setTab('proposed')} />}
+      {tab === 'proposed' && <Proposed goScheduled={() => setTab('scheduled')} />}
       {tab === 'scheduled' && <Scheduled />}
     </div>
   )
@@ -91,8 +103,45 @@ function priorityLabel(p: number): string {
   return 'Medium'
 }
 
-function Requested() {
+function Requested({ goProposed }: { goProposed: () => void }) {
+  const qc = useQueryClient()
   const { data: tasks } = useQuery({ queryKey: ['tasks', 'requested'], queryFn: () => fetchTasks('requested') })
+  const [persistentPrompt, setPersistentPrompt] = useState('')
+  const [oneTimePrompt, setOneTimePrompt] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  // Send to AI: отправить задачи планировщику → поллить результат → перевести в proposed.
+  const send = useMutation({
+    mutationFn: async (test: boolean) => {
+      const list = tasks ?? []
+      if (!list.length) throw new Error('Нет задач со статусом requested')
+      const [teams, skills, unavailable] = await Promise.all([
+        fetchTeams(), fetchSkills(), fetchAvailability(),
+      ])
+      const requestId = newRequestId()
+      const date = list[0]?.scheduled_date ?? null
+      await sendToAi({
+        requestId, date, tasks: list, teams, unavailableTeams: unavailable, skills,
+        persistentPrompt: persistentPrompt || undefined,
+        oneTimePrompt: oneTimePrompt || undefined,
+        test,
+      })
+      const run = await pollScheduleRun(requestId)
+      if (run.status === 'error') throw new Error(run.error || 'AI вернул ошибку')
+      // помечаем отправленные задачи как proposed
+      await updateTasksStatus(list.map((t) => t.id), 'proposed')
+      return run
+    },
+    onSuccess: () => {
+      setError(null)
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['scheduleRun'] })
+      goProposed()
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  })
+
+  const busy = send.isPending
   return (
     <div className="space-y-6">
       <Card className="p-5">
@@ -100,13 +149,33 @@ function Requested() {
           <h2 className="text-lg font-semibold">Generate Schedule</h2>
           <Badge className="bg-gray-100">{tasks?.length ?? 0} tasks</Badge>
         </div>
-        <div className="mt-3 flex items-center justify-between">
-          <span className="text-sm text-gray-500">{tasks?.length ?? 0} tasks will be analyzed</span>
-          <div className="flex gap-2">
-            <Button variant="outline" className="border-orange-300 text-orange-600">Test Send to AI</Button>
-            <Button variant="blue">Send to AI</Button>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">Persistent Prompt</label>
+            <Input value={persistentPrompt} onChange={(e) => setPersistentPrompt(e.target.value)}
+              placeholder="Постоянные указания планировщику" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">One-time Prompt</label>
+            <Input value={oneTimePrompt} onChange={(e) => setOneTimePrompt(e.target.value)}
+              placeholder="Разовое указание для этого запуска" />
           </div>
         </div>
+        <div className="mt-3 flex items-center justify-between">
+          <span className="text-sm text-gray-500">
+            {busy ? 'Отправка задач и ожидание AI…' : `${tasks?.length ?? 0} tasks will be analyzed`}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" className="border-orange-300 text-orange-600"
+              disabled={busy || !tasks?.length} onClick={() => send.mutate(true)}>
+              Test Send to AI
+            </Button>
+            <Button variant="blue" disabled={busy || !tasks?.length} onClick={() => send.mutate(false)}>
+              {busy ? <span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Working…</span> : 'Send to AI'}
+            </Button>
+          </div>
+        </div>
+        {error && <p className="mt-2 text-sm text-red-600">⚠ {error}</p>}
       </Card>
 
       <div>
@@ -161,30 +230,65 @@ function TaskCardCompact({ t }: { t: import('../domain/types').Task }) {
   )
 }
 
-/* ---------------- Proposed (реальные задачи + движок) ---------------- */
-function Proposed() {
-  const { data: tasks, isLoading } = useQuery({ queryKey: ['tasks', 'proposed'], queryFn: () => fetchTasks('proposed') })
-  const days = useMemo(() => buildTeamDays(tasks ?? []), [tasks])
+/* ---------------- Proposed (результат AI-поллинга + движок) ---------------- */
+function Proposed({ goScheduled }: { goScheduled: () => void }) {
+  const qc = useQueryClient()
+  const { data: run, isLoading, refetch, isFetching } = useQuery({
+    queryKey: ['scheduleRun'], queryFn: () => fetchScheduleRun(),
+  })
+  const days = useMemo<TeamDay[]>(() => run?.output_data?.schedule ?? [], [run])
+  // отредактированные пользователем дни (drag/duration) — для Approve
+  const editedRef = useRef<Record<string, TeamDay>>({})
+  const [error, setError] = useState<string | null>(null)
+  const [explainOpen, setExplainOpen] = useState(false)
+
+  const approve = useMutation({
+    mutationFn: async () => {
+      const finalDays = days.map((d) => editedRef.current[d.team_id] ?? d)
+      await applyScheduleToTasks(finalDays)
+    },
+    onSuccess: () => {
+      setError(null)
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      goScheduled()
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  })
 
   if (isLoading) return <p className="text-gray-500">Loading…</p>
-  if (!days.length) return <p className="text-gray-500">No proposed tasks.</p>
+  if (!days.length) return <p className="text-gray-500">Нет готового расписания. Запустите Send to AI на вкладке Requested.</p>
 
   const total = days.reduce((s, d) => s + d.tasks.length, 0)
   return (
     <div className="space-y-4">
       <Card className="flex flex-wrap items-center gap-2 p-4">
         <Badge className="bg-gray-100">{total} tasks</Badge>
-        <Button variant="outline" className="text-blue-600">Fetch AI Data</Button>
-        <Button variant="green">Approve All</Button>
-        <Button variant="outline">💬 Explain Yourself</Button>
+        <Button variant="outline" className="text-blue-600" disabled={isFetching} onClick={() => refetch()}>
+          {isFetching ? 'Refreshing…' : 'Fetch AI Data'}
+        </Button>
+        <Button variant="green" disabled={approve.isPending} onClick={() => approve.mutate()}>
+          {approve.isPending ? 'Approving…' : 'Approve All'}
+        </Button>
+        <Button variant="outline" onClick={() => setExplainOpen(true)}>💬 Explain Yourself</Button>
+        {error && <span className="text-sm text-red-600">⚠ {error}</span>}
       </Card>
-      {days.map((day) => <EditableTeamDay key={day.team_id} day={day} />)}
+      {days.map((day) => (
+        <EditableTeamDay key={day.team_id} day={day}
+          onComputed={(d) => { editedRef.current[day.team_id] = d }} />
+      ))}
+
+      <Modal open={explainOpen} title="AI comments" onClose={() => setExplainOpen(false)}
+        footer={<Button variant="ghost" onClick={() => setExplainOpen(false)}>Close</Button>}>
+        <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs text-gray-600">
+          {JSON.stringify({ comments_ai_1: run?.comments_ai_1, comments_ai_2: run?.comments_ai_2 }, null, 2)}
+        </pre>
+      </Modal>
     </div>
   )
 }
 
 /** Редактируемый день: drag-and-drop + Duration → движок пересчитывает, якорь держится. */
-function EditableTeamDay({ day }: { day: TeamDay }) {
+function EditableTeamDay({ day, onComputed }: { day: TeamDay; onComputed?: (d: TeamDay) => void }) {
   const [durations, setDurations] = useState<Record<string, number>>(
     () => Object.fromEntries(day.tasks.map((t) => [t.task_id, t.duration_minutes])),
   )
@@ -195,19 +299,57 @@ function EditableTeamDay({ day }: { day: TeamDay }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const byId = useMemo(() => Object.fromEntries(day.tasks.map((t) => [t.task_id, t])), [day.tasks])
 
+  // матрица времён Google + индикатор пересчёта
+  const [matrix, setMatrix] = useState<Map<string, number> | null>(null)
+  const [travelLoading, setTravelLoading] = useState(false)
+
+  // seed из чисел AI — показываем, пока не приедет матрица Google (по исходному порядку)
+  const seed = useMemo(() => {
+    const m = new Map<string, number>()
+    day.tasks.forEach((t, i) => {
+      if (i > 0) m.set(edgeKey(day.tasks[i - 1].task_id, t.task_id), t.drive_minutes_from_previous ?? 0)
+    })
+    if (day.tasks[0]) m.set(edgeKey('home', day.tasks[0].task_id), day.morning_commute_minutes ?? 0)
+    return m
+  }, [day])
+
+  // строим матрицу Google один раз на день (набор адресов не зависит от порядка)
+  useEffect(() => {
+    let aborted = false
+    const ac = new AbortController()
+    const points: MatrixPoint[] = [{ key: 'home', address: day.team_home_base }]
+    for (const t of day.tasks) {
+      points.push({ key: t.task_id, address: t.project_address })
+      if (t.additional_stop?.address) {
+        points.push({ key: t.additional_stop.address, address: t.additional_stop.address })
+      }
+    }
+    // departureTime = день + 09:00 (учёт пробок, только если дата в будущем)
+    const departureTime = day.date ? new Date(`${day.date}T09:00:00`) : null
+    setTravelLoading(true)
+    buildTravelMatrix(points, { departureTime, signal: ac.signal })
+      .then((m) => { if (!aborted) setMatrix(m) })
+      .catch(() => {})
+      .finally(() => { if (!aborted) setTravelLoading(false) })
+    return () => { aborted = true; ac.abort() }
+  }, [day])
+
   const computed = useMemo(() => {
-    const driveByTask = Object.fromEntries(day.tasks.map((t) => [t.task_id, t.drive_minutes_from_previous]))
     const ordered = order.map((id) => byId[id]).filter(Boolean)
     const tasks: ScheduledTask[] = ordered.map((t) => ({
-      ...t, duration_minutes: durations[t.task_id] ?? t.duration_minutes, travel_overridden: true,
+      ...t, duration_minutes: durations[t.task_id] ?? t.duration_minutes,
     }))
     const pointOf = (t: ScheduledTask): Point => ({ lat: null, lng: null, key: t.task_id })
-    const travel = (_from: Point, to: Point) => (to.key ? driveByTask[to.key] ?? 0 : 0)
+    // матрица Google в приоритете, seed (числа AI) как фолбэк до её загрузки
+    const travel = matrixProvider(matrix ?? new Map(), (f, t) => seed.get(edgeKey(f.key ?? '', t.key ?? '')) ?? 0)
     return recomputeTeamDay({
       team_id: day.team_id, team_name: day.team_name, date: day.date, timezone: day.timezone,
       home: { lat: null, lng: null, key: 'home' }, home_address: day.team_home_base, tasks, pointOf, travel,
     })
-  }, [day, durations, order, byId])
+  }, [day, durations, order, byId, matrix, seed])
+
+  // сообщаем актуальный (отредактированный) день наверх — для Approve
+  useEffect(() => { onComputed?.(computed) }, [computed, onComputed])
 
   function onDragEnd(e: DragEndEvent) {
     const { active, over } = e
@@ -236,6 +378,11 @@ function EditableTeamDay({ day }: { day: TeamDay }) {
         <Badge className="bg-green-50 text-green-700">Duration: {minToHoursLabel(computed.tasks.reduce((s, t) => s + t.duration_minutes, 0))}</Badge>
         <Badge className="bg-purple-50 text-purple-700">Travel: {computed.summary?.total_travel_in_day_minutes}m</Badge>
         {computed.overtime && <Badge className="bg-red-100 text-red-700">overtime</Badge>}
+        {travelLoading && (
+          <span className="flex items-center gap-1 text-xs text-gray-400">
+            <Loader2 size={12} className="animate-spin" /> travel…
+          </span>
+        )}
       </div>
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
@@ -318,14 +465,25 @@ function SortableTaskRow({
 function Scheduled() {
   const { data: tasks, isLoading } = useQuery({ queryKey: ['tasks', 'scheduled'], queryFn: () => fetchTasks('scheduled') })
   const days = useMemo(() => buildTeamDays(tasks ?? []), [tasks])
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const send = useMutation({
+    mutationFn: () => sendToSlack({ schedule: days }),
+    onSuccess: () => { setSent(true); setError(null) },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  })
   if (isLoading) return <p className="text-gray-500">Loading…</p>
   if (!days.length) return <p className="text-gray-500">No approved tasks yet.</p>
   return (
     <div className="space-y-4">
       <Card className="flex items-center justify-between p-4">
         <span className="font-semibold">Scheduled</span>
-        <div className="flex gap-2">
-          <Button variant="blue">Send tasks</Button>
+        <div className="flex items-center gap-2">
+          {error && <span className="text-sm text-red-600">⚠ {error}</span>}
+          {sent && <span className="text-sm text-green-600">✓ Sent</span>}
+          <Button variant="blue" disabled={send.isPending} onClick={() => send.mutate()}>
+            {send.isPending ? 'Sending…' : 'Send tasks'}
+          </Button>
           <Badge className="bg-gray-100">{days.reduce((s, d) => s + d.tasks.length, 0)} tasks</Badge>
         </div>
       </Card>
