@@ -104,6 +104,32 @@ Create Task делает реальный INSERT; **travel переведён н
 
 ---
 
+## 🔑 Google Maps API key (setup)
+
+Нужен для travel через Distance Matrix (`services/maps.ts`). Заводится в
+**Google Cloud Console** (https://console.cloud.google.com/).
+
+**Что сделано / как заводили (2026-06-19):**
+1. Создан проект в Google Cloud (organization = «No organization» — личный аккаунт ок).
+2. Привязан **биллинг** (карта обязательна даже для бесплатного использования —
+   только для верификации). Trial: **$300 кредита / 90 дней**. Сам по себе на платный
+   НЕ переходит — пока вручную не нажать «Upgrade», списаний нет. У Maps Platform к тому же
+   есть постоянный бесплатный месячный лимит — dev-нагрузке хватает с запасом.
+3. Включены API: **Maps JavaScript API** + **Distance Matrix API**.
+4. Создан **API key**, защищён: restriction type = **Websites**, referrer
+   `http://localhost:5174/*` (+ можно `5173/*`). Доп. слой — API restriction на эти два API.
+5. Ключ → `frontend/.env` → `VITE_GOOGLE_MAPS_API_KEY=AIza...`, перезапуск `npm run dev`.
+
+**TODO при деплое:** добавить прод-домен в Website restrictions того же ключа
+(Credentials → ключ → Add, напр. `https://<app>.vercel.app/*`). Localhost не удалять —
+referrer'ов можно несколько. Referrer-ограничения «прорастают» до ~5 мин — если сразу
+ловишь `RefererNotAllowed`, подожди.
+
+**Без ключа** travel работает на haversine-фолбэке (прямое расстояние, без пробок) —
+логика перестановок/пересчёта в Proposed от ключа не зависит.
+
+---
+
 ## 🚧 В работе / дальше
 
 ### Ближайшее

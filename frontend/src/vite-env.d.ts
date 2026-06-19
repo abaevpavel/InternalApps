@@ -7,7 +7,6 @@ interface ImportMetaEnv {
   readonly VITE_N8N_PLANNER_TEST_WEBHOOK?: string
   readonly VITE_N8N_SLACK_WEBHOOK?: string
   readonly VITE_GOOGLE_MAPS_API_KEY?: string
-  readonly VITE_USE_MOCKS?: string
 }
 
 interface ImportMeta {

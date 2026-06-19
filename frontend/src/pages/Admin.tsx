@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
-import { Button, Card, PageTitle, Badge } from '../components/ui'
-import { cn } from '../lib/utils'
+import { Button, Card, PageTitle, Badge, Tabs, DataTable, Cell, type Column } from '../components/ui'
 import { fetchProjects, fetchSkills, fetchTeams } from '../services/data'
+import type { Project, Team, Skill } from '../domain/types'
 
 type Tab = 'projects' | 'team' | 'skills' | 'task_types'
 const TABS: { key: Tab; label: string }[] = [
@@ -11,6 +11,19 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'team', label: 'Team' },
   { key: 'skills', label: 'Skills' },
   { key: 'task_types', label: 'Task Types' },
+]
+
+const projectCols: Column<Project>[] = [
+  { key: 'name', header: 'Project', render: (p) => <Cell title={p.name} sub={p.address} /> },
+  { key: 'pm', header: 'Project Manager', align: 'right', render: (p) => <Badge className="bg-gray-100 text-gray-600">{p.project_manager}</Badge> },
+]
+const teamCols: Column<Team>[] = [
+  { key: 'name', header: 'Team', render: (t) => <Cell title={t.name} sub={t.home_address} /> },
+  { key: 'skills', header: 'Skills', align: 'right', render: (t) => <Badge className="bg-gray-100 text-gray-600">{t.skills.length} skills</Badge> },
+]
+const skillCols: Column<Skill>[] = [
+  { key: 'name', header: 'Skill', render: (s) => <Cell title={s.name} sub={s.description ?? '—'} /> },
+  { key: 'cat', header: 'Category', align: 'right', render: (s) => <Badge className="bg-accent-50 text-accent-700">{s.category}</Badge> },
 ]
 
 export function AdminPage() {
@@ -21,63 +34,27 @@ export function AdminPage() {
 
   return (
     <div>
-      <div className="mb-6 flex gap-1 rounded-lg bg-gray-100 p-1">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={cn('flex-1 rounded-md py-2 text-sm font-medium', tab === t.key ? 'bg-white shadow' : 'text-gray-500')}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs<Tab> className="mb-6" value={tab} onChange={setTab} tabs={TABS} />
 
-      <div className="mb-4 flex items-center justify-between">
-        <PageTitle title={TABS.find((t) => t.key === tab)!.label} />
-        <Button variant="amber"><RefreshCw size={16} /> Sync from Airtable</Button>
-      </div>
+      <PageTitle
+        title={TABS.find((t) => t.key === tab)!.label}
+        actions={<Button variant="accent"><RefreshCw size={16} /> Sync from Airtable</Button>}
+      />
 
-      {tab === 'projects' && (
-        <Card className="divide-y">
-          {projects.data?.map((p) => (
-            <div key={p.id} className="flex items-center justify-between p-4">
-              <div><div className="font-medium">{p.name}</div><div className="text-sm text-gray-500">{p.address}</div></div>
-              <Badge className="bg-gray-100">PM: {p.project_manager}</Badge>
-            </div>
-          ))}
-        </Card>
-      )}
-
-      {tab === 'team' && (
-        <Card className="divide-y">
-          {teams.data?.map((t) => (
-            <div key={t.id} className="flex items-center justify-between p-4">
-              <div><div className="font-medium">{t.name}</div><div className="text-sm text-gray-500">{t.home_address}</div></div>
-              <Badge className="bg-gray-100">{t.skills.length} skills</Badge>
-            </div>
-          ))}
-        </Card>
-      )}
-
-      {tab === 'skills' && (
-        <Card className="divide-y">
-          {skills.data?.map((s, i) => (
-            <div key={s.id} className="flex items-start gap-4 p-4">
-              <span className="text-gray-400">{i + 1}</span>
-              <div className="flex-1">
-                <div className="font-medium">{s.name}</div>
-                <div className="text-sm text-gray-500">{s.description ?? '-'}</div>
-              </div>
-              <Badge className="bg-gray-100">{s.category}</Badge>
-            </div>
-          ))}
-        </Card>
-      )}
-
-      {tab === 'task_types' && (
-        <Card className="p-4 text-sm text-gray-500">Project task · Other task</Card>
-      )}
+      <Card>
+        {tab === 'projects' && (
+          <DataTable columns={projectCols} rows={projects.data ?? []} getRowKey={(p) => p.id} empty="No projects." />
+        )}
+        {tab === 'team' && (
+          <DataTable columns={teamCols} rows={teams.data ?? []} getRowKey={(t) => t.id} empty="No teams." />
+        )}
+        {tab === 'skills' && (
+          <DataTable columns={skillCols} rows={skills.data ?? []} getRowKey={(s) => s.id} empty="No skills." />
+        )}
+        {tab === 'task_types' && (
+          <div className="p-4 text-sm text-gray-500">Project task · Other task</div>
+        )}
+      </Card>
     </div>
   )
 }

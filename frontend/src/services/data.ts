@@ -4,14 +4,10 @@
  * позже без изменения UI (фаза 2).
  */
 import { supabase } from '../lib/supabase'
-import { USE_MOCKS } from '../lib/utils'
-import * as mock from './mockData'
 import type { Project, ScheduleRun, Skill, Task, Team, TeamAvailability } from '../domain/types'
 
 export async function fetchTasks(status?: Task['status']): Promise<Task[]> {
-  if (USE_MOCKS || !supabase) {
-    return status ? mock.mockTasks.filter((t) => t.status === status) : mock.mockTasks
-  }
+  if (!supabase) return []
   // ВАЖНО: FK tasks→teams в схеме нет, поэтому embed teams(...) даёт 400.
   // Имя бригады подтягиваем отдельным запросом и резолвим по team_id на клиенте.
   let q = supabase
@@ -21,18 +17,17 @@ export async function fetchTasks(status?: Task['status']): Promise<Task[]> {
   if (status) q = q.eq('status', status)
   const { data, error } = await q
   if (error) throw error
-  // если RLS не пустил строки (не залогинен) — показываем демо, чтобы был виден дизайн
-  if (!data || data.length === 0) {
-    return status ? mock.mockTasks.filter((t) => t.status === status) : mock.mockTasks
-  }
-  // карта team_id → name для подстановки имени бригады
-  const { data: teamRows } = await supabase.from('teams').select('id, name')
-  const teamName = new Map((teamRows ?? []).map((t) => [t.id as string, t.name as string]))
-  return data.map((r) => mapDbTask(r, teamName))
+  if (!data || data.length === 0) return []
+  // карта team_id → {name, home} для подстановки имени и домашнего адреса бригады
+  const { data: teamRows } = await supabase.from('teams').select('id, name, address')
+  const teamInfo = new Map(
+    (teamRows ?? []).map((t) => [t.id as string, { name: t.name as string, home: (t.address as string) ?? '' }]),
+  )
+  return data.map((r) => mapDbTask(r, teamInfo))
 }
 
 /** Маппинг реальной строки tasks → доменный Task (по подтверждённой схеме БД). */
-function mapDbTask(r: Record<string, any>, teamName?: Map<string, string>): Task {
+function mapDbTask(r: Record<string, any>, teamInfo?: Map<string, { name: string; home: string }>): Task {
   const st = r.scheduled_time ?? null // jsonb {start,end,anchor,anchor_time}
   const isAnchor = st?.anchor === true || st?.type === 'exact'
   const proj = r.projects ?? null
@@ -58,7 +53,8 @@ function mapDbTask(r: Record<string, any>, teamName?: Map<string, string>): Task
     lng: proj?.longitude ?? null,
     project_manager: r.project_manager ?? proj?.project_manager ?? '',
     assigned_team_id: r.team_id ?? null,
-    assigned_team_name: r.teams?.name ?? (r.team_id ? teamName?.get(r.team_id) : undefined),
+    assigned_team_name: r.teams?.name ?? (r.team_id ? teamInfo?.get(r.team_id)?.name : undefined),
+    assigned_team_home_base: r.team_id ? teamInfo?.get(r.team_id)?.home : undefined,
     priority: r.priority ?? 5,
     required_skill_ids: r.skill_requirements ?? r.required_skills ?? [],
     schedule_prompt: r.schedule_prompt ?? null,
@@ -74,7 +70,7 @@ function mapDbTask(r: Record<string, any>, teamName?: Map<string, string>): Task
 }
 
 export async function fetchTeams(): Promise<Team[]> {
-  if (USE_MOCKS || !supabase) return mock.mockTeams
+  if (!supabase) return []
   const { data, error } = await supabase.from('teams').select('*')
   if (error) throw error
   // реальные колонки: address, slack_id; skills связаны отдельно (см. skills.description)
@@ -86,7 +82,7 @@ export async function fetchTeams(): Promise<Team[]> {
 }
 
 export async function fetchProjects(): Promise<Project[]> {
-  if (USE_MOCKS || !supabase) return mock.mockProjects
+  if (!supabase) return []
   const { data, error } = await supabase.from('projects').select('*')
   if (error) throw error
   return (data ?? []).map((r): Project => ({
@@ -104,7 +100,7 @@ function parseAvailableTeams(description: string | null): string[] {
 }
 
 export async function fetchSkills(): Promise<Skill[]> {
-  if (USE_MOCKS || !supabase) return mock.mockSkills
+  if (!supabase) return []
   const { data, error } = await supabase.from('skills').select('*')
   if (error) throw error
   return (data ?? []).map((r): Skill => ({
@@ -115,7 +111,7 @@ export async function fetchSkills(): Promise<Skill[]> {
 }
 
 export async function fetchAvailability(): Promise<TeamAvailability[]> {
-  if (USE_MOCKS || !supabase) return mock.mockAvailability
+  if (!supabase) return []
   // team_availability ссылается на team_id; имя команды подтянем join'ом
   const { data, error } = await supabase
     .from('team_availability')
@@ -152,10 +148,7 @@ export interface CreateTaskInput {
 
 /** INSERT новой задачи (status=requested). Возвращает id. */
 export async function createTask(input: CreateTaskInput): Promise<string> {
-  if (USE_MOCKS || !supabase) {
-    console.info('[mock] createTask:', input)
-    return 'mock-' + input.description.slice(0, 8)
-  }
+  if (!supabase) throw new Error('Supabase не настроен')
   const row = {
     status: 'requested',
     task_type: input.task_type,
@@ -182,10 +175,7 @@ export async function createTask(input: CreateTaskInput): Promise<string> {
 /** Массовая смена статуса задач (requested→proposed, proposed→scheduled, →archived). */
 export async function updateTasksStatus(ids: string[], status: Task['status']): Promise<void> {
   if (!ids.length) return
-  if (USE_MOCKS || !supabase) {
-    console.info('[mock] updateTasksStatus:', status, ids)
-    return
-  }
+  if (!supabase) throw new Error('Supabase не настроен')
   const { error } = await supabase.from('tasks').update({ status }).in('id', ids)
   if (error) throw error
 }
@@ -194,11 +184,11 @@ export async function updateTasksStatus(ids: string[], status: Task['status']): 
  * Применить одобренное расписание к задачам: записать время/бригаду/порядок и
  * перевести в status=scheduled. Источник — (возможно отредактированные) TeamDay[].
  */
-export async function applyScheduleToTasks(days: import('../domain/types').TeamDay[]): Promise<void> {
-  if (USE_MOCKS || !supabase) {
-    console.info('[mock] applyScheduleToTasks:', days)
-    return
-  }
+export async function applyScheduleToTasks(
+  days: import('../domain/types').TeamDay[],
+  status: 'proposed' | 'scheduled' = 'scheduled',
+): Promise<void> {
+  if (!supabase) throw new Error('Supabase не настроен')
   const updates: Promise<void>[] = []
   for (const day of days) {
     for (const t of day.tasks) {
@@ -210,7 +200,7 @@ export async function applyScheduleToTasks(days: import('../domain/types').TeamD
           const { error } = await supabase!
             .from('tasks')
             .update({
-              status: 'scheduled',
+              status,
               team_id: day.team_id === 'unassigned' ? null : day.team_id,
               stop_number: t.scheduled_order,
               scheduled_time,
@@ -227,7 +217,7 @@ export async function applyScheduleToTasks(days: import('../domain/types').TeamD
 }
 
 export async function fetchScheduleRun(requestId?: string): Promise<ScheduleRun | null> {
-  if (USE_MOCKS || !supabase) return mock.mockScheduleRun
+  if (!supabase) return null
   // реальная таблица — AI_teams_schedule; comments лежат внутри output_data
   let q = supabase
     .from('AI_teams_schedule')
@@ -251,5 +241,47 @@ export async function fetchScheduleRun(requestId?: string): Promise<ScheduleRun 
     comments_ai_1: out['commentsAI-1'] ?? {},
     comments_ai_2: out['commentsAI-2'] ?? {},
     created_at: row.created_at as string,
+  }
+}
+
+/* ---------------- Travel-кэш (Supabase travel_cache) ---------------- */
+
+/**
+ * Читает закэшированные travel-времена по парам адресов.
+ * Возвращает Map по ключу `from|to` → минуты. Устойчиво: если таблицы нет
+ * или запрос упал — возвращает пусто (работаем без кэша).
+ */
+export async function fetchTravelCache(pairs: [string, string][]): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  if (!supabase || !pairs.length) return out
+  const froms = [...new Set(pairs.map(([f]) => f).filter(Boolean))]
+  const tos = [...new Set(pairs.map(([, t]) => t).filter(Boolean))]
+  if (!froms.length || !tos.length) return out
+  try {
+    const { data, error } = await supabase
+      .from('travel_cache')
+      .select('from_address,to_address,minutes')
+      .in('from_address', froms)
+      .in('to_address', tos)
+    if (error) return out
+    for (const r of data ?? []) out.set(`${r.from_address}|${r.to_address}`, r.minutes as number)
+  } catch {
+    /* нет таблицы travel_cache — игнорируем, работаем без кэша */
+  }
+  return out
+}
+
+/** Upsert новых travel-рёбер в кэш. Устойчиво к отсутствию таблицы/RLS. */
+export async function saveTravelCache(entries: { from: string; to: string; minutes: number }[]): Promise<void> {
+  if (!supabase || !entries.length) return
+  try {
+    await supabase
+      .from('travel_cache')
+      .upsert(
+        entries.map((e) => ({ from_address: e.from, to_address: e.to, minutes: e.minutes })),
+        { onConflict: 'from_address,to_address' },
+      )
+  } catch {
+    /* нет таблицы / RLS не пускает запись — игнорируем */
   }
 }

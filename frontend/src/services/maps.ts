@@ -8,6 +8,7 @@
  * (buildTravelMatrix) и отдаём в движок синхронный lookup-провайдер.
  */
 import type { Point, TravelProvider } from '../domain/scheduling-engine'
+import { fetchTravelCache, saveTravelCache } from './data'
 
 export const GOOGLE_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined
 
@@ -91,13 +92,45 @@ function chunk<T>(arr: T[], size: number): T[][] {
 export interface MatrixOptions {
   /** время отправления для учёта пробок; используется только если в будущем */
   departureTime?: Date | null
-  signal?: AbortSignal
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Глобальная ПОСЛЕДОВАТЕЛЬНАЯ очередь запросов к Distance Matrix.
+ * Google реджектит burst (OVER_QUERY_LIMIT), когда несколько бригад строят
+ * матрицу одновременно. Сериализуем запросы, чтобы не было всплеска.
+ */
+let dmQueue: Promise<unknown> = Promise.resolve()
+function enqueue<T>(fn: () => Promise<T>): Promise<T> {
+  const run = dmQueue.then(fn, fn)
+  dmQueue = run.then(() => {}, () => {})
+  return run as Promise<T>
+}
+
+/** Запрос матрицы с ретраями (на OVER_QUERY_LIMIT / transient). */
+async function requestMatrix(
+  svc: google.maps.DistanceMatrixService,
+  req: google.maps.DistanceMatrixRequest,
+  tries = 4,
+): Promise<google.maps.DistanceMatrixResponse> {
+  let lastErr: unknown
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await enqueue(() => svc.getDistanceMatrix(req))
+    } catch (err) {
+      lastErr = err
+      await sleep(500 * (i + 1)) // backoff: 0.5s, 1s, 1.5s
+    }
+  }
+  throw lastErr
 }
 
 /**
  * Строит матрицу времён (минуты) между всеми точками дня и возвращает Map по edgeKey.
  * Использует Google Distance Matrix; результаты кэшируются глобально по парам key.
- * При отсутствии ключа/ошибке — заполняет haversine-оценкой (или 0 без координат).
+ * При ошибке НЕ затирает нулями: если есть координаты — haversine, иначе оставляет
+ * ребро пустым (matrixProvider использует fallback — числа AI).
  */
 export async function buildTravelMatrix(
   points: MatrixPoint[],
@@ -125,50 +158,98 @@ export async function buildTravelMatrix(
       }
     }
   }
-  if (!missing.length) return result
+  if (missing.length) {
+    // departureTime только если в будущем (требование Google для duration_in_traffic)
+    const now = Date.now()
+    const departure = opts.departureTime && opts.departureTime.getTime() > now ? opts.departureTime : null
 
-  // departureTime только если в будущем (требование Google для duration_in_traffic)
-  const now = Date.now()
-  const departure = opts.departureTime && opts.departureTime.getTime() > now ? opts.departureTime : null
-
-  try {
-    const maps = await loadGoogleMaps()
-    const svc = new maps.DistanceMatrixService()
-    // полный NxN, но батчим origins так, чтобы origins*destinations ≤ 100
-    const dest = list.filter((p) => originFor(p) != null)
-    const destVals = dest.map(originFor) as (string | google.maps.LatLngLiteral)[]
-    const perBatch = Math.max(1, Math.floor(100 / Math.max(1, dest.length)))
-    for (const originBatch of chunk(list.filter((p) => originFor(p) != null), perBatch)) {
-      if (opts.signal?.aborted) throw new Error('aborted')
-      const originVals = originBatch.map(originFor) as (string | google.maps.LatLngLiteral)[]
-      const resp = await svc.getDistanceMatrix({
-        origins: originVals,
-        destinations: destVals,
-        travelMode: maps.TravelMode.DRIVING,
-        unitSystem: maps.UnitSystem.IMPERIAL,
-        ...(departure ? { drivingOptions: { departureTime: departure, trafficModel: maps.TrafficModel.BEST_GUESS } } : {}),
-      })
-      resp.rows.forEach((row, i) => {
-        row.elements.forEach((el, j) => {
-          if (el.status !== 'OK') return
-          const sec = el.duration_in_traffic?.value ?? el.duration?.value ?? 0
-          const min = Math.round(sec / 60)
-          const k = edgeKey(originBatch[i].key, dest[j].key)
-          edgeCache.set(k, min)
-          result.set(k, min)
-        })
-      })
+    // 1) БД-кэш по адресам — только для запросов БЕЗ traffic (duration стабилен;
+    //    traffic-времена зависят от момента, их не кэшируем).
+    let pending = missing
+    if (!departure) {
+      const pairs = missing
+        .filter(([a, b]) => a.address && b.address)
+        .map(([a, b]) => [a.address as string, b.address as string] as [string, string])
+      if (pairs.length) {
+        const db = await fetchTravelCache(pairs)
+        const rest: Array<[MatrixPoint, MatrixPoint]> = []
+        for (const [a, b] of missing) {
+          const v = a.address && b.address ? db.get(`${a.address}|${b.address}`) : undefined
+          if (v != null) {
+            const k = edgeKey(a.key, b.key)
+            edgeCache.set(k, v)
+            result.set(k, v)
+          } else {
+            rest.push([a, b])
+          }
+        }
+        pending = rest
+        if (rest.length < missing.length) {
+          console.info(`[maps] travel_cache hit: ${missing.length - rest.length}/${missing.length} edges from DB`)
+        }
+      }
     }
-  } catch {
-    // нет ключа / ошибка загрузки → haversine-оценка по координатам
-    for (const [a, b] of missing) {
-      const min = estimateTravel(
-        { lat: a.lat ?? null, lng: a.lng ?? null, key: a.key },
-        { lat: b.lat ?? null, lng: b.lng ?? null, key: b.key },
-      )
-      result.set(edgeKey(a.key, b.key), min)
+
+    // 2) Недостающее — из Google, затем сохраняем в БД-кэш.
+    if (pending.length) {
+      const saveEntries: { from: string; to: string; minutes: number }[] = []
+      try {
+        const maps = await loadGoogleMaps()
+        const svc = new maps.DistanceMatrixService()
+        // полный NxN, но батчим origins так, чтобы origins*destinations ≤ 100
+        const dest = list.filter((p) => originFor(p) != null)
+        const destVals = dest.map(originFor) as (string | google.maps.LatLngLiteral)[]
+        const perBatch = Math.max(1, Math.floor(100 / Math.max(1, dest.length)))
+        for (const originBatch of chunk(list.filter((p) => originFor(p) != null), perBatch)) {
+          const originVals = originBatch.map(originFor) as (string | google.maps.LatLngLiteral)[]
+          const resp = await requestMatrix(svc, {
+            origins: originVals,
+            destinations: destVals,
+            travelMode: maps.TravelMode.DRIVING,
+            unitSystem: maps.UnitSystem.IMPERIAL,
+            ...(departure ? { drivingOptions: { departureTime: departure, trafficModel: maps.TrafficModel.BEST_GUESS } } : {}),
+          })
+          resp.rows.forEach((row, i) => {
+            row.elements.forEach((el, j) => {
+              if (el.status !== 'OK') {
+                console.warn('[maps] element not OK:', el.status, originBatch[i].address, '→', dest[j].address)
+                return
+              }
+              const sec = el.duration_in_traffic?.value ?? el.duration?.value ?? 0
+              const min = Math.round(sec / 60)
+              const k = edgeKey(originBatch[i].key, dest[j].key)
+              edgeCache.set(k, min)
+              result.set(k, min)
+              // в БД-кэш только без traffic и при наличии адресов
+              const fa = originBatch[i].address, ta = dest[j].address
+              if (!departure && fa && ta && originBatch[i].key !== dest[j].key) {
+                saveEntries.push({ from: fa, to: ta, minutes: min })
+              }
+            })
+          })
+        }
+      } catch (err) {
+        console.warn('[maps] Distance Matrix failed:', err)
+        // НЕ затираем нулями: haversine только при наличии координат, иначе оставляем
+        // ребро пустым → matrixProvider возьмёт fallback (числа AI).
+        for (const [a, b] of pending) {
+          if (a.lat != null && a.lng != null && b.lat != null && b.lng != null) {
+            result.set(edgeKey(a.key, b.key), estimateTravel(
+              { lat: a.lat, lng: a.lng, key: a.key },
+              { lat: b.lat, lng: b.lng, key: b.key },
+            ))
+          }
+        }
+      }
+      if (saveEntries.length) void saveTravelCache(saveEntries)
     }
   }
+
+  const nonZero = [...result.entries()].filter(([, v]) => v > 0)
+  console.info(
+    `[maps] matrix built: ${result.size} edges, ${nonZero.length} non-zero. samples:`,
+    nonZero.slice(0, 4).map(([k, v]) => `${k}=${v}m`),
+  )
   return result
 }
 

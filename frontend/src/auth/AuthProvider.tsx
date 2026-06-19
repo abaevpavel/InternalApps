@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
-import { USE_MOCKS } from '../lib/utils'
 import type { AppRole } from '../domain/types'
 
 interface AuthUser {
@@ -21,17 +20,12 @@ interface AuthCtx {
 
 const Ctx = createContext<AuthCtx | null>(null)
 
-const MOCK_USER: AuthUser = {
-  id: 'mock-pm', email: 'pm@todor3d.com', role: 'pm', firstName: 'Test', lastName: 'PM',
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (USE_MOCKS || !supabase) {
-      setUser(MOCK_USER)
+    if (!supabase) {
       setLoading(false)
       return
     }
@@ -57,19 +51,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signIn(email: string, password: string) {
-    if (USE_MOCKS || !supabase) {
-      setUser({ ...MOCK_USER, email })
-      return
-    }
+    if (!supabase) throw new Error('Supabase не настроен')
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
   }
 
   async function signInWithGoogle() {
-    if (USE_MOCKS || !supabase) {
-      setUser(MOCK_USER)
-      return
-    }
+    if (!supabase) throw new Error('Supabase не настроен')
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.origin },

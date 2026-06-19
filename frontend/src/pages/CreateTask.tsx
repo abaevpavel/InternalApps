@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, Input } from '../components/ui'
+import { Button, Card, Input, Textarea, Field, Select, Tabs } from '../components/ui'
 import { cn } from '../lib/utils'
 import { fetchProjects, fetchSkills, fetchTeams, createTask } from '../services/data'
 import { useAuth } from '../auth/AuthProvider'
@@ -75,49 +75,48 @@ export function CreateTaskPage() {
 
   return (
     <div>
-      <div className="mb-6 flex gap-1 rounded-lg bg-gray-100 p-1">
-        <button onClick={() => setMode('project')} className={cn('flex-1 rounded-md py-2 text-sm font-medium', mode === 'project' ? 'bg-white shadow' : 'text-gray-500')}>📁 New Project Task</button>
-        <button onClick={() => setMode('other')} className={cn('flex-1 rounded-md py-2 text-sm font-medium', mode === 'other' ? 'bg-white shadow' : 'text-gray-500')}>＋ New Other Task</button>
-      </div>
+      <Tabs<'project' | 'other'>
+        className="mb-6"
+        value={mode}
+        onChange={setMode}
+        tabs={[
+          { key: 'project', label: '📁 New Project Task' },
+          { key: 'other', label: '＋ New Other Task' },
+        ]}
+      />
 
       <Card className="space-y-5 p-6">
         <div className="grid gap-4 sm:grid-cols-2">
           {mode === 'project' && (
-            <div>
-              <label className="mb-1 block text-sm font-medium">Select Project *</label>
-              <select value={projectId} onChange={(e) => setProjectId(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            <Field label="Select Project" required>
+              <Select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
                 <option value="">Choose a project…</option>
                 {projects.data?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
+              </Select>
+            </Field>
           )}
-          <div>
-            <label className="mb-1 block text-sm font-medium">Task Type *</label>
-            <select value={taskType} onChange={(e) => setTaskType(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+          <Field label="Task Type" required>
+            <Select value={taskType} onChange={(e) => setTaskType(e.target.value)}>
               <option>Project task</option><option>Other task</option>
-            </select>
-          </div>
+            </Select>
+          </Field>
         </div>
 
-        <div>
-          <label className="mb-1 block text-sm font-medium">Description *</label>
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" rows={4} placeholder="Please be very specific…" />
-        </div>
+        <Field label="Description" required>
+          <Textarea value={description} onChange={(e) => setDescription(e.target.value)}
+            rows={4} placeholder="Please be very specific…" />
+        </Field>
 
         <div className="grid gap-4 sm:grid-cols-3">
-          <div>
-            <label className="mb-1 block text-sm font-medium">Date *</label>
+          <Field label="Date" required>
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </div>
+          </Field>
           <div>
             <div className="mb-1 flex items-center justify-between">
-              <label className="text-sm font-medium">Time</label>
+              <label className="text-sm font-medium text-gray-700">Time</label>
               <div className="flex gap-1 text-xs">
-                <button onClick={() => setTimeType('exact')} className={cn('rounded px-2 py-0.5', timeType === 'exact' ? 'bg-gray-900 text-white' : 'bg-gray-100')}>EXACT TIME</button>
-                <button onClick={() => setTimeType('timeframe')} className={cn('rounded px-2 py-0.5', timeType === 'timeframe' ? 'bg-gray-900 text-white' : 'bg-gray-100')}>TIMEFRAME</button>
+                <SegBtn active={timeType === 'exact'} onClick={() => setTimeType('exact')}>EXACT TIME</SegBtn>
+                <SegBtn active={timeType === 'timeframe'} onClick={() => setTimeType('timeframe')}>TIMEFRAME</SegBtn>
               </div>
             </div>
             {timeType === 'exact' && <Input type="time" value={exactTime} onChange={(e) => setExactTime(e.target.value)} />}
@@ -127,62 +126,66 @@ export function CreateTaskPage() {
             </div>}
             {!timeType && <Input disabled placeholder="Select time type above" />}
           </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">Duration * (hours)</label>
+          <Field label="Duration (hours)" required>
             <Input value={durationH} onChange={(e) => setDurationH(e.target.value)} placeholder="e.g. 8, 4.5" />
-          </div>
+          </Field>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-sm font-medium">Assigned Team</label>
-            <select value={teamId} onChange={(e) => setTeamId(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+          <Field label="Assigned Team">
+            <Select value={teamId} onChange={(e) => setTeamId(e.target.value)}>
               <option value="">No preference</option>
               {teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium">Priority</label>
-            <select value={priority} onChange={(e) => setPriority(Number(e.target.value))}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            </Select>
+          </Field>
+          <Field label="Priority">
+            <Select value={priority} onChange={(e) => setPriority(Number(e.target.value))}>
               <option value={5}>5 - Normal</option><option value={1}>1 - Highest</option>
-            </select>
-          </div>
+            </Select>
+          </Field>
         </div>
 
-        <div>
-          <label className="mb-1 block text-sm font-medium">Required Skills (optional)</label>
-          <select value={skillId} onChange={(e) => setSkillId(e.target.value)}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <Field label="Required Skills (optional)">
+          <Select value={skillId} onChange={(e) => setSkillId(e.target.value)}>
             <option value="">Add Required Skill</option>
             {skills.data?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </div>
+          </Select>
+        </Field>
 
         <div>
           <div className="mb-1 flex items-center justify-between">
-            <label className="text-sm font-medium">Additional Stop</label>
+            <label className="text-sm font-medium text-gray-700">Additional Stop</label>
             <div className="flex gap-1 text-xs">
-              <button onClick={() => setStopWhen('before')} className={cn('rounded px-2 py-0.5', stopWhen === 'before' ? 'bg-gray-900 text-white' : 'bg-gray-100')}>BEFORE</button>
-              <button onClick={() => setStopWhen('after')} className={cn('rounded px-2 py-0.5', stopWhen === 'after' ? 'bg-gray-900 text-white' : 'bg-gray-100')}>AFTER</button>
+              <SegBtn active={stopWhen === 'before'} onClick={() => setStopWhen('before')}>BEFORE</SegBtn>
+              <SegBtn active={stopWhen === 'after'} onClick={() => setStopWhen('after')}>AFTER</SegBtn>
             </div>
           </div>
           <Input value={stopAddress} onChange={(e) => setStopAddress(e.target.value)}
             placeholder="Search for any address or place (e.g., Home Depot Beltsville)" />
-          <div className="mt-2 flex items-end gap-3">
-            <div className="w-24">
-              <label className="mb-1 block text-xs text-gray-500">Duration (min)</label>
-              <Input type="number" value={stopDuration} onChange={(e) => setStopDuration(Number(e.target.value))} />
-            </div>
+          <div className="mt-2 w-28">
+            <label className="mb-1 block text-xs text-gray-500">Duration (min)</label>
+            <Input type="number" value={stopDuration} onChange={(e) => setStopDuration(Number(e.target.value))} />
           </div>
         </div>
 
         {error && <p className="text-sm text-red-600">⚠ {error}</p>}
-        <Button variant="amber" className="w-full" disabled={create.isPending} onClick={() => create.mutate()}>
+        <Button variant="accent" className="w-full" disabled={create.isPending} onClick={() => create.mutate()}>
           {create.isPending ? 'Creating…' : 'Create Task'}
         </Button>
       </Card>
     </div>
+  )
+}
+
+/** Маленькая сегмент-кнопка (EXACT/TIMEFRAME, BEFORE/AFTER). */
+function SegBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn('rounded px-2 py-0.5 font-medium transition', active ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}
+    >
+      {children}
+    </button>
   )
 }

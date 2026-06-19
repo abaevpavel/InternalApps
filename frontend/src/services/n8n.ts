@@ -1,5 +1,4 @@
 /** n8n-клиент: отправка задач планировщику и расписания в Slack. */
-import { USE_MOCKS } from '../lib/utils'
 import type { Task, Team, TeamAvailability, Skill } from '../domain/types'
 
 const PLANNER = import.meta.env.VITE_N8N_PLANNER_WEBHOOK as string | undefined
@@ -82,10 +81,7 @@ export async function sendToAi(p: SendToAiParams): Promise<{ request_ID: string 
     total: p.tasks.length,
   }
 
-  if (USE_MOCKS || !url) {
-    console.info('[mock] sendToAi payload:', payload)
-    return { request_ID: p.requestId }
-  }
+  if (!url) throw new Error('n8n planner webhook не настроен (VITE_N8N_PLANNER_WEBHOOK)')
   const res = await fetch(url, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   })
@@ -95,10 +91,7 @@ export async function sendToAi(p: SendToAiParams): Promise<{ request_ID: string 
 
 /** Send tasks → вебхук Slack-рассыльщика. */
 export async function sendToSlack(schedule: unknown): Promise<void> {
-  if (USE_MOCKS || !SLACK) {
-    console.info('[mock] sendToSlack:', schedule)
-    return
-  }
+  if (!SLACK) throw new Error('n8n slack webhook не настроен (VITE_N8N_SLACK_WEBHOOK)')
   const res = await fetch(SLACK, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(schedule),
   })

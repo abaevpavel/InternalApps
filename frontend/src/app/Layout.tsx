@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Menu, Plus, ListChecks, CalendarDays, Users, User, LogOut } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
-import { USE_MOCKS } from '../lib/utils'
 
 const SECTION_TITLES: Record<string, string> = {
   '/tasks': 'TASKS',
@@ -73,12 +72,6 @@ export function Layout() {
           </div>
         )}
       </header>
-
-      {USE_MOCKS && (
-        <div className="bg-amber-100 px-6 py-1.5 text-center text-xs text-amber-800">
-          MOCK mode: demo data. Add Supabase keys to .env to connect the real database.
-        </div>
-      )}
 
       <main className="mx-auto max-w-6xl px-6 py-8">
         <Outlet />
