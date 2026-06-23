@@ -1,0 +1,800 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=SYSTEM PROMPT — ASSIGN UNASSIGNED TASKS (ROUTE-AWARE)\n\nROLE\nYou are a deterministic ASSIGNMENT & ROUTE INSERTER for construction/remodeling crews.\nDeterminism: temperature=0; top_p=1. Never invent tasks or teams. Output valid JSON only.\n\nPRIME DIRECTIVE\nEvery input unassigned task that has at least one eligible team must be assigned. To achieve this, you may reschedule or reassign existing non-anchor tasks (keeping their date/duration intact), but you must never move anchors or break anchor times, and you must not create overlaps.\n\nINPUT\nYou receive one JSON object with two parts:\n\nschedule: the prior agent’s full day schedule (array of team objects). Treat all\nexisting tasks as immutable anchors if they have an anchor time; non-anchor tasks may be shifted or reassigned if needed to place new tasks.\n{{ JSON.stringify( $json.output.schedule )}}\n\nunassigned: array of tasks to place. Each task SHOULD include:\n{{ JSON.stringify($('unassigned tasks with optional teams').item.json.tasks_with_optional_teams) }}\nid, description, priority (int),\n\nestimated_duration_minutes (int),\n\nproject.project_address (string),\n\noptional scheduled_time { \"type\": \"exact\"|\"timeframe\", \"time\"?: \"HH:MM\" },\n\neligible teams via:\n\noptional_team: [{ \"optional_team_name\": \"...\", \"optional_team_address\": \"...\", \"optional_team_level\": 1 }, ...] — map by exact team_name in schedule; ignore names not found.\noptional_team_level: skill level of that team for THIS task (1 = most qualified, lower is better; null = unknown). The optional_team array is PRE-SORTED best-first by optional_team_level.\n\nFRONTEND_OVERRIDES (optional)\nYou may receive extra instructions from the frontend.\n\nAn optional JSON object: {{ JSON.stringify( $('Fields').item.json['frontend overrides']|| {}) }}\n\nPrecedence: hard invariants (anchors, identity, no-overlap) > frontend_overrides/notes > defaults.\n\nASSIGNMENT RULES (ANCHORS LOCKED; NON-ANCHORS MAY SHIFT/REALLOCATE)\n\nDo NOT delete any existing task.\n\nDo NOT alter/move any existing anchor (scheduled_time.type == \"exact\") or overlap it.\n\nYou MAY shift start/end times of existing non-anchor tasks within the same day (date and duration unchanged), reorder them within the team’s day, or reassign them to another eligible team, if this is necessary to assign an unassigned task (especially an exact-time anchor).\n\nPlace each new task T only in these ways per eligible team:\n\nInsert in a free gap between two tasks if (drive_in + T.duration + drive_out) fits fully without touching any anchor.\n\nOr make room by pushing adjacent non-anchor tasks later/earlier the same day (no anchor moves, no overlaps).\n\nAppend after the last task of the day.\n\nFirst-of-day is allowed even if the team already has tasks only when inserting an exact-time anchor at its exact start; push non-anchor tasks later as needed.\n\nIf T is an anchor: start_time MUST equal the anchor time; you may shift/reorder only non-anchor neighbors to make room; never move any anchor.\n\nIf a gap cannot fully contain T (including drives to/from neighbors), do not use that gap.\n\nPrefer same-address append if it keeps total working time ≤ 10h, even if it introduces 0.5–1.5h soft overtime.\n\nWhen choosing a team for an exact-time anchor, prefer the team with the lowest feasible homebase→anchor drive at that time; shift/reassign non-anchors as needed (anchors untouched).\n\nSKILL-LEVEL PRIORITY:\nAmong eligible teams for a task, prefer the one with the LOWEST optional_team_level (1 = highest skill). This is a strong tiebreaker: apply it AFTER anchors / feasibility / overtime limits, but it OUTWEIGHS small drive-time differences (<= 15 min). Treat null level as the worst (least preferred).\n\nWhen tie-breaking, lower added_drive_minutes outweighs avoiding soft overtime unless total would exceed 10h.\n\nDRIVE TIMES\nUse realistic route-based drive times for DC/MD/VA by time of day; never straight-line or fixed constants. Same-address back-to-back → 0 minutes.\n\nOVERTIME POLICY\n≤ 480 min → normal (overtime=false).\n481–600 min → allowed (overtime=true).\n> 600 min → disallow this placement and try another eligible team. If no feasible team, mark task unscheduled.\n\nSCORING & CHOICE (lower is better)\nFor each feasible placement compute:\nscore = added_drive_minutes\n      + 25 * (optional_team_level_or_3 - 1)\n      + 30 * overtime_hours_after_insertion\n      + 200 * is_over_10h\n      - 2 * priority\nwhere optional_team_level_or_3 = optional_team_level if present else 3.\nTie-breakers in order: (1) lower optional_team_level, (2) no-overtime wins, (3) lower added_drive_minutes, (4) fewer total tasks on that team, (5) shorter last_stop→T distance.\n\nFIELD & MATH CONSISTENCY\nNever change existing tasks’ fields (id, description, project, duration).\nIf you shift non-anchor tasks, update their start_time, end_time, drive_minutes_from_previous, and re-order scheduled_order accordingly.\nFor each team you modify, recompute:\n\nworkday_end_time, end_of_day_commute_minutes,\n\ntotal_working_minutes = sum(task durations) + sum(inter-task drives),\n\nday_length_category & overtime.\n\nEvery inserted task must include: scheduled_order (renumber 1..N), task_id (use input id), project_*, description (verbatim), anchor (bool), anchor_time (\"HH:MM\" if anchor, else \"\"), start_time, end_time, duration_minutes, drive_minutes_from_previous.\n\nUNSCHEDULED CASES\nIf you cannot place a task for any eligible team without breaking rules, leave it out of schedules and record it in comments.unscheduled with a reason:\n\nUNSCHEDULED JUSTIFICATION (MANDATORY KEYS)\nFor each unscheduled task, include:\n{\n\"task_id\": \"...\",\n\"reason\": \"anchor_time_unreachable|no_eligible_team|overtime_hard_limit|infeasible_between_anchors|other\",\n\"anchor_time\": \"HH:MM\" | \"\",\n\"eligible_teams_tried\": [\"<team_id>\", ...],\n\"best_feasible_team\": \"<team_id>\" | null,\n\"earliest_arrival_possible\": \"HH:MM\" | \"\",\n\"minutes_short\": <int>,\n\"notes\": \"short, factual\"\n}\n\nAlso allowed reasons: \"no_feasible_gap\", \"would_exceed_10h\", \"missing_duration\", \"no_matching_team\", \"anchor_time_unreachable\".\n\nSELF-VALIDATION (MANDATORY)\nBefore output:\n\nExisting anchors unchanged and still non-overlapping; all new anchors placed at exact times.\n\nAny non-anchor shifts/reassignments preserve dates, durations, and produce no overlaps.\n\nEach unassigned task is either placed exactly once or listed in comments.unscheduled.\n\nAll per-team tasks sorted by start_time; scheduled_order = 1..N.\n\nTotals & categories recomputed correctly for modified teams.\n\nJSON schema exactly as below; no extra keys.\n\nOUTPUT (JSON ONLY)\nTop-level keys: schedule and comments.\n\nschedule: the full updated schedule array (all original teams as given; only modified where you inserted tasks or shifted/reassigned non-anchors).\n\ncomments:\ninserted: [{ \"task_id\", \"team_id\", \"placement\": \"insert|append|first_of_day\", \"placed_between\": {\"prev_task_id\": \"...\", \"next_task_id\": \"...\"}|null, \"added_drive_minutes\": int, \"overtime_after\": int, \"score\": int } ...]\nunscheduled: [{ \"task_id\", \"reason\" }]\ntravel_time_methodology: short string.\n\nRETURN FORMAT\nOutput valid JSON only with exactly two top-level keys: schedule (array) and comments. No prose.\n",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "ROLE: SYSTEM\nYOU ARE A TASK-TO-SKILLS TAGGER FOR A CONSTRUCTION/REMODELING SCHEDULING PIPELINE.\n\nGOAL:\nFor each task, infer and assign one or more skills from SKILLS based on title/description. Use only names from SKILLS.\n\nRULES:\n- Never invent skills not in SKILLS.\n- If unsure, choose the best single skill.\n- Keep original task fields; only add \"skills\":[{name}] to each task.\n\nVALIDATE:\n- Every task has non-empty \"skills\".\nEXECUTE NOW.\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        1360,
+        -32
+      ],
+      "id": "be41699f-ad67-4c0a-9f88-fee1514fa3cd",
+      "name": "Other tasks Agent"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=UNASSIGNED_TASKS_JSON: {{ JSON.stringify($json[\"unassigned tasks\"] ?? $json.tasks ?? []) }}\nSKILLS_LIBRARY_JSON:   {{ JSON.stringify($(\"Webhook\").item.json.body.Skills ?? $json.Skills ?? []) }}\n\n",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=ROLE: SYSTEM\nYOU ARE A TASK-TO-SKILLS TAGGER FOR A CONSTRUCTION/REMODELING SCHEDULING PIPELINE.\n\nGOAL:\nFor each task, infer and assign one or more skills from SKILLS based on title/description. Use only names from SKILLS.\n\nRULES:\n- Never invent skills not in SKILLS.\n- If unsure, choose the best single skill.\n- Keep original task fields; only add \"skills\":[{name}] to each task.\n\nVALIDATE:\n- Every task has non-empty \"skills\".\nEXECUTE NOW.\n\nyou must use tool Structured Output Parser1\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        256,
+        -32
+      ],
+      "id": "dec09991-93da-4f08-abd3-911e3a609a1d",
+      "name": "Unassigned Tasks with skills"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "gpt-5"
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1008,
+        224
+      ],
+      "id": "e5021e8b-9f09-40b7-8f7c-28b14b6a8c00",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "xYHVtOR5br9G2j9w",
+          "name": "lucky_day"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5",
+          "mode": "list",
+          "cachedResultName": "gpt-5"
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1360,
+        256
+      ],
+      "id": "bb45e182-cd02-4dc2-aebd-d9352f43dc3d",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "xYHVtOR5br9G2j9w",
+          "name": "lucky_day"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        256,
+        192
+      ],
+      "id": "050d019f-4a65-44ee-8448-99a4a3fc2339",
+      "name": "OpenAI Chat Model2",
+      "credentials": {
+        "openAiApi": {
+          "id": "d97r5YBAVl7YttTj",
+          "name": "t3d_dev"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "d3dfcd18-d54a-4b7b-904c-4d3cc7b0df27",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1008,
+        -32
+      ],
+      "id": "6ab47678-3d84-43c5-9451-49573b2e196a",
+      "name": "Webhook",
+      "webhookId": "d3dfcd18-d54a-4b7b-904c-4d3cc7b0df27"
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -512,
+        -432
+      ],
+      "id": "48261364-dc25-4af1-a42d-54818788f7dd",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "205e4973-8397-4a12-821b-b5ca2bac848d",
+              "name": "request_ID",
+              "value": "={{ $('Webhook').item.json.body.request_ID }}",
+              "type": "string"
+            },
+            {
+              "id": "fa8e2f5e-42a1-44d0-8d7d-1a3a060e21e4",
+              "name": "persistent prompt",
+              "value": "={{ $('Webhook').item.json.body['Persistent Prompt'] }}",
+              "type": "string"
+            },
+            {
+              "id": "85e54e78-73b4-48c6-85f3-3e33c42f1e1e",
+              "name": "one-time Prompt",
+              "value": "={{ $('Webhook').item.json.body['One-time Prompt'] }}",
+              "type": "string"
+            },
+            {
+              "id": "dc87d6b7-8205-4031-abd6-2d2d2e93d27c",
+              "name": "unassigned tasks",
+              "value": "={{ $json.unassigned }}",
+              "type": "array"
+            },
+            {
+              "id": "90b94e9c-400e-4206-a966-1d9651a22f11",
+              "name": "assigned tasks",
+              "value": "={{ $json.assigned }}",
+              "type": "array"
+            },
+            {
+              "id": "b3718df5-8787-4ba7-b828-0b02f4649b11",
+              "name": "available teams",
+              "value": "={{ $('filter unavailable').item.json.Teams }}",
+              "type": "array"
+            },
+            {
+              "id": "3b13d6c6-e304-4ecf-a6a9-c213964e95b1",
+              "name": "skills",
+              "value": "={{ $('Webhook').item.json.body.Skills }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {
+          "ignoreConversionErrors": true
+        }
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -48,
+        -32
+      ],
+      "id": "1f4fb416-6166-46e7-86db-4cebfb9553f5",
+      "name": "Edit Fields1",
+      "executeOnce": false,
+      "notesInFlow": false
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2a791800-3eeb-4149-ae53-a49c889a8eb4",
+              "name": "UnavailableTeams",
+              "value": "={{ $json.body['Unavailable teams'] }}",
+              "type": "array"
+            },
+            {
+              "id": "a55d692b-ff95-49fd-8a8d-551a8b49002f",
+              "name": "Teams",
+              "value": "={{ $json.body.Teams }}",
+              "type": "array"
+            },
+            {
+              "id": "226cbab0-d87e-4677-b862-1b9ee9d5bccf",
+              "name": "request_ID",
+              "value": "={{ $json.body.request_ID }}",
+              "type": "string"
+            },
+            {
+              "id": "e1bcc2a5-6d15-4ced-a497-e2304e1748a1",
+              "name": "tasks",
+              "value": "={{ $json.body.tasks }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -832,
+        -32
+      ],
+      "id": "7b8863f7-0264-4434-8705-26722692fc75",
+      "name": "Edit Fields2"
+    },
+    {
+      "parameters": {
+        "jsCode": "function norm(s) {\n  return (s || \"\")\n    .normalize(\"NFKC\")\n    .replace(/\\s+/g, \" \")\n    .trim()\n    .toLowerCase();\n}\n\nfunction teamNameOf(t) {\n  return t?.team_name ?? t?.nameCrew ?? t?.name ?? \"\";\n}\n\nconst src = $(\"Edit Fields2\").first().json || {};\n\nconst unavailableSet = new Set(\n  (src.UnavailableTeams || []).map(u =>\n    norm(u?.team_name ?? u?.nameCrew ?? u?.name)\n  )\n);\n\nconst allTeams = Array.isArray(src.Teams) ? src.Teams : [];\n\nconst filteredTeams = allTeams.filter(t =>\n  !unavailableSet.has(norm(teamNameOf(t)))\n);\n\nconst excludedTeams = allTeams.filter(t =>\n  unavailableSet.has(norm(teamNameOf(t)))\n);\n\nreturn [\n  {\n    json: {\n      Teams: filteredTeams,\n      ExcludedTeams: excludedTeams\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        -32
+      ],
+      "id": "28a224cd-4c76-4428-ae2d-3efe0da8324b",
+      "name": "filter unavailable"
+    },
+    {
+      "parameters": {
+        "jsCode": "// --- helpers ---\nfunction isEmptyStr(s){ \n  return typeof s !== \"string\" || s.trim().length === 0; \n}\nfunction toNum(x){ const n = Number(x); return Number.isFinite(n) ? n : 0; }\nfunction toNumOrNull(x){ const n = Number(x); return Number.isFinite(n) ? n : null; }\nfunction normKey(s){ return String(s||\"\").normalize(\"NFKC\").replace(/\\s+/g,\" \").trim().toLowerCase(); }\nfunction cleanStr(s){ return String(s||\"\").normalize(\"NFKC\").replace(/\\s+/g,\" \").trim(); }\n\n// универсальный геттер полей команды (поддерживает оба набора ключей)\nfunction teamMeta(team){\n  if (!team || typeof team !== \"object\") return {\n    team_id: null, team_name: (typeof team===\"string\"? cleanStr(team) : null),\n    airtable_id: null, address: null, latitude: null, longitude: null\n  };\n  const team_id     = team.id ?? team.team_id ?? null;\n  const team_name   = cleanStr(team.name ?? team.team_name ?? \"\");\n  const airtable_id = team.airtable_id ?? team.team_airtable_id ?? null;\n  const team_address     = team.address ?? team.team_address ?? null;\n  const latitude    = toNumOrNull(team.latitude ?? team.team_latitude ?? team.lat);\n  const longitude   = toNumOrNull(team.longitude ?? team.team_longitude ?? team.lon);\n  return { team_id, team_name, airtable_id, team_address, latitude, longitude };\n}\n\n// корректное определение \"назначена ли команда\"\nfunction hasTeam(team){\n  if (!team) return false;\n  if (typeof team === \"string\") return !isEmptyStr(team);\n  const m = teamMeta(team);\n  return !!(m.team_id || m.team_name || m.airtable_id);\n}\n\n// нормализация scheduled_time только для веса сортировки\nfunction normalizeScheduledTimeLike(t){\n  const st = t?.scheduled_time;\n  if (st && typeof st === \"object\") return st;\n  const exact   = t?.exact_time ?? t?.appointment_time ?? t?.start_time ?? null;\n  const tfStart = t?.timeframe_start ?? t?.window_start ?? t?.start_window ?? null;\n  const tfEnd   = t?.timeframe_end   ?? t?.window_end   ?? t?.end_window   ?? null;\n  if (exact) return { type: \"exact\", start: String(exact) };\n  if (tfStart || tfEnd) return { type: \"timeframe\", start: tfStart ? String(tfStart) : null, end: tfEnd ? String(tfEnd) : null };\n  return null;\n}\nfunction timeWeightFromTask(t){\n  const st = normalizeScheduledTimeLike(t);\n  if (!st || typeof st !== \"object\") return 3;\n  if (st.type === \"exact\") return 0;\n  if (st.type === \"timeframe\") return 1;\n  return 2;\n}\n\n// --- input ---\nconst tasks = Array.isArray($('Edit Fields2').first().json.tasks)\n  ? $('Edit Fields2').first().json.tasks\n  : [];\n\n// --- split assigned / unassigned ---\nconst assigned = [];\nconst unassigned = [];\nfor (const t of tasks) (hasTeam(t.team) ? assigned : unassigned).push(t);\n\n// --- durations summary ---\nfunction hoursOf(arr){ return arr.reduce((s,t)=> s + toNum(t.estimated_duration ?? t.duration), 0); }\nconst total_hours = hoursOf(tasks);\nconst assigned_hours = hoursOf(assigned);\nconst unassigned_hours = hoursOf(unassigned);\n\n// --- group assigned by team ---\nconst byTeam = new Map();\nfor (const t of assigned){\n  const meta = teamMeta(t.team);\n  const teamKey = meta.team_id ? `id:${normKey(meta.team_id)}` : `name:${normKey(meta.team_name)}`;\n  if (!byTeam.has(teamKey)){\n    byTeam.set(teamKey, { ...meta, tasks: [], totals: { estimated_hours: 0, task_count: 0 } });\n  }\n  const entry = byTeam.get(teamKey);\n  entry.tasks.push(t);\n  entry.totals.estimated_hours += toNum(t.estimated_duration ?? t.duration);\n  entry.totals.task_count += 1;\n}\n\n// сортировка задач внутри команды\nfor (const v of byTeam.values()){\n  v.tasks.sort((a,b)=>{\n    const tw = timeWeightFromTask(a) - timeWeightFromTask(b);\n    if (tw !== 0) return tw;\n    const ap = (b.priority||0) - (a.priority||0);\n    if (ap !== 0) return ap;\n    return (toNum(a.estimated_duration ?? a.duration)) - (toNum(b.estimated_duration ?? b.duration));\n  });\n}\n\nconst assigned_by_team = Array.from(byTeam.values())\n  .sort((a,b)=> (a.team_name||\"\").localeCompare(b.team_name||\"\"));\n\n// --- return ---\nreturn [{\n  json: {\n    unassigned,\n    assigned,\n    counts: { total: tasks.length, assigned: assigned.length, unassigned: unassigned.length },\n    durations: { total_hours, assigned_hours, unassigned_hours },\n    assigned_by_team\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        -32
+      ],
+      "id": "ef90e604-9460-4585-b8c6-17910476d671",
+      "name": "filter unassigned tasks"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2f0d9860-614d-4f8d-9c76-c07d36bab025",
+              "name": "request_ID",
+              "value": "={{ $json.request_ID }}",
+              "type": "string"
+            },
+            {
+              "id": "91e3c163-c90a-49db-83a2-dc1d31df2fa0",
+              "name": "body['Persistent Prompt']",
+              "value": "={{ $('Webhook').item.json.body['Persistent Prompt'] }}",
+              "type": "string"
+            },
+            {
+              "id": "bbaf2e64-6df4-44a7-a85c-7a30468cfccc",
+              "name": "body['One-time Prompt']",
+              "value": "={{ $('Webhook').item.json.body['One-time Prompt'] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -720,
+        -432
+      ],
+      "id": "1e07da83-4318-418d-8933-7e9909831aa6",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "tableId": "AI_teams_schedule",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "input_tasks",
+              "fieldValue": "={{ $json.tasks }}"
+            },
+            {
+              "fieldId": "request_ID",
+              "fieldValue": "={{ $('Webhook').item.json.body.request_ID }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -624,
+        -32
+      ],
+      "id": "1cb53f3f-eedd-4940-bfbb-258731d6467d",
+      "name": "Create a row1",
+      "notesInFlow": false,
+      "alwaysOutputData": false,
+      "credentials": {
+        "supabaseApi": {
+          "id": "lvU01FywVSvseCiB",
+          "name": "basement"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// === MATCHER: задача ↔ команда по скиллам, с учётом УРОВНЯ (level 1 = высший) ===\nfunction normSkillName(s) {\n  return String(s || \"\").normalize(\"NFKC\").replace(/\\s+/g, \" \").trim()\n    .replace(/\\s*-\\s*\\d+$/, \"\").toLowerCase(); // срезаем \"- N\" для сравнения по имени\n}\nfunction normText(s) { return String(s || \"\").normalize(\"NFKC\").replace(/\\s+/g, \" \").trim(); }\nfunction toNumOrNull(x) {\n  if (x === null || x === undefined || x === \"\") return null;\n  const n = Number(x); return Number.isFinite(n) ? n : null;\n}\n// скилл может прийти как {name, level} (новый фронт) или \"Name - 2\" (старый) → {name, level}\nfunction parseTeamSkill(s) {\n  if (s && typeof s === \"object\") {\n    const lvl = toNumOrNull(s.level);\n    const m = String(s.name || \"\").match(/-\\s*(\\d+)\\s*$/); // уровень мог остаться в имени\n    return { name: normSkillName(s.name), level: lvl != null ? lvl : (m ? Number(m[1]) : null) };\n  }\n  const raw = String(s || \"\"); const m = raw.match(/-\\s*(\\d+)\\s*$/);\n  return { name: normSkillName(raw), level: m ? Number(m[1]) : null };\n}\n\nconst src = ($input.first()?.json) || {};\nconst tasks = Array.isArray(src.tasks_with_skills) ? src.tasks_with_skills\n  : (Array.isArray(src[\"unassigned tasks\"]) ? src[\"unassigned tasks\"] : []);\nconst available_teams = Array.isArray(src.available_teams) ? src.available_teams\n  : (Array.isArray(src.Teams) ? src.Teams : []);\n\nconst teamSkillMap = available_teams.map(t => {\n  const team_name = normText(t.team_name ?? t.nameCrew ?? t.name ?? \"\");\n  const address   = t.team_address ?? t.address ?? \"\";\n  const latitude  = toNumOrNull(t.team_latitude ?? t.latitude ?? t.lat);\n  const longitude = toNumOrNull(t.team_longitude ?? t.longitude ?? t.lon);\n  const skillLevels = new Map(); // нормализованное имя -> лучший (минимальный) уровень\n  for (const sk of (t.skills || [])) {\n    const { name, level } = parseTeamSkill(sk);\n    if (!name) continue;\n    if (!skillLevels.has(name)) skillLevels.set(name, level);\n    else { const prev = skillLevels.get(name); if (level != null && (prev == null || level < prev)) skillLevels.set(name, level); }\n  }\n  return { name: team_name, team_name, address, latitude, longitude, skillLevels, raw: t };\n});\n\nconst taskReqCache = new Map();\nfunction requiredSkillsOfTask(task) {\n  if (taskReqCache.has(task)) return taskReqCache.get(task);\n  const required = (task.skills || []).map(s => normSkillName(s?.name ?? s)).filter(Boolean);\n  taskReqCache.set(task, required); return required;\n}\nfunction canTeamDoTask(team, task) {\n  const required = requiredSkillsOfTask(task);\n  if (!required.length) return false;\n  return required.every(r => team.skillLevels.has(r));\n}\n// эффективный уровень команды для задачи = худший (макс. номер) среди требуемых скиллов\nfunction teamLevelForTask(team, task) {\n  let worst = null;\n  for (const r of requiredSkillsOfTask(task)) {\n    const lv = team.skillLevels.get(r);\n    if (lv == null) continue;\n    worst = (worst == null) ? lv : Math.max(worst, lv);\n  }\n  return worst; // null = уровень неизвестен\n}\nfunction pickTaskGeo(t) {\n  const p = t.project || {};\n  return { address: p.project_address ?? p.address ?? t.address ?? null,\n    latitude: toNumOrNull(p.project_latitude ?? t.latitude),\n    longitude: toNumOrNull(p.project_longitude ?? t.longitude) };\n}\nfunction findEligibleTeams(task) {\n  const matches = [];\n  for (const team of teamSkillMap) {\n    if (canTeamDoTask(team, task)) matches.push({\n      optional_team_name: team.name, optional_team_address: team.address,\n      optional_teamlatitude: team.latitude, optional_team_longitude: team.longitude,\n      optional_team_level: teamLevelForTask(team, task), // 1 = высший приоритет\n    });\n  }\n  return matches.sort((a, b) => { // уровень 1 первым, null в конец, затем по имени\n    const la = a.optional_team_level == null ? Infinity : a.optional_team_level;\n    const lb = b.optional_team_level == null ? Infinity : b.optional_team_level;\n    if (la !== lb) return la - lb;\n    return normText(a.optional_team_name).localeCompare(normText(b.optional_team_name));\n  });\n}\nfunction findEligibleTasks(team) {\n  const matches = [];\n  for (const t of tasks) {\n    if (canTeamDoTask(team, t)) {\n      const geo = pickTaskGeo(t); const firstLine = String(t.description || \"\").split(\"\\n\")[0] || \"\";\n      matches.push({\n        optional_task_id: t.id ?? t.project?.id ?? null,\n        optional_task_title: t.title ?? t[\"Task Title\"] ?? normText(firstLine),\n        optional_task_address: geo.address, optional_task_latitude: geo.latitude,\n        optional_task_longitude: geo.longitude, optional_task_priority: t.priority ?? t.Priority ?? null,\n        optional_task_duration: t.estimated_duration ?? t.duration ?? t.Duration ?? null,\n        optional_task_level: teamLevelForTask(team, t),\n      });\n    }\n  }\n  return matches.sort((a, b) => normText(a.optional_task_title ?? \"\").localeCompare(normText(b.optional_task_title ?? \"\")));\n}\n\nconst tasks_with_optional_teams = tasks.map(t => ({ ...t, optional_team: findEligibleTeams(t) }));\nconst teams_with_optional_tasks = teamSkillMap.map(team => ({\n  name: team.name, address: team.address, latitude: team.latitude, longitude: team.longitude,\n  optional_tasks: findEligibleTasks(team),\n})).sort((a, b) => normText(a.name).localeCompare(normText(b.name)));\n\nreturn [{ json: { tasks_with_optional_teams, teams_with_optional_tasks } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        -32
+      ],
+      "id": "e4172f18-e007-4f4d-bfd7-c2f2aedcc75c",
+      "name": "unassigned tasks with optional teams"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "400b450e-6293-49dc-b3ca-d36bab878109",
+              "name": "unassigned tasks",
+              "value": "={{ $json.output.tasks_with_skills }}",
+              "type": "array"
+            },
+            {
+              "id": "af4927ac-8f83-4477-a08d-2a8497d12e3a",
+              "name": "assigned tasks",
+              "value": "={{ $('filter unassigned tasks').item.json.assigned }}",
+              "type": "array"
+            },
+            {
+              "id": "fb6469b7-39eb-40f9-815a-98c459b9f97e",
+              "name": "available_teams",
+              "value": "={{ $('filter unavailable').item.json.Teams }}",
+              "type": "array"
+            },
+            {
+              "id": "1bcf29c2-999c-4bea-b5ee-7777de7c1d7d",
+              "name": "tasks_with_skills_comment",
+              "value": "={{ $json.output.meta.notes }}",
+              "type": "string"
+            },
+            {
+              "id": "86b23fbf-34bd-4b5f-a77a-de4fe6ac21aa",
+              "name": "tasks_with_skills",
+              "value": "={{ $json.output.tasks_with_skills }}",
+              "type": "array"
+            },
+            {
+              "id": "3fbe1a55-5d6c-4280-a69a-03b705159f37",
+              "name": "=frontend overrides",
+              "value": "=1: {{ $('Webhook').item.json.body['Persistent Prompt'] }}\n2: {{ $('Webhook').item.json.body['One-time Prompt'] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        592,
+        -48
+      ],
+      "id": "9f7c88b6-46c8-412f-b1c4-50e4bcd96630",
+      "name": "Fields"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "db90fa81-492b-4129-ac65-724aa3705a3b",
+              "name": "Other tasks Agent",
+              "value": "={{ $json.output }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2064,
+        -32
+      ],
+      "id": "b492a2a3-fb2d-42a2-8bd9-1c90500167bc",
+      "name": "Edit Fields3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// helper: безопасное клонирование JSON-структур\nconst clone = (o) => JSON.parse(JSON.stringify(o));\n\nconst main = clone($input.first().json);\nmain.output = main.output ?? {};\n\n// --- comments из первого агента (ИМЯ ДОЛЖНО СОВПАДАТЬ!) ---\nlet comments1 = {};\ntry {\n  const items1 = $items('Assigned tasks Agent', 0, 0) || []; \n  const c1 = items1[0]?.json?.output?.comments;\n  comments1 = (c1 && typeof c1 === 'object' && !Array.isArray(c1)) ? c1 : {};\n} catch (e) {\n  comments1 = {};\n}\n\n// --- comments из второго агента (это текущий вход) ---\nconst c2 = main.output?.comments;\nconst comments2 = (c2 && typeof c2 === 'object' && !Array.isArray(c2)) ? c2 : {};\n\n// --- складываем отдельно ---\nmain.output['commentsAI-1'] = comments1;\nmain.output['commentsAI-2'] = comments2;\n\n// (опционально) убрать старый output.comments, чтобы не путал downstream-схемы\ndelete main.output.comments;\n\n// вернуть обновлённый первый + остальные входные, чтобы их не потерять\nconst rest = $input.all().slice(1);\nreturn [{ json: main }, ...rest];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        -32
+      ],
+      "id": "04421f4f-8575-4948-9348-f9184acd105b",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "AI_teams_schedule",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "request_ID",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook').item.json.body.request_ID }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "output_data",
+              "fieldValue": "={{ $json['Other tasks Agent'] }}"
+            },
+            {
+              "fieldId": "request_ID",
+              "fieldValue": "={{ $('Webhook').item.json.body.request_ID }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2384,
+        -32
+      ],
+      "id": "0ebd037f-99de-48ff-a378-27c7b25b388d",
+      "name": "Update a row",
+      "credentials": {
+        "supabaseApi": {
+          "id": "lvU01FywVSvseCiB",
+          "name": "basement"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n    \"type\": \"object\",\n    \"properties\": {\n      \"output\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"tasks_with_skills\": {\n            \"type\": \"array\",\n            \"items\": {\n              \"type\": \"object\",\n              \"properties\": {\n                \"id\": { \"type\": \"string\" },\n                \"description\": { \"type\": \"string\" },\n                \"estimated_duration\": { \"type\": [\"string\", \"number\"] },\n                \"project\": {\n                  \"type\": \"object\",\n                  \"properties\": {\n                    \"project_address\": { \"type\": \"string\" },\n                    \"project_name\": { \"type\": \"string\" },\n                    \"project_id\": { \"type\": \"string\" },\n                    \"project_latitude\": { \"type\": [\"string\", \"number\"] },\n                    \"project_longitude\": { \"type\": [\"string\", \"number\"] }\n                  }\n                },\n                \"scheduled_time\": {\n                  \"type\": \"object\",\n                  \"properties\": {\n                    \"type\": { \"type\": \"string\" },\n                    \"start\": { \"type\": \"string\" },\n                    \"end\": { \"type\": \"string\" }\n                  }\n                },\n                \"skills\": {\n                  \"type\": \"array\",\n                  \"items\": {\n                    \"type\": \"object\",\n                    \"properties\": {\n                      \"name\": { \"type\": \"string\" }\n                    },\n                    \"required\": [\"name\"]\n                  }\n                }\n              },\n              \"required\": [\"id\", \"skills\"]\n            }\n          },\n          \"meta\": {\n            \"type\": \"object\",\n            \"properties\": {\n              \"skills_coverage_percent\": { \"type\": \"number\" },\n              \"notes\": { \"type\": \"string\" }\n            }\n          }\n        },\n        \"required\": [\"tasks_with_skills\"]\n      }\n    },\n    \"required\": [\"output\"]\n  }"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        400,
+        192
+      ],
+      "id": "66051480-5582-4637-9663-a3795c60adab",
+      "name": "Structured Output Parser1"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"schedule\": [\n    {\n      \"team_id\": \"string\",\n      \"team_name\": \"string\",\n      \"date\": \"YYYY-MM-DD\",\n      \"timezone\": \"America/New_York\",\n      \"team_home_base\": \"string\",\n      \"workday_start_time\": \"HH:MM\",\n      \"workday_end_time\": \"HH:MM\",\n      \"morning_commute_minutes\": 0,\n      \"end_of_day_commute_minutes\": 0,\n      \"total_working_minutes\": 0,\n      \"day_length_category\": \"normal\",\n      \"tasks\": [\n        {\n          \"scheduled_order\": 1,\n          \"task_id\": \"string\",\n          \"project_id\": \"string\",\n          \"project_name\": \"string\",\n          \"project_address\": \"string\",\n          \"description\": \"string\",\n          \"anchor\": false,\n          \"anchor_time\": \"HH:MM\",\n          \"start_time\": \"HH:MM\",\n          \"end_time\": \"HH:MM\",\n          \"duration_minutes\": 0,\n          \"drive_minutes_from_previous\": 0\n        }\n      ],\n      \"summary\": {\n        \"total_tasks\": 0,\n        \"total_travel_in_day_minutes\": 0,\n        \"compliance\": {\n          \"anchors_preserved\": true,\n          \"no_overlaps\": true,\n          \"all_tasks_scheduled\": true\n        }\n      }\n    }\n  ],\n  \"comments\": {\n  \"anchor_conflicts_resolved\": [\n    {\n      \"team_id\": \"<TEAM_ID>\",                        \n      \"team_name\": \"<TEAM_NAME>\",                  \n      \"anchors\": [\n        { \"task_id\": \"<ANCHOR_TASK_ID>\", \"anchor_time\": \"<HH:MM>\", \"status\": \"locked\" }\n      ],\n      \"notes\": \"anchor <ANCHOR_TASK_ID> @ <HH:MM> locked; pre_anchor_inserted:<yes|no>; reason:<insufficient_time|risk_of_overlap|distance>; post_anchor_sequence:[<TASK_ID_1>,<TASK_ID_2>]; overlap:none\"\n    }\n  ],\n  \"overtime_notes\": \"\",\n  \"travel_time_methodology\": \"\",\n  \"first_task_rationale\": {}\n}\n\n}\n"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1152,
+        224
+      ],
+      "id": "e3dad5a0-dade-4a9a-a133-5031dd913dea",
+      "name": "Structured Output Parser2"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"schedule\": [\n    {\n      \"team_id\": \"string\",\n      \"team_name\": \"string\",\n      \"date\": \"YYYY-MM-DD\",\n      \"timezone\": \"America/New_York\",\n      \"team_home_base\": \"string\",\n      \"workday_start_time\": \"HH:MM\",\n      \"workday_end_time\": \"HH:MM\",\n      \"morning_commute_minutes\": 0,\n      \"end_of_day_commute_minutes\": 0,\n      \"total_working_minutes\": 0,\n      \"day_length_category\": \"normal\",\n      \"overtime\": false,\n      \"tasks\": [\n        {\n          \"scheduled_order\": 1,\n          \"task_id\": \"string\",\n          \"project_id\": \"string\",\n          \"project_name\": \"string\",\n          \"project_address\": \"string\",\n          \"description\": \"string\",\n          \"anchor\": false,\n          \"anchor_time\": \"HH:MM\",\n          \"start_time\": \"HH:MM\",\n          \"end_time\": \"HH:MM\",\n          \"duration_minutes\": 0,\n          \"drive_minutes_from_previous\": 0\n        }\n      ],\n      \"summary\": {\n        \"total_tasks\": 0,\n        \"total_travel_in_day_minutes\": 0,\n        \"compliance\": {\n          \"anchors_preserved\": true,\n          \"no_overlaps\": true,\n          \"all_tasks_scheduled\": true\n        }\n      }\n    }\n  ],\n  \"comments\": {\n    \"inserted\": [\n      {\n        \"task_id\": \"string\",\n        \"team_id\": \"string\",\n        \"placement\": \"insert\",          \n        \"placed_between\": {              \n          \"prev_task_id\": \"string\",\n          \"next_task_id\": \"string\"\n        },\n        \"start_time\": \"HH:MM\",\n        \"end_time\": \"HH:MM\",\n        \"added_drive_minutes\": 0,\n        \"overtime_after_minutes\": 0\n      }\n    ],\n    \"unscheduled\": [\n      {\n        \"task_id\": \"string\",\n        \"reason\": \"no_feasible_gap\"      \n      }\n    ],\n    \"anchor_conflicts_resolved\": [\n      {\n        \"team_id\": \"<TEAM_ID>\",\n        \"team_name\": \"<TEAM_NAME>\",\n        \"anchors\": [\n          { \"task_id\": \"<ANCHOR_TASK_ID>\", \"anchor_time\": \"<HH:MM>\", \"status\": \"locked\" }\n        ],\n        \"notes\": \"anchor <ANCHOR_TASK_ID> @ <HH:MM> locked; pre_anchor_inserted:<yes|no>; reason:<insufficient_time|risk_of_overlap|distance>; post_anchor_sequence:[<TASK_ID_1>,<TASK_ID_2>]; overlap:none\"\n      }\n    ],\n    \"overtime_notes\": \"\",\n    \"travel_time_methodology\": \"\",\n    \"first_task_rationale\": {}\n  }\n}\n"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1504,
+        256
+      ],
+      "id": "b856e7d3-c1cb-49e9-8cd4-da7170277e2d",
+      "name": "Structured Output Parser3"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=// SYSTEM PROMPT — ROUTE & DAILY SCHEDULE BUILDER (STRICT, TEAM-STABLE)\n// Determinism: temperature=0; top_p=1\n// NEVER rename keys. NEVER omit required keys. NEVER add extra keys.\n// OUTPUT: JSON only. No prose, no markdown.\n// \"schedule\" MUST be an ARRAY of team objects (do NOT use an object keyed by team_id).\n\nROLE\nYou are a deterministic ROUTE & DAILY SCHEDULE BUILDER for construction/remodeling teams.\nYou receive already ASSIGNED tasks and must build per-team day routes/timelines with realistic drive times, respecting anchors, and producing a strict JSON output.\n\nPRIME DIRECTIVES\n1) Every input task must appear EXACTLY ONCE in the output, under ITS OWN team only.\n2) Do NOT move tasks between teams. Do NOT change task IDs or durations. Do NOT invent tasks/fields.\n3) Anchors are immovable and cannot be overlapped.\n\nINPUT\nYou will receive one JSON array of tasks (already assigned to teams):\n{{ JSON.stringify($('filter unassigned tasks').item.json.assigned) }}\nEach task includes: id, description, estimated_duration (hours), priority, scheduled_date, scheduled_time {type: \"exact\"|\"timeframe\", time?}, project {...}, team {...}.\nAssume timezone \"America/New_York\" unless provided otherwise.\nFRONTEND_OVERRIDES (optional)\nYou may receive extra instructions from the frontend.\n- An optional JSON object: {{ JSON.stringify( $('Fields').item.json['frontend overrides']|| {}) }}\n\nPrecedence: hard invariants (anchors, identity, no-overlap) > frontend_overrides/notes > defaults.\nRULES\n\n1) ANCHOR HANDLING (PRIORITY STEP)\n- Tasks with scheduled_time.type == \"exact\" are anchors.\n- Anchors are IMMUTABLE. The output start_time MUST equal scheduled_time.time for that task.\n- No anchor may be shifted/extended/shortened or overlapped by any other task.\n- For a flexible task, before an upcoming anchor, place it ONLY IF (prev→task drive + task duration + task→anchor drive) fits entirely BEFORE the anchor. Otherwise push it strictly AFTER the anchor.\n\n2) FIRST TASK SELECTION (PER TEAM)\n- If the earliest anchor is before 07:00, it MUST be first even if earlier than normal hours.\n- Otherwise, morning anchors (≥07:00) take precedence unless a shorter flexible task fully fits before them (including all required drives).\n- If no anchors exist, choose as first the task NEAREST to the team’s home base.\n- morning_commute_minutes = drive from team home base → first task (NOT counted as working time).\n\n3) DRIVING TIME CALCULATION\n- No matrix is provided. Estimate REALISTIC, ROUTE-BASED driving times for DC/MD/VA with time-of-day traffic.\n- Never use straight-line distance or fixed constants.\n- Same-address back-to-back: drive_minutes_from_previous = 0.\n\n4) WORKDAY DEFINITION\n- Workday starts at arrival to the FIRST task; ends at completion of the LAST task.\n- end_of_day_commute_minutes = last task → team home base (NOT part of working time).\n- All INTER-TASK travel during the day IS working time.\n\n5) TASK ORDERING (PER TEAM)\n- After anchors are set, insert flexible tasks to:\n  (1) Minimize added travel time,\n  (2) Respect anchors & feasibility,\n  (3) Use priority as tiebreaker.\n- Never allow two tasks for the same team to overlap.\n\n6) DAY LENGTH\n- ≤ 480 min (≤ 8h)  → day_length_category = \"normal\",           overtime = false\n- 481–600 min (8–10h) → day_length_category = \"overtime_8_to_10\", overtime = true\n- > 600 min (>10h)    → day_length_category = \"overtime_over_10\",  overtime = true (flag in comments)\n\nOUTPUT FORMAT  (JSON only)\n\nTop-level keys: \"schedule\" and \"comments\".\n{ \"schedule\": [ ... ], \"comments\": { ... } }\n\nA) schedule  (ARRAY — one object per team)\nEach team object MUST include:\n- team_id, team_name, date, timezone (\"America/New_York\"),\n- team_home_base (team address from input),\n- workday_start_time, workday_end_time,\n- morning_commute_minutes, end_of_day_commute_minutes,\n- total_working_minutes, day_length_category, overtime,\n- tasks (ARRAY; strictly sorted by start_time),\n- summary.\n\nEach task object MUST include (MANDATORY):\n- scheduled_order  (1..N ascending with no gaps),\n- task_id          (USE input \"id\" EXACTLY; do NOT use \"id\" field name in output),\n- project_id, project_name, project_address,\n- description      (verbatim from input; keep punctuation/newlines),\n- anchor           (boolean),\n- anchor_time      (\"HH:MM\" if anchor=true, otherwise \"\"),\n- start_time, end_time (\"HH:MM\"),\n- duration_minutes (estimated_duration * 60, integer),\n- drive_minutes_from_previous (0 for first task; otherwise realistic route time).\n\nsummary:\n- total_tasks,\n- total_travel_in_day_minutes (sum drive_minutes_from_previous for tasks 2..N),\n- compliance: { anchors_preserved: bool, no_overlaps: bool, all_tasks_scheduled: bool }\n\nB) comments  (OBJECT, required)\n-anchor_conflicts_resolved: ARRAY of STRINGS (REQUIRED if any anchors exist)\n  • If the input contains ≥1 anchor task, this array MUST NOT be empty.\n  • Exactly ONE string per team that has ≥1 anchor task.\n  • Each string MUST mention: team name, at least one anchor task_id, and the anchor time \"HH:MM\",\n    plus a short note on why it was placed there and how other tasks were arranged around it.\n  • If there are NO anchors across all teams — return [].\n\n- overtime_notes: STRING (\"\" if none),\n- travel_time_methodology: STRING,\n- first_task_rationale: OBJECT keyed by team_id with one-line reasons.\n\nSTRICT STABILITY & CONSISTENCY GUARANTEES\n\nA) Team stability (no cross-team moves)\n- Each task MUST appear only under the team whose team_id is in its input.\n- Do NOT drop or duplicate tasks anywhere.\n\nB) Identity & verbatim fields\n- task_id = input.id EXACTLY. Do not fabricate or substitute.\n- Use project_id, project_name, project_address, description VERBATIM from input.\n\nC) Scheduled order & times\n- scheduled_order is REQUIRED for every task.\n- If anchor=true: anchor_time = scheduled_time.time AND start_time == anchor_time.\n- workday_start_time = min(task.start_time); workday_end_time = max(task.end_time).\n\nD) Totals\n- total_working_minutes = sum(all task durations) + sum(all inter-task drives).\n- total_travel_in_day_minutes = sum drive_minutes_from_previous for tasks 2..N.\n- day_length_category & overtime MUST match the totals.\n\nSELF-VALIDATION GATE (MANDATORY BEFORE OUTPUT)\nBefore emitting JSON, perform these checks and FIX internally if violated; then output the corrected schedule:\n1) Uniqueness across ALL teams: every task_id appears EXACTLY once.\n2) Team binding: each task appears under the SAME team_id as in input.\n3) Completeness: total scheduled tasks == number of input tasks.\n4) Anchors preserved: all anchors start exactly at specified time; no overlaps with anchors.\n5) No overlaps within each team (including drives).\n6) Tasks per team are sorted by start_time and numbered scheduled_order 1..N.\n7) Totals (working minutes, travel minutes, day_length_category, overtime) are consistent.\n8) timezone present for every team.\n9) Field names EXACTLY as specified; no extra/missing keys.\n10) anchor_conflicts_resolved:\n    - If any anchor exists in the input, anchor_conflicts_resolved is NON-EMPTY.\n    - The number of strings equals the number of teams with ≥1 anchor task.\n    - Every string references at least one anchor task_id of that team and its time \"HH:MM\".\n    - If no anchors exist, anchor_conflicts_resolved = [].\n\nNOTES\n- Ignore stop_number unless it naturally aligns; anchors/time feasibility dominate.\n- If commute estimates are tight, add a realistic buffer to avoid overlaps.\n\nRETURN\nOutput VALID JSON ONLY with exactly two top-level keys: \"schedule\" (ARRAY) and \"comments\".\n",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": ""
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        1008,
+        -32
+      ],
+      "id": "9155c787-6914-4771-bb74-f5d909fa84c4",
+      "name": "Assigned tasks Agent"
+    }
+  ],
+  "connections": {
+    "Other tasks Agent": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unassigned Tasks with skills": {
+      "main": [
+        [
+          {
+            "node": "Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Assigned tasks Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Other tasks Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Unassigned Tasks with skills",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Unassigned Tasks with skills",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields2": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create a row1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "filter unavailable": {
+      "main": [
+        [
+          {
+            "node": "filter unassigned tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "filter unassigned tasks": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a row1": {
+      "main": [
+        [
+          {
+            "node": "filter unavailable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "unassigned tasks with optional teams": {
+      "main": [
+        [
+          {
+            "node": "Assigned tasks Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fields": {
+      "main": [
+        [
+          {
+            "node": "unassigned tasks with optional teams",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields3": {
+      "main": [
+        [
+          {
+            "node": "Update a row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Unassigned Tasks with skills",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser2": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Assigned tasks Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser3": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Other tasks Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assigned tasks Agent": {
+      "main": [
+        [
+          {
+            "node": "Other tasks Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "929d022244983a27ae24d2507ea7c0d5b717e7a663026af4215bf9a4ed966fc6"
+  }
+}

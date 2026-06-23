@@ -4,7 +4,7 @@
  * позже без изменения UI (фаза 2).
  */
 import { supabase } from '../lib/supabase'
-import type { Project, ScheduleRun, Skill, Task, Team, TeamAvailability } from '../domain/types'
+import type { Project, ScheduleRun, Skill, Task, Team, TeamAvailability, TeamSkill } from '../domain/types'
 
 export async function fetchTasks(status?: Task['status']): Promise<Task[]> {
   if (!supabase) return []
@@ -31,8 +31,14 @@ function mapDbTask(r: Record<string, any>, teamInfo?: Map<string, { name: string
   const st = r.scheduled_time ?? null // jsonb {start,end,anchor,anchor_time}
   const isAnchor = st?.anchor === true || st?.type === 'exact'
   const proj = r.projects ?? null
-  const stop = r.additional_stop
-    ? { ...r.additional_stop, duration_min: r.additional_stop.duration_min ?? r.additional_stop_duration ?? 30 }
+  const rawStop = r.additional_stop
+  // БД хранит ключ `timing` ('before'|'after'); движок/типы ждут `when`. Нормализуем.
+  const stop = rawStop
+    ? {
+        ...rawStop,
+        when: rawStop.when ?? rawStop.timing ?? 'after',
+        duration_min: rawStop.duration_min ?? r.additional_stop_duration ?? 30,
+      }
     : null
   return {
     id: r.id,
@@ -44,7 +50,8 @@ function mapDbTask(r: Record<string, any>, teamInfo?: Map<string, { name: string
     description: r.description ?? r.title ?? '',
     scheduled_date: r.scheduled_date ?? '',
     time_type: isAnchor ? 'exact' : st?.start ? 'timeframe' : null,
-    exact_time: isAnchor ? st?.anchor_time || st?.start || null : null,
+    // exact-якорь хранится как {type:'exact', time} (новый формат) или {start/anchor_time} (старый)
+    exact_time: isAnchor ? st?.time || st?.anchor_time || st?.start || null : null,
     timeframe_start: !isAnchor ? st?.start ?? null : null,
     timeframe_end: !isAnchor ? st?.end ?? null : null,
     estimated_duration_min: Math.round((Number(r.estimated_duration) || 0) * 60), // часы → минуты
@@ -71,13 +78,27 @@ function mapDbTask(r: Record<string, any>, teamInfo?: Map<string, { name: string
 
 export async function fetchTeams(): Promise<Team[]> {
   if (!supabase) return []
-  const { data, error } = await supabase.from('teams').select('*')
-  if (error) throw error
-  // реальные колонки: address, slack_id; skills связаны отдельно (см. skills.description)
-  return (data ?? []).map((r): Team => ({
+  // скиллы команды связаны через skills.description ("Available teams: recAAA, recBBB").
+  // Тянем skills параллельно и инвертируем маппинг скилл→команды в команда→скиллы.
+  const [teamsRes, skillsRes] = await Promise.all([
+    supabase.from('teams').select('*'),
+    supabase.from('skills').select('name, description'),
+  ])
+  if (teamsRes.error) throw teamsRes.error
+  const skillsByTeam = new Map<string, TeamSkill[]>()
+  for (const s of skillsRes.data ?? []) {
+    const skill = splitSkillLevel((s as { name: string }).name)
+    for (const tid of parseAvailableTeams((s as { description: string | null }).description)) {
+      const arr = skillsByTeam.get(tid) ?? []
+      arr.push(skill)
+      skillsByTeam.set(tid, arr)
+    }
+  }
+  return (teamsRes.data ?? []).map((r): Team => ({
     id: r.id, airtable_id: r.airtable_id, name: r.name,
     home_address: r.address ?? '', lat: r.latitude, lng: r.longitude,
-    slack_user_id: r.slack_id, skills: [],
+    slack_user_id: r.slack_id,
+    skills: r.airtable_id ? skillsByTeam.get(r.airtable_id) ?? [] : [],
   }))
 }
 
@@ -89,6 +110,12 @@ export async function fetchProjects(): Promise<Project[]> {
     id: r.id, airtable_id: r.airtable_id, name: r.name, address: r.address ?? '',
     lat: r.latitude, lng: r.longitude, project_manager: r.project_manager ?? '',
   }))
+}
+
+/** "Material Handling & Staging - 2" → { name: "Material Handling & Staging", level: 2 }. */
+function splitSkillLevel(full: string): TeamSkill {
+  const m = /^(.+?)\s*-\s*(\d+)\s*$/.exec(full)
+  return m ? { name: m[1].trim(), level: Number(m[2]) } : { name: full.trim(), level: null }
 }
 
 /** "Available teams: recAAA, recBBB" в skills.description → airtable_id команд. */
@@ -172,6 +199,38 @@ export async function createTask(input: CreateTaskInput): Promise<string> {
   return (data as { id: string }).id
 }
 
+/** Поля, доступные для редактирования задачи (Edit Task). */
+export interface UpdateTaskInput {
+  title?: string
+  description?: string
+  estimated_duration_min?: number
+  priority?: number
+  scheduled_date?: string
+  address?: string
+}
+
+/** UPDATE существующей задачи (точечная правка полей). */
+export async function updateTask(id: string, input: UpdateTaskInput): Promise<void> {
+  if (!supabase) throw new Error('Supabase не настроен')
+  const row: Record<string, unknown> = {}
+  if (input.title !== undefined) row.title = input.title
+  if (input.description !== undefined) row.description = input.description
+  if (input.estimated_duration_min !== undefined) row.estimated_duration = input.estimated_duration_min / 60
+  if (input.priority !== undefined) row.priority = input.priority
+  if (input.scheduled_date !== undefined) row.scheduled_date = input.scheduled_date
+  if (input.address !== undefined) row.address = input.address
+  if (!Object.keys(row).length) return
+  const { error } = await supabase.from('tasks').update(row).eq('id', id)
+  if (error) throw error
+}
+
+/** Удаление задачи. */
+export async function deleteTask(id: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase не настроен')
+  const { error } = await supabase.from('tasks').delete().eq('id', id)
+  if (error) throw error
+}
+
 /** Массовая смена статуса задач (requested→proposed, proposed→scheduled, →archived). */
 export async function updateTasksStatus(ids: string[], status: Task['status']): Promise<void> {
   if (!ids.length) return
@@ -214,6 +273,134 @@ export async function applyScheduleToTasks(
     }
   }
   await Promise.all(updates)
+}
+
+/**
+ * Материализация результата AI как НОВЫХ строк tasks (status=proposed) — копий.
+ * Requested-задачи НЕ трогаются (остаются эталонным набором для тестов).
+ * `request_task_id` ссылается на исходную задачу. Поля берём из самого расписания.
+ */
+export async function materializeProposedCopies(
+  days: import('../domain/types').TeamDay[],
+): Promise<number> {
+  if (!supabase) throw new Error('Supabase не настроен')
+  const rows: Record<string, unknown>[] = []
+  for (const day of days) {
+    for (const t of day.tasks) {
+      const scheduled_time = t.anchor
+        ? { start: t.start_time, end: t.end_time, anchor: true, anchor_time: t.anchor_time }
+        : { start: t.start_time, end: t.end_time }
+      rows.push({
+        status: 'proposed',
+        team_id: day.team_id === 'unassigned' ? null : day.team_id,
+        project_id: t.project_id || null,
+        description: t.description ?? '',
+        task_type: 'Project task',
+        scheduled_date: day.date || null,
+        scheduled_time,
+        estimated_duration: t.duration_minutes / 60,
+        stop_number: t.scheduled_order,
+        travel_time: t.drive_minutes_from_previous,
+        address: t.project_address || null,
+        priority: 5,
+        skill_requirements: [],
+        request_task_id: t.task_id,
+      })
+    }
+  }
+  if (!rows.length) return 0
+  const { error } = await supabase.from('tasks').insert(rows)
+  if (error) throw error
+  return rows.length
+}
+
+/** Удалить все задачи заданного статуса (для кнопки «Удалить все» в Proposed). */
+export async function deleteTasksByStatus(status: Task['status']): Promise<number> {
+  if (!supabase) throw new Error('Supabase не настроен')
+  const { data, error } = await supabase.from('tasks').delete().eq('status', status).select('id')
+  if (error) throw error
+  return (data ?? []).length
+}
+
+/**
+ * Заменить набор proposed результатом расписания: снести старые proposed-копии
+ * и вставить новые. Requested остаётся нетронутым.
+ */
+export async function replaceProposedWithSchedule(
+  days: import('../domain/types').TeamDay[],
+): Promise<number> {
+  await deleteTasksByStatus('proposed')
+  return materializeProposedCopies(days)
+}
+
+/**
+ * Восстановить эталонные requested-задачи из input_tasks сохранённого прогона
+ * (по requestId, иначе самый свежий). Чинит строки, которые прошлая логика
+ * перевела в proposed и перезаписала расписанием. Возвращает число восстановленных.
+ */
+/**
+ * Тестовые якоря: чиним битые exact-задачи прошлого прогона — ставим реальные
+ * УТРЕННИЕ времена в формате, который ждёт ИИ (`{type:'exact', time}`).
+ * (Раньше: один вечерний 21:45 + два exact с пустым временем.)
+ */
+const TEST_ANCHOR_TIMES: Record<string, string> = {
+  '1b984091-621c-477e-b801-902868393d79': '09:00', // Stair Trim & Railing Install
+  '05327e6a-200e-484d-8440-9b31be8f893e': '11:00', // Build & Install Closet Framing
+  '13a699f8-a475-4594-be3a-eda65e52ebb2': '12:00', // relocate vanity light box
+}
+
+export async function restoreRequestedFromRun(requestId?: string): Promise<number> {
+  if (!supabase) throw new Error('Supabase не настроен')
+  const sel = 'request_ID, input_tasks, created_at'
+  const q = requestId
+    ? supabase.from('AI_teams_schedule').select(sel).eq('request_ID', requestId).limit(1)
+    : supabase.from('AI_teams_schedule').select(sel).order('created_at', { ascending: false }).limit(1)
+  const { data, error } = await q
+  if (error) throw error
+  const row = data?.[0] as { input_tasks?: Record<string, any>[] } | undefined
+  const tasks = row?.input_tasks ?? []
+  if (!tasks.length) return 0
+  await Promise.all(
+    tasks.map((t) =>
+      (async () => {
+        // выровненный формат якоря: {type:'exact', time}; иначе — исходный scheduled_time
+        const anchor = TEST_ANCHOR_TIMES[t.id]
+        const scheduled_time = anchor ? { type: 'exact', time: anchor } : (t.scheduled_time ?? null)
+        const { error } = await supabase!
+          .from('tasks')
+          .update({
+            status: 'requested',
+            team_id: t.team?.team_id ?? null,
+            project_id: t.project?.project_id ?? null,
+            description: t.description ?? null,
+            task_type: t.task_type ?? 'Project task',
+            priority: t.priority ?? 5,
+            scheduled_date: t.scheduled_date ?? null,
+            scheduled_time,
+            estimated_duration: t.estimated_duration ?? null,
+            skill_requirements: t.skill_requirements ?? [],
+            additional_stop: t.additional_stop ?? null,
+            schedule_prompt: t.schedule_prompt ?? null,
+            stop_number: t.stop_number ?? null,
+            travel_time: null,
+          })
+          .eq('id', t.id)
+        if (error) throw error
+      })(),
+    ),
+  )
+  return tasks.length
+}
+
+/**
+ * Подтянуть результат планировщика (по requestId/последний) и материализовать
+ * как proposed-копии. Requested не трогаем. Спасает от таймаута/refresh.
+ */
+export async function pullScheduleIntoTasks(requestId?: string): Promise<number> {
+  const run = await fetchScheduleRun(requestId)
+  const sched = run?.output_data?.schedule
+  if (!sched?.length) return 0
+  return replaceProposedWithSchedule(sched)
 }
 
 export async function fetchScheduleRun(requestId?: string): Promise<ScheduleRun | null> {

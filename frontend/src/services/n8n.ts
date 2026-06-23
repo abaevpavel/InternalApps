@@ -1,5 +1,5 @@
 /** n8n-клиент: отправка задач планировщику и расписания в Slack. */
-import type { Task, Team, TeamAvailability, Skill } from '../domain/types'
+import type { Task, Team, TeamAvailability, Skill, TeamDay } from '../domain/types'
 
 const PLANNER = import.meta.env.VITE_N8N_PLANNER_WEBHOOK as string | undefined
 const PLANNER_TEST = import.meta.env.VITE_N8N_PLANNER_TEST_WEBHOOK as string | undefined
@@ -17,10 +17,14 @@ export interface SendToAiParams {
   test?: boolean
 }
 
-/** scheduled_time по контракту прод-планировщика: {type,start,end} или null. */
+/**
+ * scheduled_time в формате, который ждёт ИИ-агент: для exact-якоря — `time`
+ * (НЕ `start`), для timeframe — окно start/end. Раньше слали `start` для exact,
+ * из-за чего был рассинхрон с промптом (он читает `scheduled_time.time`).
+ */
 function buildScheduledTime(t: Task): Record<string, string> | null {
   if (t.anchor || t.exact_time) {
-    return { type: 'exact', start: t.exact_time ?? t.anchor_time ?? '', end: '' }
+    return { type: 'exact', time: t.exact_time ?? t.anchor_time ?? '' }
   }
   if (t.timeframe_start || t.timeframe_end) {
     return { type: 'timeframe', start: t.timeframe_start ?? '', end: t.timeframe_end ?? '' }
@@ -87,6 +91,33 @@ export async function sendToAi(p: SendToAiParams): Promise<{ request_ID: string 
   })
   if (!res.ok) throw new Error(`n8n planner ${res.status}`)
   return res.json().catch(() => ({ request_ID: p.requestId }))
+}
+
+/**
+ * Сборка payload под контракт прод-воркфлоу Slack (aa6XaAQ6xuLEZRcz):
+ * `{ request_ID, timestamp, teams: [{ team_name, tasks: [...] }] }`.
+ * Внутренний tasks[] несёт поля, которые форматтер n8n кладёт в сообщение
+ * (время, проект, адрес → Google Maps link, описание).
+ */
+export function buildSlackPayload(days: TeamDay[], requestId: string, date: string) {
+  return {
+    request_ID: requestId,
+    timestamp: date,
+    teams: days
+      .filter((d) => d.tasks.length)
+      .map((d) => ({
+        team_name: d.team_name,
+        tasks: d.tasks.map((t) => ({
+          start_time: t.start_time,
+          end_time: t.end_time,
+          project_name: t.project_name,
+          project_address: t.project_address,
+          description: t.description,
+          anchor: t.anchor,
+          anchor_time: t.anchor_time,
+        })),
+      })),
+  }
 }
 
 /** Send tasks → вебхук Slack-рассыльщика. */

@@ -33,6 +33,12 @@ export interface Project {
   project_manager: string
 }
 
+/** Скилл команды с уровнем владения (1 — высший приоритет, null — без уровня). */
+export interface TeamSkill {
+  name: string
+  level: number | null
+}
+
 export interface Team {
   id: string
   airtable_id?: string
@@ -41,7 +47,7 @@ export interface Team {
   lat: number | null
   lng: number | null
   slack_user_id?: string | null
-  skills: string[]
+  skills: TeamSkill[]
 }
 
 export interface Skill {

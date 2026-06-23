@@ -14,7 +14,7 @@ export async function pollScheduleRun(
   opts: PollOptions = {},
 ): Promise<ScheduleRun> {
   const interval = opts.intervalMs ?? 2500
-  const timeout = opts.timeoutMs ?? 5 * 60 * 1000
+  const timeout = opts.timeoutMs ?? 10 * 60 * 1000
   const started = performance.now()
 
   // eslint-disable-next-line no-constant-condition

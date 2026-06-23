@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent,
+  DndContext, closestCenter, closestCorners, PointerSensor, useSensor, useSensors,
+  useDroppable, DragOverlay, type DragEndEvent, type DragOverEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext, arrayMove, useSortable, verticalListSortingStrategy,
@@ -9,16 +10,19 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   GripVertical, SquarePen, Clock, Calendar, Users, Wrench, MapPin, Loader2,
-  ArrowRight, AlertTriangle, CheckCircle2,
+  ArrowRight, AlertTriangle, CheckCircle2, Lock, LockOpen, Trash2,
 } from 'lucide-react'
 import { Button, Card, Input, Badge, StatusBadge, Modal, Tabs } from '../components/ui'
 import { cn } from '../lib/utils'
 import {
   fetchTasks, fetchTeams, fetchSkills, fetchAvailability,
-  fetchScheduleRun, updateTasksStatus, applyScheduleToTasks,
+  fetchScheduleRun, applyScheduleToTasks, pullScheduleIntoTasks,
+  replaceProposedWithSchedule, deleteTasksByStatus, restoreRequestedFromRun,
+  updateTask, deleteTask, type UpdateTaskInput,
 } from '../services/data'
-import { sendToAi, sendToSlack } from '../services/n8n'
+import { sendToAi, sendToSlack, buildSlackPayload } from '../services/n8n'
 import { pollScheduleRun } from '../services/aiPoller'
+import { setPendingRequestId, getPendingRequestId, clearPendingRequestId } from '../services/pendingRun'
 import { buildTravelMatrix, matrixProvider, edgeKey, type MatrixPoint } from '../services/maps'
 import { recomputeTeamDay, type Point } from '../domain/scheduling-engine'
 import { minToAmPm, hhmmToMin, minToHm, minToHoursLabel } from '../lib/time'
@@ -112,8 +116,6 @@ function priorityTone(p: number): { label: string; tone: 'danger' | 'warning' | 
 function Requested({ goProposed }: { goProposed: () => void }) {
   const qc = useQueryClient()
   const { data: tasks } = useQuery({ queryKey: ['tasks', 'requested'], queryFn: () => fetchTasks('requested') })
-  const [persistentPrompt, setPersistentPrompt] = useState('')
-  const [oneTimePrompt, setOneTimePrompt] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   // Send to AI: отправить задачи планировщику → поллить результат → перевести в proposed.
@@ -125,23 +127,44 @@ function Requested({ goProposed }: { goProposed: () => void }) {
         fetchTeams(), fetchSkills(), fetchAvailability(),
       ])
       const requestId = newRequestId()
+      // запоминаем запрос ДО ожидания — если поллинг прервётся (таймаут/refresh),
+      // результат можно будет подтянуть кнопкой по этому id.
+      setPendingRequestId(requestId)
       const date = list[0]?.scheduled_date ?? null
       await sendToAi({
         requestId, date, tasks: list, teams, unavailableTeams: unavailable, skills,
-        persistentPrompt: persistentPrompt || undefined,
-        oneTimePrompt: oneTimePrompt || undefined,
         test,
       })
       const run = await pollScheduleRun(requestId)
       if (run.status === 'error') throw new Error(run.error || 'AI вернул ошибку')
-      // материализуем AI-расписание в tasks (status=proposed): время, бригада,
-      // порядок, travel. Источник Proposed дальше — реальные tasks, не сырой output.
+      // материализуем AI-расписание как НОВЫЕ proposed-копии; requested-эталон
+      // НЕ трогаем (всегда остаётся для повторных тестов).
       if (run.output_data?.schedule?.length) {
-        await applyScheduleToTasks(run.output_data.schedule, 'proposed')
+        await replaceProposedWithSchedule(run.output_data.schedule)
       } else {
-        await updateTasksStatus(list.map((t) => t.id), 'proposed')
+        throw new Error('AI не вернул расписание (schedule пустой)')
       }
+      clearPendingRequestId() // результат применён — запрос больше не «висит»
       return run
+    },
+    onSuccess: () => {
+      setError(null)
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['scheduleRun'] })
+      goProposed()
+    },
+    // НЕ чистим pending на ошибке (таймаут и т.п.) — даём шанс подтянуть результат
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  })
+
+  // Восстановление: подтянуть результат «висящего» запроса (после таймаута/refresh).
+  const pendingId = getPendingRequestId()
+  const recover = useMutation({
+    mutationFn: async () => {
+      const n = await pullScheduleIntoTasks(getPendingRequestId() ?? undefined)
+      if (!n) throw new Error('Результат ещё не готов или не найден в Supabase')
+      clearPendingRequestId()
+      return n
     },
     onSuccess: () => {
       setError(null)
@@ -152,24 +175,39 @@ function Requested({ goProposed }: { goProposed: () => void }) {
     onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
   })
 
-  const busy = send.isPending
+  // Сброс тестового набора: восстановить эталонные requested-задачи из последнего
+  // прогона (input_tasks) + проставить утренние якоря 09/11/12 в формате ИИ.
+  const restore = useMutation({
+    mutationFn: async () => {
+      const n = await restoreRequestedFromRun()
+      if (!n) throw new Error('Нет сохранённого прогона с input_tasks для восстановления')
+      return n
+    },
+    onSuccess: () => {
+      setError(null)
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  })
+
+  // Удаление задачи прямо из Requested (Edit убран, Delete оставлен).
+  const del = useMutation({
+    mutationFn: (id: string) => deleteTask(id),
+    onSuccess: () => { setError(null); qc.invalidateQueries({ queryKey: ['tasks'] }) },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  })
+
+  const busy = send.isPending || recover.isPending || restore.isPending
   return (
     <div className="space-y-6">
       <Card className="p-5">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Generate Schedule</h2>
-          <Badge className="bg-gray-100 text-gray-600">{tasks?.length ?? 0} tasks</Badge>
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500">Persistent Prompt</label>
-            <Input value={persistentPrompt} onChange={(e) => setPersistentPrompt(e.target.value)}
-              placeholder="Постоянные указания планировщику" />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500">One-time Prompt</label>
-            <Input value={oneTimePrompt} onChange={(e) => setOneTimePrompt(e.target.value)}
-              placeholder="Разовое указание для этого запуска" />
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" className="text-gray-500" disabled={busy} onClick={() => restore.mutate()}>
+              {restore.isPending ? 'Восстанавливаю…' : '↺ Сбросить тестовый набор'}
+            </Button>
+            <Badge className="bg-gray-100 text-gray-600">{tasks?.length ?? 0} tasks</Badge>
           </div>
         </div>
         <div className="mt-4 flex items-center justify-between">
@@ -189,21 +227,37 @@ function Requested({ goProposed }: { goProposed: () => void }) {
         {error && <p className="mt-3 text-sm text-red-600">⚠ {error}</p>}
       </Card>
 
+      {pendingId && !send.isPending && (
+        <Card className="flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50 p-4">
+          <AlertTriangle size={18} className="text-amber-600" />
+          <span className="text-sm text-amber-800">
+            Есть незавершённый запрос AI — поллинг мог прерваться (таймаут/refresh). Результат можно подтянуть.
+          </span>
+          <Button variant="outline" className="ml-auto border-amber-300 text-amber-800"
+            disabled={recover.isPending} onClick={() => recover.mutate()}>
+            {recover.isPending ? 'Подтягиваю…' : 'Подтянуть результат AI'}
+          </Button>
+        </Card>
+      )}
+
       <div>
         <div className="mb-3 flex items-center gap-2">
           <StatusBadge tone="info">Unassigned</StatusBadge>
           <span className="text-sm text-gray-500">{tasks?.length ?? 0} tasks</span>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
-          {tasks?.map((t) => <TaskCardCompact key={t.id} t={t} />)}
+          {tasks?.map((t) => (
+            <TaskCardCompact key={t.id} t={t}
+              onDelete={() => { if (confirm(`Удалить задачу «${t.title ?? t.description}»?`)) del.mutate(t.id) }} />
+          ))}
         </div>
       </div>
     </div>
   )
 }
 
-/** Компактная карточка задачи (Requested). */
-function TaskCardCompact({ t }: { t: Task }) {
+/** Компактная карточка задачи (Requested). Только просмотр + удаление (без Edit). */
+function TaskCardCompact({ t, onDelete }: { t: Task; onDelete?: () => void }) {
   const title = t.title ?? (t.description ?? '').split('\n')[0]
   const skillCount = t.required_skill_ids?.length ?? 0
   const durH = (t.estimated_duration_min ?? 0) / 60
@@ -220,7 +274,7 @@ function TaskCardCompact({ t }: { t: Task }) {
             {[t.project_name, t.task_address, t.project_manager ? `PM: ${t.project_manager}` : null].filter(Boolean).join(' · ')}
           </div>
         </div>
-        <button className="shrink-0 text-gray-400 hover:text-gray-600" aria-label="edit"><SquarePen size={16} /></button>
+        <button onClick={onDelete} className="shrink-0 text-gray-400 hover:text-red-600" aria-label="delete"><Trash2 size={16} /></button>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-600">
@@ -242,6 +296,112 @@ function TaskCardCompact({ t }: { t: Task }) {
   )
 }
 
+/** Модалка редактирования / удаления задачи (Requested). */
+function TaskEditModal({ task, onClose, onSaved }: {
+  task: Task | null
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [form, setForm] = useState<UpdateTaskInput>({})
+  const [confirmDel, setConfirmDel] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!task) return
+    setForm({
+      title: task.title ?? '',
+      description: task.description ?? '',
+      estimated_duration_min: task.estimated_duration_min,
+      priority: task.priority,
+      scheduled_date: task.scheduled_date,
+      address: task.task_address,
+    })
+    setConfirmDel(false)
+    setError(null)
+  }, [task])
+
+  const save = useMutation({
+    mutationFn: () => updateTask(task!.id, form),
+    onSuccess: onSaved,
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  })
+  const del = useMutation({
+    mutationFn: () => deleteTask(task!.id),
+    onSuccess: onSaved,
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  })
+  const busy = save.isPending || del.isPending
+
+  const set = (patch: Partial<UpdateTaskInput>) => setForm((f) => ({ ...f, ...patch }))
+
+  return (
+    <Modal
+      open={!!task}
+      size="lg"
+      title="Edit task"
+      onClose={onClose}
+      footer={
+        <div className="flex w-full items-center justify-between">
+          <Button variant="ghost" className="text-red-600 hover:bg-red-50"
+            disabled={busy} onClick={() => setConfirmDel(true)}>
+            <span className="flex items-center gap-1"><Trash2 size={15} /> Delete</span>
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" disabled={busy} onClick={onClose}>Cancel</Button>
+            <Button variant="primary" disabled={busy} onClick={() => save.mutate()}>
+              {save.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        {confirmDel && (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <span className="flex items-center gap-2"><AlertTriangle size={16} /> Delete this task permanently?</span>
+            <div className="flex gap-2">
+              <Button variant="ghost" className="py-1" disabled={busy} onClick={() => setConfirmDel(false)}>No</Button>
+              <Button variant="danger" className="py-1" disabled={busy} onClick={() => del.mutate()}>
+                {del.isPending ? 'Deleting…' : 'Yes, delete'}
+              </Button>
+            </div>
+          </div>
+        )}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">Title</label>
+          <Input value={form.title ?? ''} onChange={(e) => set({ title: e.target.value })} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">Description</label>
+          <Input value={form.description ?? ''} onChange={(e) => set({ description: e.target.value })} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">Duration (min)</label>
+            <Input type="number" value={form.estimated_duration_min ?? 0}
+              onChange={(e) => set({ estimated_duration_min: Math.max(0, Number(e.target.value)) })} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">Priority (1–10)</label>
+            <Input type="number" value={form.priority ?? 5}
+              onChange={(e) => set({ priority: Number(e.target.value) })} />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">Date</label>
+            <Input type="date" value={form.scheduled_date ?? ''}
+              onChange={(e) => set({ scheduled_date: e.target.value })} />
+          </div>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-500">Address</label>
+          <Input value={form.address ?? ''} onChange={(e) => set({ address: e.target.value })} />
+        </div>
+        {error && <p className="text-sm text-red-600">⚠ {error}</p>}
+      </div>
+    </Modal>
+  )
+}
+
 /* ---------------- Proposed (реальные tasks со status=proposed + движок) ---------------- */
 function Proposed({ goScheduled }: { goScheduled: () => void }) {
   const qc = useQueryClient()
@@ -252,14 +412,14 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
   // последний AI-прогон — только для модалки Explain Yourself (комментарии)
   const { data: run } = useQuery({ queryKey: ['scheduleRun'], queryFn: () => fetchScheduleRun() })
   const days = useMemo<TeamDay[]>(() => buildTeamDays(tasks ?? []), [tasks])
-  const editedRef = useRef<Record<string, TeamDay>>({})
+  // актуальное (отредактированное на доске) расписание по всем бригадам — для Approve
+  const editedRef = useRef<TeamDay[]>(days)
   const [error, setError] = useState<string | null>(null)
   const [explainOpen, setExplainOpen] = useState(false)
 
   const approve = useMutation({
     mutationFn: async () => {
-      const finalDays = days.map((d) => editedRef.current[d.team_id] ?? d)
-      await applyScheduleToTasks(finalDays, 'scheduled')
+      await applyScheduleToTasks(editedRef.current, 'scheduled')
     },
     onSuccess: () => {
       setError(null)
@@ -269,8 +429,44 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
     onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
   })
 
+  // Подтянуть последний результат планировщика из Supabase и материализовать
+  // (на случай таймаута/refresh — результат не теряется).
+  const pull = useMutation({
+    mutationFn: async () => {
+      const n = await pullScheduleIntoTasks()
+      if (!n) throw new Error('Готового результата AI пока нет в Supabase')
+      clearPendingRequestId()
+      return n
+    },
+    onSuccess: () => {
+      setError(null)
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['scheduleRun'] })
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  })
+
+  // Удалить ВСЕ proposed-задачи (это копии; requested-эталон не затрагивается).
+  const wipe = useMutation({
+    mutationFn: () => deleteTasksByStatus('proposed'),
+    onSuccess: () => {
+      setError(null)
+      editedRef.current = []
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+    },
+    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+  })
+
   if (isLoading) return <p className="text-gray-500">Loading…</p>
-  if (!days.length) return <p className="text-gray-500">Нет задач со статусом proposed. Запустите Send to AI на вкладке Requested.</p>
+  if (!days.length) return (
+    <div className="space-y-3">
+      <p className="text-gray-500">Нет задач со статусом proposed. Запустите Send to AI на вкладке Requested.</p>
+      <Button variant="outline" className="text-blue-600" disabled={pull.isPending} onClick={() => pull.mutate()}>
+        {pull.isPending ? 'Подтягиваю…' : 'Подтянуть результат AI'}
+      </Button>
+      {error && <p className="text-sm text-red-600">⚠ {error}</p>}
+    </div>
+  )
 
   const total = days.reduce((s, d) => s + d.tasks.length, 0)
   return (
@@ -280,16 +476,21 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
         <Button variant="outline" className="text-blue-600" disabled={isFetching} onClick={() => refetch()}>
           {isFetching ? 'Refreshing…' : 'Fetch AI Data'}
         </Button>
+        <Button variant="outline" className="text-blue-600" disabled={pull.isPending} onClick={() => pull.mutate()}>
+          {pull.isPending ? 'Подтягиваю…' : 'Подтянуть результат AI'}
+        </Button>
         <Button variant="green" disabled={approve.isPending} onClick={() => approve.mutate()}>
           {approve.isPending ? 'Approving…' : 'Approve All'}
         </Button>
         <Button variant="outline" onClick={() => setExplainOpen(true)}>💬 Explain Yourself</Button>
+        <Button variant="outline" className="ml-auto border-red-200 text-red-600"
+          disabled={wipe.isPending}
+          onClick={() => { if (confirm(`Удалить все ${total} задач из Proposed? Requested не затрагивается.`)) wipe.mutate() }}>
+          {wipe.isPending ? 'Удаляю…' : '🗑 Удалить все'}
+        </Button>
         {error && <span className="text-sm text-red-600">⚠ {error}</span>}
       </Card>
-      {days.map((day) => (
-        <EditableTeamDay key={day.team_id} day={day}
-          onComputed={(d) => { editedRef.current[day.team_id] = d }} />
-      ))}
+      <EditableBoard days={days} onComputed={(d) => { editedRef.current = d }} />
 
       <Modal open={explainOpen} title="AI comments" onClose={() => setExplainOpen(false)} size="lg"
         footer={<Button variant="ghost" onClick={() => setExplainOpen(false)}>Close</Button>}>
@@ -301,12 +502,242 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
   )
 }
 
+/**
+ * Доска расписания: drag задач ВНУТРИ бригады И МЕЖДУ бригадами, с живым пересчётом
+ * обеих затронутых бригад (движок держит якоря). Состояние (порядок по бригадам,
+ * Duration, ручной override travel) поднято на уровень доски.
+ */
+function EditableBoard({ days, onComputed }: { days: TeamDay[]; onComputed?: (computed: TeamDay[]) => void }) {
+  const allTasks = useMemo(() => days.flatMap((d) => d.tasks), [days])
+  const byId = useMemo(() => Object.fromEntries(allTasks.map((t) => [t.task_id, t])), [allTasks])
+  const meta = useMemo(() => Object.fromEntries(days.map((d) => [d.team_id, d])), [days])
+  const teamIds = useMemo(() => days.map((d) => d.team_id), [days])
+
+  const [cols, setCols] = useState<Record<string, string[]>>(
+    () => Object.fromEntries(days.map((d) => [d.team_id, d.tasks.map((t) => t.task_id)])),
+  )
+  const [durations, setDurations] = useState<Record<string, number>>(
+    () => Object.fromEntries(allTasks.map((t) => [t.task_id, t.duration_minutes])),
+  )
+  const [overrides, setOverrides] = useState<Record<string, number>>({})
+  const [activeId, setActiveId] = useState<string | null>(null)
+
+  // ре-инициализация при новом наборе days (новый прогон / Подтянуть)
+  const sig = useMemo(
+    () => days.map((d) => d.team_id + ':' + d.tasks.map((t) => t.task_id).join(',')).join('|'),
+    [days],
+  )
+  const prevSig = useRef(sig)
+  useEffect(() => {
+    if (prevSig.current === sig) return
+    prevSig.current = sig
+    setCols(Object.fromEntries(days.map((d) => [d.team_id, d.tasks.map((t) => t.task_id)])))
+    setDurations(Object.fromEntries(allTasks.map((t) => [t.task_id, t.duration_minutes])))
+    setOverrides({})
+  }, [sig, days, allTasks])
+
+  // seed travel из чисел AI (fallback пока не приедет матрица Google)
+  const seeds = useMemo(() => {
+    const s: Record<string, Map<string, number>> = {}
+    for (const d of days) {
+      const m = new Map<string, number>()
+      d.tasks.forEach((t, i) => {
+        if (i > 0) m.set(edgeKey(d.tasks[i - 1].task_id, t.task_id), t.drive_minutes_from_previous ?? 0)
+      })
+      if (d.tasks[0]) m.set(edgeKey('home', d.tasks[0].task_id), d.morning_commute_minutes ?? 0)
+      s[d.team_id] = m
+    }
+    return s
+  }, [days])
+
+  // матрицы Google по бригадам — пересобираем при изменении состава колонок
+  const [matrices, setMatrices] = useState<Record<string, Map<string, number>>>({})
+  const colsSig = useMemo(
+    () => teamIds.map((id) => id + ':' + (cols[id] ?? []).join(',')).join('|'),
+    [cols, teamIds],
+  )
+  useEffect(() => {
+    let stale = false
+    ;(async () => {
+      for (const tid of teamIds) {
+        const m = meta[tid]
+        if (!m) continue
+        const points: MatrixPoint[] = [{ key: 'home', address: m.team_home_base }]
+        for (const id of cols[tid] ?? []) {
+          const t = byId[id]
+          if (!t) continue
+          points.push({ key: t.task_id, address: t.project_address })
+          if (t.additional_stop?.address) points.push({ key: t.additional_stop.address, address: t.additional_stop.address })
+        }
+        const departureTime = m.date ? new Date(`${m.date}T09:00:00`) : null
+        try {
+          const mx = await buildTravelMatrix(points, { departureTime })
+          if (!stale) setMatrices((prev) => ({ ...prev, [tid]: mx }))
+        } catch { /* остаёмся на seed */ }
+      }
+    })()
+    return () => { stale = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colsSig])
+
+  const computeTeam = useCallback((tid: string): TeamDay => {
+    const m = meta[tid]
+    const ordered = (cols[tid] ?? []).map((id) => byId[id]).filter(Boolean)
+    const tasks: ScheduledTask[] = ordered.map((t) => {
+      const ov = overrides[t.task_id]
+      return {
+        ...t,
+        duration_minutes: durations[t.task_id] ?? t.duration_minutes,
+        ...(ov != null
+          ? { travel_overridden: true, drive_minutes_from_previous: ov }
+          : { travel_overridden: false }),
+      }
+    })
+    const pointOf = (t: ScheduledTask): Point => ({ lat: null, lng: null, key: t.task_id })
+    const travel = matrixProvider(matrices[tid] ?? new Map(), (f, t) => seeds[tid]?.get(edgeKey(f.key ?? '', t.key ?? '')) ?? 0)
+    return recomputeTeamDay({
+      team_id: tid, team_name: m.team_name, date: m.date, timezone: m.timezone,
+      home: { lat: null, lng: null, key: 'home' }, home_address: m.team_home_base, tasks, pointOf, travel,
+    })
+  }, [cols, byId, durations, overrides, matrices, seeds, meta])
+
+  const computedDays = useMemo(() => teamIds.map((tid) => computeTeam(tid)), [teamIds, computeTeam])
+  useEffect(() => { onComputed?.(computedDays) }, [computedDays, onComputed])
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+
+  const findContainer = useCallback((id: string): string | undefined => {
+    if (cols[id]) return id
+    return teamIds.find((tid) => (cols[tid] ?? []).includes(id))
+  }, [cols, teamIds])
+
+  function onDragOver(e: DragOverEvent) {
+    const over = e.over
+    if (!over) return
+    const activeId = String(e.active.id)
+    const overId = String(over.id)
+    const from = findContainer(activeId)
+    const to = findContainer(overId)
+    if (!from || !to || from === to) return
+    setCols((prev) => {
+      const fromItems = (prev[from] ?? []).filter((id) => id !== activeId)
+      const toItems = [...(prev[to] ?? [])]
+      let idx = toItems.indexOf(overId)
+      if (idx < 0) idx = toItems.length
+      toItems.splice(idx, 0, activeId)
+      return { ...prev, [from]: fromItems, [to]: toItems }
+    })
+  }
+
+  function onDragEnd(e: DragEndEvent) {
+    setActiveId(null)
+    const over = e.over
+    if (!over) return
+    const activeId = String(e.active.id)
+    const overId = String(over.id)
+    const c = findContainer(activeId)
+    if (!c) return
+    const items = cols[c] ?? []
+    const a = items.indexOf(activeId)
+    const b = items.indexOf(overId)
+    if (a >= 0 && b >= 0 && a !== b) setCols((prev) => ({ ...prev, [c]: arrayMove(prev[c] ?? [], a, b) }))
+  }
+
+  const activeTask = activeId ? byId[activeId] : null
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCorners}
+      onDragStart={(e) => setActiveId(String(e.active.id))}
+      onDragOver={onDragOver}
+      onDragEnd={onDragEnd}
+      onDragCancel={() => setActiveId(null)}
+    >
+      <div className="space-y-4">
+        {computedDays.map((day) => (
+          <TeamColumn
+            key={day.team_id}
+            day={day}
+            ids={cols[day.team_id] ?? []}
+            durations={durations}
+            overrides={overrides}
+            onDuration={(id, v) => setDurations((d) => ({ ...d, [id]: v }))}
+            onOverride={(id, v) => setOverrides((o) => {
+              if (v == null) { const { [id]: _drop, ...rest } = o; return rest }
+              return { ...o, [id]: v }
+            })}
+          />
+        ))}
+      </div>
+      <DragOverlay>
+        {activeTask ? (
+          <div className="rounded-lg border border-accent-300 bg-white px-3 py-2 text-sm shadow-lg">
+            <b className="text-gray-900">{activeTask.description}</b>
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
+  )
+}
+
+/** Колонка одной бригады в доске: droppable-контейнер + сортируемые задачи. */
+function TeamColumn({
+  day, ids, durations, overrides, onDuration, onOverride,
+}: {
+  day: TeamDay
+  ids: string[]
+  durations: Record<string, number>
+  overrides: Record<string, number>
+  onDuration: (id: string, v: number) => void
+  onOverride: (id: string, v: number | null) => void
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: day.team_id })
+  return (
+    <Card className="p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-accent-50 px-3 py-2">
+        <span className="font-semibold text-accent-700">👥 {day.team_name}</span>
+        <Badge className="bg-gray-800 text-white">{day.tasks.length} tasks</Badge>
+        <Badge className="bg-blue-50 text-blue-700">Total: {minToHm(day.total_working_minutes)}</Badge>
+        <Badge className="bg-green-50 text-green-700">Duration: {minToHoursLabel(day.tasks.reduce((s, t) => s + t.duration_minutes, 0))}</Badge>
+        <Badge className="bg-purple-50 text-purple-700">Travel: {day.summary?.total_travel_in_day_minutes}m</Badge>
+        {day.overtime && <StatusBadge tone="danger">overtime</StatusBadge>}
+      </div>
+
+      <div ref={setNodeRef} className={cn('min-h-[48px] rounded-lg', isOver && 'bg-accent-50/60 ring-1 ring-accent-200')}>
+        <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+          <div className="space-y-2">
+            {day.tasks.map((t, i) => (
+              <SortableTaskRow
+                key={t.task_id} t={t} index={i}
+                duration={durations[t.task_id] ?? t.duration_minutes}
+                onDuration={(v) => onDuration(t.task_id, v)}
+                overridden={overrides[t.task_id] != null}
+                onTravelOverride={(v) => onOverride(t.task_id, v)}
+              />
+            ))}
+            {!day.tasks.length && (
+              <div className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-400">
+                Перетащите задачу сюда
+              </div>
+            )}
+          </div>
+        </SortableContext>
+      </div>
+
+      <p className="mt-2 text-xs text-gray-400">Перетаскивай задачи внутри и между бригадами · меняй Duration — времена пересчитываются, якоря держатся.</p>
+    </Card>
+  )
+}
+
 /** Редактируемый день: drag-and-drop + Duration → движок пересчитывает, якорь держится. */
 function EditableTeamDay({ day, onComputed }: { day: TeamDay; onComputed?: (d: TeamDay) => void }) {
   const [durations, setDurations] = useState<Record<string, number>>(
     () => Object.fromEntries(day.tasks.map((t) => [t.task_id, t.duration_minutes])),
   )
   const [order, setOrder] = useState<string[]>(() => day.tasks.map((t) => t.task_id))
+  // ручной override travel по task_id (минуты). Если задан — движок не пересчитывает это ребро.
+  const [overrides, setOverrides] = useState<Record<string, number>>({})
   // предложенный (но ещё не применённый) порядок — ждёт подтверждения в модалке
   const [pending, setPending] = useState<string[] | null>(null)
 
@@ -351,16 +782,24 @@ function EditableTeamDay({ day, onComputed }: { day: TeamDay; onComputed?: (d: T
   // чистый пересчёт дня для любого порядка
   const computeForOrder = useCallback((ord: string[]): TeamDay => {
     const ordered = ord.map((id) => byId[id]).filter(Boolean)
-    const tasks: ScheduledTask[] = ordered.map((t) => ({
-      ...t, duration_minutes: durations[t.task_id] ?? t.duration_minutes,
-    }))
+    const tasks: ScheduledTask[] = ordered.map((t) => {
+      const ov = overrides[t.task_id]
+      return {
+        ...t,
+        duration_minutes: durations[t.task_id] ?? t.duration_minutes,
+        // ручной override travel: фиксируем значение, движок его не трогает
+        ...(ov != null
+          ? { travel_overridden: true, drive_minutes_from_previous: ov }
+          : { travel_overridden: false }),
+      }
+    })
     const pointOf = (t: ScheduledTask): Point => ({ lat: null, lng: null, key: t.task_id })
     const travel = matrixProvider(matrix ?? new Map(), (f, t) => seed.get(edgeKey(f.key ?? '', t.key ?? '')) ?? 0)
     return recomputeTeamDay({
       team_id: day.team_id, team_name: day.team_name, date: day.date, timezone: day.timezone,
       home: { lat: null, lng: null, key: 'home' }, home_address: day.team_home_base, tasks, pointOf, travel,
     })
-  }, [day, durations, byId, matrix, seed])
+  }, [day, durations, byId, matrix, seed, overrides])
 
   const computed = useMemo(() => computeForOrder(order), [computeForOrder, order])
   const preview = useMemo(() => (pending ? computeForOrder(pending) : null), [computeForOrder, pending])
@@ -408,6 +847,11 @@ function EditableTeamDay({ day, onComputed }: { day: TeamDay; onComputed?: (d: T
                 key={t.task_id} t={t} index={i}
                 duration={durations[t.task_id]}
                 onDuration={(v) => setDurations((d) => ({ ...d, [t.task_id]: v }))}
+                overridden={overrides[t.task_id] != null}
+                onTravelOverride={(v) => setOverrides((o) => {
+                  if (v == null) { const { [t.task_id]: _, ...rest } = o; return rest }
+                  return { ...o, [t.task_id]: v }
+                })}
               />
             ))}
           </div>
@@ -584,12 +1028,14 @@ function SummaryStat({ label, delta }: { label: string; delta: number }) {
 
 /** Одна перетаскиваемая строка задачи. */
 function SortableTaskRow({
-  t, index, duration, onDuration,
+  t, index, duration, onDuration, overridden, onTravelOverride,
 }: {
   t: ScheduledTask
   index: number
   duration: number
   onDuration: (v: number) => void
+  overridden: boolean
+  onTravelOverride: (v: number | null) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: t.task_id })
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }
@@ -608,7 +1054,26 @@ function SortableTaskRow({
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         <span className="text-accent-700">Exact time: {t.anchor ? t.anchor_time : '—'}</span>
-        <span className="text-gray-600">Travel: <b className="text-gray-900">{t.drive_minutes_from_previous}</b> min</span>
+        {index === 0 ? (
+          <span className="text-gray-600">Travel: <b className="text-gray-900">0</b> min</span>
+        ) : overridden ? (
+          <span className="flex items-center gap-1 text-gray-600">Travel:
+            <Input className="w-16 py-1" type="number" value={t.drive_minutes_from_previous}
+              onChange={(e) => onTravelOverride(Math.max(0, Number(e.target.value)))} /> min
+            <button type="button" title="Manual travel — click to revert to auto"
+              className="text-accent-600 hover:text-accent-800" onClick={() => onTravelOverride(null)}>
+              <Lock size={13} />
+            </button>
+          </span>
+        ) : (
+          <span className="flex items-center gap-1 text-gray-600">Travel:
+            <b className="text-gray-900">{t.drive_minutes_from_previous}</b> min
+            <button type="button" title="Override travel manually"
+              className="text-gray-400 hover:text-accent-600" onClick={() => onTravelOverride(t.drive_minutes_from_previous)}>
+              <LockOpen size={13} />
+            </button>
+          </span>
+        )}
         <span className="text-gray-600">Time: <b className="text-gray-900">{minToAmPm(hhmmToMin(t.start_time))}</b> – {minToAmPm(hhmmToMin(t.end_time))}</span>
         <span className="flex items-center gap-1 text-gray-600">Duration:
           <Input className="w-20 py-1" type="number" value={duration}
@@ -629,7 +1094,7 @@ function Scheduled() {
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const send = useMutation({
-    mutationFn: () => sendToSlack({ schedule: days }),
+    mutationFn: () => sendToSlack(buildSlackPayload(days, newRequestId(), days[0]?.date ?? '')),
     onSuccess: () => { setSent(true); setError(null) },
     onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
   })
