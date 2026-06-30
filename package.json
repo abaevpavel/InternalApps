@@ -1,0 +1,14 @@
+{
+  "name": "internal-apps",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Internal apps monorepo for basementremodeling.com (portal + Task Planner + HR/Sales tools)",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:task-planner": "npm run dev -w daly-schedule",
+    "build:task-planner": "npm run build -w daly-schedule"
+  }
+}
