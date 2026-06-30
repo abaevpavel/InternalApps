@@ -49,4 +49,4 @@ npm run dev -w daly-schedule
 | 06-HR-Gmail Auto Sender | `apps/gmail-sender` | плейсхолдер | оценён |
 | 02-Sales-Send an Offer Email | `apps/sales-offer` | плейсхолдер | оценён |
 | 06-HR-Sync Airtable Contacts | `apps/hr-sync` | плейсхолдер | оценён |
-| 03-Production-Checklist | `apps/production-checklist` | плейсхолдер | ⚠️ ещё НЕ оценён |
+| 03-Production-Checklist | `apps/production-checklist` | плейсхолдер | ~7.5 ч марж. (сиблинг HR-Checklists) |
