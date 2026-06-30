@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Input, Textarea, Field, Select, Tabs } from '../components/ui'
-import { cn } from '../lib/utils'
-import { fetchProjects, fetchSkills, fetchTeams, createTask } from '../services/data'
+import { cn, errMsg } from '../lib/utils'
+import { fetchProjects, fetchSkills, fetchTeams, fetchTaskTypes, createTask } from '../services/data'
 import { useAuth } from '../auth/AuthProvider'
 import type { TimeType } from '../domain/types'
 
@@ -17,10 +17,11 @@ export function CreateTaskPage() {
   const projects = useQuery({ queryKey: ['projects'], queryFn: fetchProjects })
   const teams = useQuery({ queryKey: ['teams'], queryFn: fetchTeams })
   const skills = useQuery({ queryKey: ['skills'], queryFn: fetchSkills })
+  const taskTypes = useQuery({ queryKey: ['taskTypes'], queryFn: fetchTaskTypes })
 
   // поля формы
   const [projectId, setProjectId] = useState('')
-  const [taskType, setTaskType] = useState('Project task')
+  const [taskType, setTaskType] = useState('')
   const [description, setDescription] = useState('')
   const [date, setDate] = useState('')
   const [exactTime, setExactTime] = useState('')
@@ -42,10 +43,11 @@ export function CreateTaskPage() {
 
   const create = useMutation({
     mutationFn: async () => {
-      if (!description.trim()) throw new Error('Description обязателен')
-      if (!date) throw new Error('Date обязателен')
+      if (!taskType) throw new Error('Task Type is required')
+      if (!description.trim()) throw new Error('Description is required')
+      if (!date) throw new Error('Date is required')
       const hours = parseFloat(durationH)
-      if (!hours || hours <= 0) throw new Error('Duration должен быть > 0')
+      if (!hours || hours <= 0) throw new Error('Duration must be > 0')
       const proj = projects.data?.find((p) => p.id === projectId)
       await createTask({
         task_type: taskType,
@@ -70,7 +72,7 @@ export function CreateTaskPage() {
       qc.invalidateQueries({ queryKey: ['tasks'] })
       nav('/tasks')
     },
-    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setError(errMsg(e)),
   })
 
   return (
@@ -97,7 +99,8 @@ export function CreateTaskPage() {
           )}
           <Field label="Task Type" required>
             <Select value={taskType} onChange={(e) => setTaskType(e.target.value)}>
-              <option>Project task</option><option>Other task</option>
+              <option value="">Select task type…</option>
+              {taskTypes.data?.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}
             </Select>
           </Field>
         </div>

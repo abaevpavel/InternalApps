@@ -10,15 +10,15 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   GripVertical, SquarePen, Clock, Calendar, Users, Wrench, MapPin, Loader2,
-  ArrowRight, AlertTriangle, CheckCircle2, Lock, LockOpen, Trash2,
+  ArrowRight, AlertTriangle, CheckCircle2, Lock, LockOpen, Trash2, Info, RefreshCw,
 } from 'lucide-react'
 import { Button, Card, Input, Badge, StatusBadge, Modal, Tabs } from '../components/ui'
-import { cn } from '../lib/utils'
+import { cn, errMsg } from '../lib/utils'
 import {
   fetchTasks, fetchTeams, fetchSkills, fetchAvailability,
   fetchScheduleRun, applyScheduleToTasks, pullScheduleIntoTasks,
   replaceProposedWithSchedule, deleteTasksByStatus, restoreRequestedFromRun,
-  updateTask, deleteTask, type UpdateTaskInput,
+  updateTask, deleteTask, fetchSetting, type UpdateTaskInput,
 } from '../services/data'
 import { sendToAi, sendToSlack, buildSlackPayload } from '../services/n8n'
 import { pollScheduleRun } from '../services/aiPoller'
@@ -119,12 +119,13 @@ function Requested({ goProposed }: { goProposed: () => void }) {
   const [error, setError] = useState<string | null>(null)
 
   // Send to AI: отправить задачи планировщику → поллить результат → перевести в proposed.
+  // URL вебхука берём из app_settings (Админка), не из хардкода.
   const send = useMutation({
-    mutationFn: async (test: boolean) => {
+    mutationFn: async () => {
       const list = tasks ?? []
-      if (!list.length) throw new Error('Нет задач со статусом requested')
-      const [teams, skills, unavailable] = await Promise.all([
-        fetchTeams(), fetchSkills(), fetchAvailability(),
+      if (!list.length) throw new Error('No requested tasks')
+      const [teams, skills, unavailable, webhookUrl] = await Promise.all([
+        fetchTeams(), fetchSkills(), fetchAvailability(), fetchSetting('planner_webhook_url'),
       ])
       const requestId = newRequestId()
       // запоминаем запрос ДО ожидания — если поллинг прервётся (таймаут/refresh),
@@ -133,16 +134,16 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       const date = list[0]?.scheduled_date ?? null
       await sendToAi({
         requestId, date, tasks: list, teams, unavailableTeams: unavailable, skills,
-        test,
+        webhookUrl: webhookUrl ?? undefined,
       })
       const run = await pollScheduleRun(requestId)
-      if (run.status === 'error') throw new Error(run.error || 'AI вернул ошибку')
+      if (run.status === 'error') throw new Error(run.error || 'AI returned an error')
       // материализуем AI-расписание как НОВЫЕ proposed-копии; requested-эталон
       // НЕ трогаем (всегда остаётся для повторных тестов).
       if (run.output_data?.schedule?.length) {
         await replaceProposedWithSchedule(run.output_data.schedule)
       } else {
-        throw new Error('AI не вернул расписание (schedule пустой)')
+        throw new Error('AI returned no schedule (empty)')
       }
       clearPendingRequestId() // результат применён — запрос больше не «висит»
       return run
@@ -154,7 +155,7 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       goProposed()
     },
     // НЕ чистим pending на ошибке (таймаут и т.п.) — даём шанс подтянуть результат
-    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setError(errMsg(e)),
   })
 
   // Восстановление: подтянуть результат «висящего» запроса (после таймаута/refresh).
@@ -162,7 +163,7 @@ function Requested({ goProposed }: { goProposed: () => void }) {
   const recover = useMutation({
     mutationFn: async () => {
       const n = await pullScheduleIntoTasks(getPendingRequestId() ?? undefined)
-      if (!n) throw new Error('Результат ещё не готов или не найден в Supabase')
+      if (!n) throw new Error('Result not ready yet or not found in Supabase')
       clearPendingRequestId()
       return n
     },
@@ -172,7 +173,7 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       qc.invalidateQueries({ queryKey: ['scheduleRun'] })
       goProposed()
     },
-    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setError(errMsg(e)),
   })
 
   // Сброс тестового набора: восстановить эталонные requested-задачи из последнего
@@ -180,21 +181,21 @@ function Requested({ goProposed }: { goProposed: () => void }) {
   const restore = useMutation({
     mutationFn: async () => {
       const n = await restoreRequestedFromRun()
-      if (!n) throw new Error('Нет сохранённого прогона с input_tasks для восстановления')
+      if (!n) throw new Error('No saved run with input_tasks to restore')
       return n
     },
     onSuccess: () => {
       setError(null)
       qc.invalidateQueries({ queryKey: ['tasks'] })
     },
-    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setError(errMsg(e)),
   })
 
   // Удаление задачи прямо из Requested (Edit убран, Delete оставлен).
   const del = useMutation({
     mutationFn: (id: string) => deleteTask(id),
     onSuccess: () => { setError(null); qc.invalidateQueries({ queryKey: ['tasks'] }) },
-    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setError(errMsg(e)),
   })
 
   const busy = send.isPending || recover.isPending || restore.isPending
@@ -205,21 +206,17 @@ function Requested({ goProposed }: { goProposed: () => void }) {
           <h2 className="text-lg font-semibold text-gray-900">Generate Schedule</h2>
           <div className="flex items-center gap-2">
             <Button variant="ghost" className="text-gray-500" disabled={busy} onClick={() => restore.mutate()}>
-              {restore.isPending ? 'Восстанавливаю…' : '↺ Сбросить тестовый набор'}
+              {restore.isPending ? 'Resetting…' : '↺ Reset test set'}
             </Button>
             <Badge className="bg-gray-100 text-gray-600">{tasks?.length ?? 0} tasks</Badge>
           </div>
         </div>
         <div className="mt-4 flex items-center justify-between">
           <span className="text-sm text-gray-500">
-            {busy ? 'Отправка задач и ожидание AI…' : `${tasks?.length ?? 0} tasks will be analyzed`}
+            {busy ? 'Sending tasks & waiting for AI…' : `${tasks?.length ?? 0} tasks will be analyzed`}
           </span>
           <div className="flex gap-2">
-            <Button variant="outline" className="border-accent-200 text-accent-700"
-              disabled={busy || !tasks?.length} onClick={() => send.mutate(true)}>
-              Test Send to AI
-            </Button>
-            <Button variant="primary" disabled={busy || !tasks?.length} onClick={() => send.mutate(false)}>
+            <Button variant="primary" disabled={busy || !tasks?.length} onClick={() => send.mutate()}>
               {busy ? <span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Working…</span> : 'Send to AI'}
             </Button>
           </div>
@@ -231,11 +228,11 @@ function Requested({ goProposed }: { goProposed: () => void }) {
         <Card className="flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50 p-4">
           <AlertTriangle size={18} className="text-amber-600" />
           <span className="text-sm text-amber-800">
-            Есть незавершённый запрос AI — поллинг мог прерваться (таймаут/refresh). Результат можно подтянуть.
+            There's an unfinished AI request — polling may have been interrupted (timeout/refresh). You can pull the result.
           </span>
           <Button variant="outline" className="ml-auto border-amber-300 text-amber-800"
             disabled={recover.isPending} onClick={() => recover.mutate()}>
-            {recover.isPending ? 'Подтягиваю…' : 'Подтянуть результат AI'}
+            {recover.isPending ? 'Pulling…' : 'Pull AI result'}
           </Button>
         </Card>
       )}
@@ -248,7 +245,7 @@ function Requested({ goProposed }: { goProposed: () => void }) {
         <div className="grid gap-3 md:grid-cols-2">
           {tasks?.map((t) => (
             <TaskCardCompact key={t.id} t={t}
-              onDelete={() => { if (confirm(`Удалить задачу «${t.title ?? t.description}»?`)) del.mutate(t.id) }} />
+              onDelete={() => { if (confirm(`Delete task “${t.title ?? t.description}”?`)) del.mutate(t.id) }} />
           ))}
         </div>
       </div>
@@ -323,12 +320,12 @@ function TaskEditModal({ task, onClose, onSaved }: {
   const save = useMutation({
     mutationFn: () => updateTask(task!.id, form),
     onSuccess: onSaved,
-    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setError(errMsg(e)),
   })
   const del = useMutation({
     mutationFn: () => deleteTask(task!.id),
     onSuccess: onSaved,
-    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setError(errMsg(e)),
   })
   const busy = save.isPending || del.isPending
 
@@ -426,7 +423,7 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
       qc.invalidateQueries({ queryKey: ['tasks'] })
       goScheduled()
     },
-    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setError(errMsg(e)),
   })
 
   // Подтянуть последний результат планировщика из Supabase и материализовать
@@ -434,7 +431,7 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
   const pull = useMutation({
     mutationFn: async () => {
       const n = await pullScheduleIntoTasks()
-      if (!n) throw new Error('Готового результата AI пока нет в Supabase')
+      if (!n) throw new Error('No ready AI result in Supabase yet')
       clearPendingRequestId()
       return n
     },
@@ -443,7 +440,7 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
       qc.invalidateQueries({ queryKey: ['tasks'] })
       qc.invalidateQueries({ queryKey: ['scheduleRun'] })
     },
-    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setError(errMsg(e)),
   })
 
   // Удалить ВСЕ proposed-задачи (это копии; requested-эталон не затрагивается).
@@ -454,15 +451,27 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
       editedRef.current = []
       qc.invalidateQueries({ queryKey: ['tasks'] })
     },
-    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setError(errMsg(e)),
+  })
+
+  // Persist current computed schedule (Google travel + manual edits) into the
+  // proposed rows, so a page reload keeps recalculated travel and reorder.
+  const [saved, setSaved] = useState(false)
+  const save = useMutation({
+    mutationFn: () => applyScheduleToTasks(editedRef.current, 'proposed'),
+    onSuccess: () => {
+      setError(null); setSaved(true)
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+    },
+    onError: (e: unknown) => { setSaved(false); setError(errMsg(e)) },
   })
 
   if (isLoading) return <p className="text-gray-500">Loading…</p>
   if (!days.length) return (
     <div className="space-y-3">
-      <p className="text-gray-500">Нет задач со статусом proposed. Запустите Send to AI на вкладке Requested.</p>
+      <p className="text-gray-500">No proposed tasks. Run Send to AI on the Requested tab.</p>
       <Button variant="outline" className="text-blue-600" disabled={pull.isPending} onClick={() => pull.mutate()}>
-        {pull.isPending ? 'Подтягиваю…' : 'Подтянуть результат AI'}
+        {pull.isPending ? 'Pulling…' : 'Pull AI result'}
       </Button>
       {error && <p className="text-sm text-red-600">⚠ {error}</p>}
     </div>
@@ -477,7 +486,11 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
           {isFetching ? 'Refreshing…' : 'Fetch AI Data'}
         </Button>
         <Button variant="outline" className="text-blue-600" disabled={pull.isPending} onClick={() => pull.mutate()}>
-          {pull.isPending ? 'Подтягиваю…' : 'Подтянуть результат AI'}
+          {pull.isPending ? 'Pulling…' : 'Pull AI result'}
+        </Button>
+        <Button variant="outline" className="text-blue-600" disabled={save.isPending}
+          onClick={() => save.mutate()}>
+          {save.isPending ? 'Saving…' : saved ? '✓ Saved' : 'Save changes'}
         </Button>
         <Button variant="green" disabled={approve.isPending} onClick={() => approve.mutate()}>
           {approve.isPending ? 'Approving…' : 'Approve All'}
@@ -485,19 +498,103 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
         <Button variant="outline" onClick={() => setExplainOpen(true)}>💬 Explain Yourself</Button>
         <Button variant="outline" className="ml-auto border-red-200 text-red-600"
           disabled={wipe.isPending}
-          onClick={() => { if (confirm(`Удалить все ${total} задач из Proposed? Requested не затрагивается.`)) wipe.mutate() }}>
-          {wipe.isPending ? 'Удаляю…' : '🗑 Удалить все'}
+          onClick={() => { if (confirm(`Delete all ${total} tasks from Proposed? Requested is not affected.`)) wipe.mutate() }}>
+          {wipe.isPending ? 'Deleting…' : '🗑 Delete all'}
         </Button>
         {error && <span className="text-sm text-red-600">⚠ {error}</span>}
       </Card>
       <EditableBoard days={days} onComputed={(d) => { editedRef.current = d }} />
 
-      <Modal open={explainOpen} title="AI comments" onClose={() => setExplainOpen(false)} size="lg"
+      <Modal open={explainOpen} title="AI reasoning — how the schedule was built" onClose={() => setExplainOpen(false)} size="lg"
         footer={<Button variant="ghost" onClick={() => setExplainOpen(false)}>Close</Button>}>
-        <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs text-gray-600">
-          {JSON.stringify({ comments_ai_1: run?.comments_ai_1, comments_ai_2: run?.comments_ai_2 }, null, 2)}
-        </pre>
+        <ExplainComments ai1={run?.comments_ai_1} ai2={run?.comments_ai_2} days={days} />
       </Modal>
+    </div>
+  )
+}
+
+/** Человекочитаемый разбор комментариев ИИ (route builder + inserter). */
+function ExplainComments({ ai1, ai2, days }: { ai1: unknown; ai2: unknown; days: TeamDay[] }) {
+  const [raw, setRaw] = useState(false)
+  const taskName = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const d of days) for (const t of d.tasks) m.set(t.task_id, (t.description || '').split('\n')[0].trim() || t.task_id.slice(0, 8))
+    return m
+  }, [days])
+  const teamName = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const d of days) m.set(d.team_id, d.team_name)
+    return m
+  }, [days])
+  // резолв id→имя; если ключ уже имя (ИИ так делает в first_task_rationale) — отдаём как есть
+  const tN = (id?: string) => (id && taskName.get(id)) || id || ''
+  const teamN = (id?: string) => (id && teamName.get(id)) || id || ''
+
+  const a1 = (ai1 && typeof ai1 === 'object' ? ai1 : {}) as Record<string, any>
+  const a2 = (ai2 && typeof ai2 === 'object' ? ai2 : {}) as Record<string, any>
+  const inserted: any[] = Array.isArray(a2.inserted) ? a2.inserted : []
+  const unscheduled: any[] = Array.isArray(a2.unscheduled) ? a2.unscheduled : []
+  const anchors: any[] = Array.isArray(a1.anchor_conflicts_resolved) ? a1.anchor_conflicts_resolved : []
+  const firstTask: Record<string, unknown> = (a1.first_task_rationale && typeof a1.first_task_rationale === 'object') ? a1.first_task_rationale : {}
+  const notes = [a1.overtime_notes, a1.travel_time_methodology, a2.travel_time_methodology].filter((x) => typeof x === 'string' && x.trim()) as string[]
+  const empty = !inserted.length && !unscheduled.length && !anchors.length && !Object.keys(firstTask).length && !notes.length
+
+  if (raw) return (
+    <div>
+      <button className="mb-2 text-xs text-blue-600" onClick={() => setRaw(false)}>← back to readable</button>
+      <pre className="max-h-80 overflow-auto whitespace-pre-wrap text-xs text-gray-600">{JSON.stringify({ comments_ai_1: ai1, comments_ai_2: ai2 }, null, 2)}</pre>
+    </div>
+  )
+  if (empty) return <p className="text-gray-500">No AI reasoning available for this run. <button className="text-blue-600 underline" onClick={() => setRaw(true)}>view raw</button></p>
+
+  return (
+    <div className="max-h-[28rem] space-y-4 overflow-auto text-sm">
+      <section>
+        <h4 className="mb-1.5 font-semibold text-gray-800">📌 Placed unassigned tasks ({inserted.length})</h4>
+        {inserted.length ? (
+          <ul className="space-y-1.5">
+            {inserted.map((x, i) => (
+              <li key={i} className="rounded-md bg-gray-50 px-3 py-2 text-gray-700">
+                <b className="text-gray-900">{tN(x.task_id)}</b> → <b className="text-accent-700">{teamN(x.team_id)}</b>
+                <span className="text-gray-500">{x.placement ? ` · ${x.placement}` : ''}{x.added_drive_minutes != null ? ` · +${x.added_drive_minutes}m drive` : ''}{x.score != null ? ` · score ${x.score}` : ''}{x.overtime_after ? ` · +${x.overtime_after}m overtime` : ''}</span>
+                {x.placed_between && (x.placed_between.prev_task_id || x.placed_between.next_task_id) && (
+                  <div className="text-xs text-gray-400">between «{tN(x.placed_between.prev_task_id) || '—'}» and «{tN(x.placed_between.next_task_id) || '—'}»</div>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : <p className="text-gray-400">—</p>}
+      </section>
+
+      {unscheduled.length > 0 && (
+        <section>
+          <h4 className="mb-1.5 font-semibold text-red-700">⚠ Could not schedule ({unscheduled.length})</h4>
+          <ul className="space-y-1">{unscheduled.map((x, i) => <li key={i} className="text-red-600"><b>{tN(x.task_id)}</b> — {x.reason}{x.notes ? ` (${x.notes})` : ''}</li>)}</ul>
+        </section>
+      )}
+
+      {anchors.length > 0 && (
+        <section>
+          <h4 className="mb-1.5 font-semibold text-gray-800">⚓ Anchor handling</h4>
+          <ul className="list-disc space-y-1 pl-5 text-gray-600">{anchors.map((a, i) => <li key={i}>{typeof a === 'string' ? a : (a?.notes || JSON.stringify(a))}</li>)}</ul>
+        </section>
+      )}
+
+      {Object.keys(firstTask).length > 0 && (
+        <section>
+          <h4 className="mb-1.5 font-semibold text-gray-800">🚩 First task per team</h4>
+          <ul className="space-y-1 text-gray-600">{Object.entries(firstTask).map(([tid, r]) => <li key={tid}><b className="text-accent-700">{teamN(tid)}</b>: {String(r)}</li>)}</ul>
+        </section>
+      )}
+
+      {notes.length > 0 && (
+        <section>
+          <h4 className="mb-1.5 font-semibold text-gray-800">📝 Notes</h4>
+          <ul className="space-y-1 text-gray-500">{notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+        </section>
+      )}
+
+      <button className="text-xs text-gray-400 underline hover:text-gray-600" onClick={() => setRaw(true)}>view raw JSON</button>
     </div>
   )
 }
@@ -507,6 +604,23 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
  * обеих затронутых бригад (движок держит якоря). Состояние (порядок по бригадам,
  * Duration, ручной override travel) поднято на уровень доски.
  */
+/** Время выезда, под которое Google считает трафик (один на день бригады). */
+const TRAFFIC_DEPARTURE_HHMM = '09:00'
+
+/** Провенанс задачи: travel ИИ→текущий + откуда, и ручные перемещения. */
+interface TaskProv {
+  aiDrive: number
+  curDrive: number
+  source: 'first' | 'manual' | 'google' | 'ai'
+  departBasis?: string
+  origTeam?: string
+  curTeam?: string
+  teamChanged: boolean
+  origOrder?: number
+  curOrder?: number
+  orderChanged: boolean
+}
+
 function EditableBoard({ days, onComputed }: { days: TeamDay[]; onComputed?: (computed: TeamDay[]) => void }) {
   const allTasks = useMemo(() => days.flatMap((d) => d.tasks), [days])
   const byId = useMemo(() => Object.fromEntries(allTasks.map((t) => [t.task_id, t])), [allTasks])
@@ -521,6 +635,9 @@ function EditableBoard({ days, onComputed }: { days: TeamDay[]; onComputed?: (co
   )
   const [overrides, setOverrides] = useState<Record<string, number>>({})
   const [activeId, setActiveId] = useState<string | null>(null)
+  // явный пересчёт travel через Google: bump → effect перестраивает матрицы
+  const [recalcKey, setRecalcKey] = useState(0)
+  const [recalcLoading, setRecalcLoading] = useState(false)
 
   // ре-инициализация при новом наборе days (новый прогон / Подтянуть)
   const sig = useMemo(
@@ -558,6 +675,7 @@ function EditableBoard({ days, onComputed }: { days: TeamDay[]; onComputed?: (co
   )
   useEffect(() => {
     let stale = false
+    setRecalcLoading(true)
     ;(async () => {
       for (const tid of teamIds) {
         const m = meta[tid]
@@ -569,16 +687,16 @@ function EditableBoard({ days, onComputed }: { days: TeamDay[]; onComputed?: (co
           points.push({ key: t.task_id, address: t.project_address })
           if (t.additional_stop?.address) points.push({ key: t.additional_stop.address, address: t.additional_stop.address })
         }
-        const departureTime = m.date ? new Date(`${m.date}T09:00:00`) : null
+        const departureTime = m.date ? new Date(`${m.date}T${TRAFFIC_DEPARTURE_HHMM}:00`) : null
         try {
           const mx = await buildTravelMatrix(points, { departureTime })
           if (!stale) setMatrices((prev) => ({ ...prev, [tid]: mx }))
         } catch { /* остаёмся на seed */ }
       }
-    })()
+    })().finally(() => { if (!stale) setRecalcLoading(false) })
     return () => { stale = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [colsSig])
+  }, [colsSig, recalcKey])
 
   const computeTeam = useCallback((tid: string): TeamDay => {
     const m = meta[tid]
@@ -603,6 +721,43 @@ function EditableBoard({ days, onComputed }: { days: TeamDay[]; onComputed?: (co
 
   const computedDays = useMemo(() => teamIds.map((tid) => computeTeam(tid)), [teamIds, computeTeam])
   useEffect(() => { onComputed?.(computedDays) }, [computedDays, onComputed])
+
+  // исходное (от ИИ) положение каждой задачи — для «было/стало»
+  const origByTask = useMemo(() => {
+    const m = new Map<string, { teamId: string; teamName: string; order: number; aiDrive: number }>()
+    for (const d of days) d.tasks.forEach((t, i) =>
+      m.set(t.task_id, { teamId: d.team_id, teamName: d.team_name, order: i + 1, aiDrive: t.drive_minutes_from_previous ?? 0 }))
+    return m
+  }, [days])
+
+  // провенанс по каждой задаче: travel ИИ→текущий (источник), смена бригады/порядка
+  const provByTask = useMemo(() => {
+    const m = new Map<string, TaskProv>()
+    for (const day of computedDays) {
+      day.tasks.forEach((t, i) => {
+        const orig = origByTask.get(t.task_id)
+        const prevId = i > 0 ? day.tasks[i - 1].task_id : 'home'
+        let source: TaskProv['source'] = 'first'
+        if (i > 0) {
+          if (overrides[t.task_id] != null) source = 'manual'
+          else source = matrices[day.team_id]?.has(edgeKey(prevId, t.task_id)) ? 'google' : 'ai'
+        }
+        m.set(t.task_id, {
+          aiDrive: orig?.aiDrive ?? 0,
+          curDrive: t.drive_minutes_from_previous,
+          source,
+          departBasis: source === 'google' ? minToAmPm(hhmmToMin(TRAFFIC_DEPARTURE_HHMM)) : undefined,
+          origTeam: orig?.teamName, curTeam: day.team_name,
+          teamChanged: !!orig && orig.teamId !== day.team_id,
+          origOrder: orig?.order, curOrder: i + 1,
+          orderChanged: !!orig && (orig.teamId !== day.team_id || orig.order !== i + 1),
+        })
+      })
+    }
+    return m
+  }, [computedDays, origByTask, overrides, matrices])
+
+  const googleActive = useMemo(() => [...provByTask.values()].some((p) => p.source === 'google'), [provByTask])
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
@@ -655,6 +810,25 @@ function EditableBoard({ days, onComputed }: { days: TeamDay[]; onComputed?: (co
       onDragCancel={() => setActiveId(null)}
     >
       <div className="space-y-4">
+        <Card className="flex flex-wrap items-center gap-3 p-3">
+          <Button variant="outline" className="text-blue-600" disabled={recalcLoading}
+            onClick={() => setRecalcKey((k) => k + 1)}>
+            <span className="flex items-center gap-1.5">
+              <RefreshCw size={14} className={cn(recalcLoading && 'animate-spin')} />
+              {recalcLoading ? 'Recalculating…' : 'Recalculate travel (Google)'}
+            </span>
+          </Button>
+          {recalcLoading ? (
+            <span className="text-xs text-gray-400">computing travel times…</span>
+          ) : googleActive ? (
+            <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle2 size={13} /> Google: real travel (with traffic)</span>
+          ) : recalcKey > 0 ? (
+            // amber только ПОСЛЕ явного пересчёта (не пугаем при загрузке страницы)
+            <span className="flex items-center gap-1 text-xs text-amber-600"><AlertTriangle size={13} /> Google unavailable — travel from AI estimate. Check key/console.</span>
+          ) : (
+            <span className="text-xs text-gray-400">travel from AI — click Recalculate for live Google times</span>
+          )}
+        </Card>
         {computedDays.map((day) => (
           <TeamColumn
             key={day.team_id}
@@ -662,6 +836,7 @@ function EditableBoard({ days, onComputed }: { days: TeamDay[]; onComputed?: (co
             ids={cols[day.team_id] ?? []}
             durations={durations}
             overrides={overrides}
+            provByTask={provByTask}
             onDuration={(id, v) => setDurations((d) => ({ ...d, [id]: v }))}
             onOverride={(id, v) => setOverrides((o) => {
               if (v == null) { const { [id]: _drop, ...rest } = o; return rest }
@@ -683,12 +858,13 @@ function EditableBoard({ days, onComputed }: { days: TeamDay[]; onComputed?: (co
 
 /** Колонка одной бригады в доске: droppable-контейнер + сортируемые задачи. */
 function TeamColumn({
-  day, ids, durations, overrides, onDuration, onOverride,
+  day, ids, durations, overrides, provByTask, onDuration, onOverride,
 }: {
   day: TeamDay
   ids: string[]
   durations: Record<string, number>
   overrides: Record<string, number>
+  provByTask: Map<string, TaskProv>
   onDuration: (id: string, v: number) => void
   onOverride: (id: string, v: number | null) => void
 }) {
@@ -711,6 +887,7 @@ function TeamColumn({
               <SortableTaskRow
                 key={t.task_id} t={t} index={i}
                 duration={durations[t.task_id] ?? t.duration_minutes}
+                prov={provByTask.get(t.task_id)}
                 onDuration={(v) => onDuration(t.task_id, v)}
                 overridden={overrides[t.task_id] != null}
                 onTravelOverride={(v) => onOverride(t.task_id, v)}
@@ -718,14 +895,14 @@ function TeamColumn({
             ))}
             {!day.tasks.length && (
               <div className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-400">
-                Перетащите задачу сюда
+                Drop a task here
               </div>
             )}
           </div>
         </SortableContext>
       </div>
 
-      <p className="mt-2 text-xs text-gray-400">Перетаскивай задачи внутри и между бригадами · меняй Duration — времена пересчитываются, якоря держатся.</p>
+      <p className="mt-2 text-xs text-gray-400">Drag tasks within and between teams · change Duration — times recompute, anchors stay fixed.</p>
     </Card>
   )
 }
@@ -922,7 +1099,7 @@ function RecalcModal({
       open={open}
       size="lg"
       title="Review schedule changes"
-      subtitle="Перестановка пересчитывает времена. Проверьте результат и подтвердите."
+      subtitle="Reordering recomputes times. Review the result and confirm."
       onClose={onCancel}
       footer={
         <>
@@ -945,7 +1122,7 @@ function RecalcModal({
             <div className="flex items-start gap-2 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2 text-accent-700">
               <AlertTriangle size={16} className="mt-0.5 shrink-0" />
               <span>
-                Перемещается задача с фиксированным <b>Exact time ({movedAnchor.anchor_time})</b>.
+                Moving a task with a fixed <b>Exact time ({movedAnchor.anchor_time})</b>.
                 Это может сломать якорь и вызвать конфликты.
               </span>
             </div>
@@ -954,14 +1131,14 @@ function RecalcModal({
           {diff.newConflicts.map((t) => (
             <div key={t.task_id} className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700">
               <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-              <span>Новый конфликт: <b>{t.description}</b> — не успеваем к якорю (+{t.conflict?.overlap_min}m).</span>
+              <span>New conflict: <b>{t.description}</b> — can't reach the anchor in time (+{t.conflict?.overlap_min}m).</span>
             </div>
           ))}
           {/* снятые конфликты */}
           {diff.resolvedConflicts.map((t) => (
             <div key={t.task_id} className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-green-700">
               <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
-              <span>Конфликт снят: <b>{t.description}</b>.</span>
+              <span>Conflict resolved: <b>{t.description}</b>.</span>
             </div>
           ))}
 
@@ -1027,12 +1204,53 @@ function SummaryStat({ label, delta }: { label: string; delta: number }) {
 }
 
 /** Одна перетаскиваемая строка задачи. */
+const SOURCE_LABEL: Record<TaskProv['source'], string> = {
+  google: 'Google (with traffic)', ai: 'AI estimate', manual: 'manual', first: 'first task (0)',
+}
+
+/** Поповер «ⓘ»: travel было/стало + ручные перемещения. */
+function TaskInfo({ prov }: { prov?: TaskProv }) {
+  if (!prov) return null
+  const delta = prov.curDrive - prov.aiDrive
+  return (
+    <div className="group relative shrink-0">
+      <button type="button" className="text-gray-300 hover:text-blue-500" aria-label="info"><Info size={15} /></button>
+      <div className="invisible absolute right-0 top-5 z-20 w-64 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg group-hover:visible">
+        <div className="mb-1 font-semibold text-gray-700">Travel</div>
+        {prov.source === 'first' ? (
+          <div className="text-gray-500">First task of the day — travel not counted (0).</div>
+        ) : (
+          <div className="text-gray-600">
+            AI: <b>{prov.aiDrive}m</b> → now: <b className="text-gray-900">{prov.curDrive}m</b>{' '}
+            {delta !== 0 && <span className={delta > 0 ? 'text-red-600' : 'text-green-600'}>({delta > 0 ? '+' : '−'}{Math.abs(delta)}m)</span>}
+            <div className="mt-0.5 text-gray-400">source: {SOURCE_LABEL[prov.source]}</div>
+            {prov.departBasis && (
+              <div className="text-gray-400">traffic basis: {prov.departBasis} (day start)</div>
+            )}
+          </div>
+        )}
+        {(prov.teamChanged || prov.orderChanged) && (
+          <>
+            <div className="mb-1 mt-2 font-semibold text-gray-700">Manual moves</div>
+            {prov.teamChanged && <div className="text-gray-600">Team: <span className="text-gray-400">{prov.origTeam}</span> → <b>{prov.curTeam}</b></div>}
+            {prov.orderChanged && <div className="text-gray-600">Order: <span className="text-gray-400">#{prov.origOrder}</span> → <b>#{prov.curOrder}</b></div>}
+          </>
+        )}
+        {!prov.teamChanged && !prov.orderChanged && prov.source !== 'first' && (
+          <div className="mt-2 text-gray-400">No manual moves.</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function SortableTaskRow({
-  t, index, duration, onDuration, overridden, onTravelOverride,
+  t, index, duration, prov, onDuration, overridden, onTravelOverride,
 }: {
   t: ScheduledTask
   index: number
   duration: number
+  prov?: TaskProv
   onDuration: (v: number) => void
   overridden: boolean
   onTravelOverride: (v: number | null) => void
@@ -1051,6 +1269,8 @@ function SortableTaskRow({
         <Badge className="bg-accent-50 text-accent-700">Project task</Badge>
         <b className="text-gray-900">{t.description}</b>
         {t.anchor && <StatusBadge tone="danger">anchor</StatusBadge>}
+        {(prov?.teamChanged || prov?.orderChanged) && <span className="text-[10px] font-medium text-blue-500">moved</span>}
+        <div className="ml-auto"><TaskInfo prov={prov} /></div>
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         <span className="text-accent-700">Exact time: {t.anchor ? t.anchor_time : '—'}</span>
@@ -1096,7 +1316,7 @@ function Scheduled() {
   const send = useMutation({
     mutationFn: () => sendToSlack(buildSlackPayload(days, newRequestId(), days[0]?.date ?? '')),
     onSuccess: () => { setSent(true); setError(null) },
-    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
+    onError: (e: unknown) => setError(errMsg(e)),
   })
   if (isLoading) return <p className="text-gray-500">Loading…</p>
   if (!days.length) return <p className="text-gray-500">No approved tasks yet.</p>
@@ -1129,10 +1349,6 @@ function Scheduled() {
                     {t.anchor && <span className="text-accent-700">Exact: {t.anchor_time} · </span>}
                     Time: {minToAmPm(hhmmToMin(t.start_time))} – {minToAmPm(hhmmToMin(t.end_time))} · {t.duration_minutes}m
                   </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" className="py-1 text-xs">Status</Button>
-                  <Button variant="outline" className="py-1 text-xs">Restore</Button>
                 </div>
               </div>
             ))}

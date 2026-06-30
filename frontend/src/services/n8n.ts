@@ -1,8 +1,8 @@
 /** n8n-клиент: отправка задач планировщику и расписания в Slack. */
 import type { Task, Team, TeamAvailability, Skill, TeamDay } from '../domain/types'
 
+// Фолбэк-дефолт; основной источник URL вебхука — настройка app_settings (Админка).
 const PLANNER = import.meta.env.VITE_N8N_PLANNER_WEBHOOK as string | undefined
-const PLANNER_TEST = import.meta.env.VITE_N8N_PLANNER_TEST_WEBHOOK as string | undefined
 const SLACK = import.meta.env.VITE_N8N_SLACK_WEBHOOK as string | undefined
 
 export interface SendToAiParams {
@@ -14,7 +14,8 @@ export interface SendToAiParams {
   skills: Skill[]
   persistentPrompt?: string
   oneTimePrompt?: string
-  test?: boolean
+  /** URL вебхука планировщика (из app_settings); если не задан — фолбэк на env. */
+  webhookUrl?: string
 }
 
 /**
@@ -67,7 +68,7 @@ function toWebhookTask(t: Task, teamsById: Map<string, Team>) {
 
 /** Send to AI → вебхук планировщика. Возвращает ack. */
 export async function sendToAi(p: SendToAiParams): Promise<{ request_ID: string }> {
-  const url = p.test ? PLANNER_TEST || PLANNER : PLANNER
+  const url = p.webhookUrl || PLANNER
   const teamsById = new Map(p.teams.map((t) => [t.id, t]))
   const payload = {
     request_ID: p.requestId,
@@ -85,7 +86,7 @@ export async function sendToAi(p: SendToAiParams): Promise<{ request_ID: string 
     total: p.tasks.length,
   }
 
-  if (!url) throw new Error('n8n planner webhook не настроен (VITE_N8N_PLANNER_WEBHOOK)')
+  if (!url) throw new Error('Planner webhook не настроен — задайте URL в Admin → Settings')
   const res = await fetch(url, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   })

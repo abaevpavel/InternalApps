@@ -1,5 +1,5 @@
 /**
- * Data-layer: единый доступ к задачам/справочникам. Если Supabase не настроен —
+ * Data-layer: единый доступ к задачам/справочникам. Если Supabase is not configured —
  * отдаёт mock-данные (каркас работает офлайн). Реальные запросы добавляются
  * позже без изменения UI (фаза 2).
  */
@@ -109,7 +109,149 @@ export async function fetchProjects(): Promise<Project[]> {
   return (data ?? []).map((r): Project => ({
     id: r.id, airtable_id: r.airtable_id, name: r.name, address: r.address ?? '',
     lat: r.latitude, lng: r.longitude, project_manager: r.project_manager ?? '',
+    slack_id: r.slack_id ?? null,
   }))
+}
+
+/** Аккаунты команд для Admin → Team (сырые строки teams: email/адрес/slack/статус). */
+export async function fetchTeamAccounts(): Promise<import('../domain/types').TeamAccount[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase
+    .from('teams')
+    .select('id, name, email, address, slack_id, account_status')
+    .order('name')
+  if (error) throw error
+  return (data ?? []).map((r): import('../domain/types').TeamAccount => ({
+    id: r.id, name: r.name, email: r.email ?? null, address: r.address ?? null,
+    slack_id: r.slack_id ?? null, account_status: r.account_status ?? null,
+  }))
+}
+
+/** app_role → читаемая подпись. */
+function prettyRole(r: string): string {
+  const m: Record<string, string> = { super_admin: 'Super Admin', pm: 'PM', team_lead: 'Team Lead' }
+  return m[r] ?? (r || '')
+}
+
+/**
+ * Члены команды для Admin → Team: профиль + роль + адрес/статус.
+ * Источник — profiles + user_roles (роли) + teams (адрес/статус), мерж в JS.
+ * profiles/user_roles под RLS — видны под залогиненным админом; иначе фолбэк на teams.
+ * Защитно к именам колонок (first_name/last_name | full_name | name; user_id | id).
+ */
+export async function fetchTeamMembers(): Promise<import('../domain/types').TeamMember[]> {
+  if (!supabase) return []
+  const [pRes, rRes, tRes] = await Promise.all([
+    supabase.from('profiles').select('*'),
+    supabase.from('user_roles').select('*'),
+    supabase.from('teams').select('id, name, email, address, account_status'),
+  ])
+  const teams = (tRes.data ?? []) as Record<string, any>[]
+  const teamByEmail = new Map<string, Record<string, any>>()
+  for (const t of teams) if (t.email) teamByEmail.set(String(t.email).toLowerCase(), t)
+  // явные роли из user_roles (Super Admin / PM / Team Lead) — приоритет
+  const roleByUser = new Map<string, string>()
+  for (const r of ((rRes.data ?? []) as Record<string, any>[])) {
+    const k = String(r.user_id ?? r.id ?? '')
+    if (k) roleByUser.set(k, prettyRole(String(r.role ?? '')))
+  }
+  // правило: роль из user_roles → иначе член бригады (есть в teams) = Team Lead → иначе «—»
+  const roleFor = (id: string, email: string | null): string | null => {
+    const explicit = roleByUser.get(String(id))
+    if (explicit) return explicit
+    if (email && teamByEmail.has(email.toLowerCase())) return 'Team Lead'
+    return null
+  }
+  const profiles = (pRes.data ?? []) as Record<string, any>[]
+  if (profiles.length) {
+    return profiles.map((p): import('../domain/types').TeamMember => {
+      const email = p.email ?? ''
+      const t = email ? teamByEmail.get(String(email).toLowerCase()) : null
+      const name = [p.first_name, p.last_name].filter(Boolean).join(' ').trim() || p.full_name || p.name || email || p.id
+      return { id: p.id, name, email: email || null, address: t?.address ?? p.address ?? null, role: roleFor(p.id, email || null), status: t?.account_status ?? null }
+    }).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  }
+  // фолбэк: только teams (если profiles закрыты RLS) — все они бригады = Team Lead
+  return teams.map((t): import('../domain/types').TeamMember => ({
+    id: t.id ?? t.email ?? t.name, name: t.name, email: t.email ?? null,
+    address: t.address ?? null, role: roleFor(String(t.id ?? ''), t.email ?? null), status: t.account_status ?? null,
+  }))
+}
+
+/**
+ * Синк из Airtable — через Supabase Edge Functions (НЕ n8n). Запускает по очереди.
+ * Функции: sync-airtable-projects | sync-airtable-teams | sync-airtable-skills |
+ * sync-team-accounts | auto-sync-airtable.
+ */
+export async function runEdgeSync(fns: string[]): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  for (const fn of fns) {
+    const { error } = await supabase.functions.invoke(fn)
+    if (error) throw new Error(`${fn}: ${error.message ?? error}`)
+  }
+}
+
+/* ---------------- Task Types CRUD (Admin) ---------------- */
+export async function createTaskType(name: string, description?: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { error } = await supabase.from('task_types').insert({ name, description: description ?? null })
+  if (error) throw error
+}
+export async function updateTaskType(id: string, name: string, description?: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { error } = await supabase.from('task_types').update({ name, description: description ?? null }).eq('id', id)
+  if (error) throw error
+}
+export async function deleteTaskType(id: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { error } = await supabase.from('task_types').delete().eq('id', id)
+  if (error) throw error
+}
+
+/**
+ * app_settings — key/value настройки приложения (тянем из БД, не хардкодим).
+ * Сейчас используется для URL вебхука планировщика (редактируется в Админке).
+ */
+export async function fetchSetting(key: string): Promise<string | null> {
+  if (!supabase) return null
+  const { data, error } = await supabase.from('app_settings').select('value').eq('key', key).maybeSingle()
+  if (error) throw error
+  return (data?.value as string | undefined) ?? null
+}
+export async function updateSetting(key: string, value: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { error } = await supabase.from('app_settings').upsert({ key, value }, { onConflict: 'key' })
+  if (error) throw error
+}
+
+/* ---------------- Профиль текущего пользователя ---------------- */
+
+/** Имя/фамилия текущего юзера из profiles (по auth uid). null, если строки нет. */
+export async function fetchMyProfile(): Promise<{ first_name: string; last_name: string } | null> {
+  if (!supabase) return null
+  const { data: auth } = await supabase.auth.getUser()
+  const uid = auth.user?.id
+  if (!uid) return null
+  const { data, error } = await supabase.from('profiles').select('first_name, last_name').eq('id', uid).maybeSingle()
+  if (error) throw error
+  return data ? { first_name: data.first_name ?? '', last_name: data.last_name ?? '' } : null
+}
+
+/** Сохранить имя/фамилию в profiles (своя строка, RLS: id = auth.uid()). */
+export async function updateMyProfile(firstName: string, lastName: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { data: auth } = await supabase.auth.getUser()
+  const uid = auth.user?.id
+  if (!uid) throw new Error('Not signed in')
+  const { error } = await supabase.from('profiles').update({ first_name: firstName, last_name: lastName }).eq('id', uid)
+  if (error) throw error
+}
+
+/** Сменить пароль текущего юзера. */
+export async function updateMyPassword(password: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { error } = await supabase.auth.updateUser({ password })
+  if (error) throw error
 }
 
 /** "Material Handling & Staging - 2" → { name: "Material Handling & Staging", level: 2 }. */
@@ -137,6 +279,14 @@ export async function fetchSkills(): Promise<Skill[]> {
   }))
 }
 
+/** Типы задач из БД (task_types) — для дропдауна Task Type (никакого хардкода). */
+export async function fetchTaskTypes(): Promise<import('../domain/types').TaskType[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase.from('task_types').select('id, name, description').order('name')
+  if (error) throw error
+  return (data ?? []).map((r): import('../domain/types').TaskType => ({ id: r.id, name: r.name, description: r.description ?? null }))
+}
+
 export async function fetchAvailability(): Promise<TeamAvailability[]> {
   if (!supabase) return []
   // team_availability ссылается на team_id; имя команды подтянем join'ом
@@ -149,6 +299,23 @@ export async function fetchAvailability(): Promise<TeamAvailability[]> {
     team_name: (r.teams as { name?: string } | null)?.name ?? '',
     start_date: r.start_date as string, end_date: r.end_date as string,
   }))
+}
+
+/** Добавить период недоступности команды. */
+export async function createAvailability(teamId: string, startDate: string, endDate: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { data: auth } = await supabase.auth.getUser()
+  const { error } = await supabase.from('team_availability').insert({
+    team_id: teamId, start_date: startDate, end_date: endDate, created_by: auth.user?.id ?? null,
+  })
+  if (error) throw error
+}
+
+/** Удалить период недоступности. */
+export async function deleteAvailability(id: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { error } = await supabase.from('team_availability').delete().eq('id', id)
+  if (error) throw error
 }
 
 /* ---------------- Запись (фаза 2) ---------------- */
@@ -175,7 +342,7 @@ export interface CreateTaskInput {
 
 /** INSERT новой задачи (status=requested). Возвращает id. */
 export async function createTask(input: CreateTaskInput): Promise<string> {
-  if (!supabase) throw new Error('Supabase не настроен')
+  if (!supabase) throw new Error('Supabase is not configured')
   const row = {
     status: 'requested',
     task_type: input.task_type,
@@ -211,7 +378,7 @@ export interface UpdateTaskInput {
 
 /** UPDATE существующей задачи (точечная правка полей). */
 export async function updateTask(id: string, input: UpdateTaskInput): Promise<void> {
-  if (!supabase) throw new Error('Supabase не настроен')
+  if (!supabase) throw new Error('Supabase is not configured')
   const row: Record<string, unknown> = {}
   if (input.title !== undefined) row.title = input.title
   if (input.description !== undefined) row.description = input.description
@@ -226,7 +393,7 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<vo
 
 /** Удаление задачи. */
 export async function deleteTask(id: string): Promise<void> {
-  if (!supabase) throw new Error('Supabase не настроен')
+  if (!supabase) throw new Error('Supabase is not configured')
   const { error } = await supabase.from('tasks').delete().eq('id', id)
   if (error) throw error
 }
@@ -234,7 +401,7 @@ export async function deleteTask(id: string): Promise<void> {
 /** Массовая смена статуса задач (requested→proposed, proposed→scheduled, →archived). */
 export async function updateTasksStatus(ids: string[], status: Task['status']): Promise<void> {
   if (!ids.length) return
-  if (!supabase) throw new Error('Supabase не настроен')
+  if (!supabase) throw new Error('Supabase is not configured')
   const { error } = await supabase.from('tasks').update({ status }).in('id', ids)
   if (error) throw error
 }
@@ -247,7 +414,7 @@ export async function applyScheduleToTasks(
   days: import('../domain/types').TeamDay[],
   status: 'proposed' | 'scheduled' = 'scheduled',
 ): Promise<void> {
-  if (!supabase) throw new Error('Supabase не настроен')
+  if (!supabase) throw new Error('Supabase is not configured')
   const updates: Promise<void>[] = []
   for (const day of days) {
     for (const t of day.tasks) {
@@ -283,17 +450,19 @@ export async function applyScheduleToTasks(
 export async function materializeProposedCopies(
   days: import('../domain/types').TeamDay[],
 ): Promise<number> {
-  if (!supabase) throw new Error('Supabase не настроен')
+  if (!supabase) throw new Error('Supabase is not configured')
   const rows: Record<string, unknown>[] = []
   for (const day of days) {
     for (const t of day.tasks) {
       const scheduled_time = t.anchor
         ? { start: t.start_time, end: t.end_time, anchor: true, anchor_time: t.anchor_time }
         : { start: t.start_time, end: t.end_time }
+      const title = (String(t.description ?? '').split('\n')[0] || t.project_name || 'Task').slice(0, 200)
       rows.push({
         status: 'proposed',
         team_id: day.team_id === 'unassigned' ? null : day.team_id,
         project_id: t.project_id || null,
+        title,
         description: t.description ?? '',
         task_type: 'Project task',
         scheduled_date: day.date || null,
@@ -316,7 +485,7 @@ export async function materializeProposedCopies(
 
 /** Удалить все задачи заданного статуса (для кнопки «Удалить все» в Proposed). */
 export async function deleteTasksByStatus(status: Task['status']): Promise<number> {
-  if (!supabase) throw new Error('Supabase не настроен')
+  if (!supabase) throw new Error('Supabase is not configured')
   const { data, error } = await supabase.from('tasks').delete().eq('status', status).select('id')
   if (error) throw error
   return (data ?? []).length
@@ -350,7 +519,7 @@ const TEST_ANCHOR_TIMES: Record<string, string> = {
 }
 
 export async function restoreRequestedFromRun(requestId?: string): Promise<number> {
-  if (!supabase) throw new Error('Supabase не настроен')
+  if (!supabase) throw new Error('Supabase is not configured')
   const sel = 'request_ID, input_tasks, created_at'
   const q = requestId
     ? supabase.from('AI_teams_schedule').select(sel).eq('request_ID', requestId).limit(1)

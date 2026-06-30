@@ -31,6 +31,27 @@ export interface Project {
   lat: number | null
   lng: number | null
   project_manager: string
+  slack_id?: string | null
+}
+
+/** Аккаунт команды для Admin → Team (сырые поля teams). */
+export interface TeamAccount {
+  id: string
+  name: string
+  email: string | null
+  address: string | null
+  slack_id: string | null
+  account_status: string | null
+}
+
+/** Член команды/портала для Admin → Team: профиль + роль (user_roles) + адрес/статус (teams). */
+export interface TeamMember {
+  id: string
+  name: string
+  email: string | null
+  address: string | null
+  role: string | null
+  status: string | null
 }
 
 /** Скилл команды с уровнем владения (1 — высший приоритет, null — без уровня). */
@@ -62,6 +83,7 @@ export interface Skill {
 export interface TaskType {
   id: string
   name: string
+  description?: string | null
 }
 
 export interface TeamAvailability {

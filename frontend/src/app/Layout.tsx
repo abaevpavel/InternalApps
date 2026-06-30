@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Menu, Plus, ListChecks, CalendarDays, Users, User, LogOut } from 'lucide-react'
+import { Menu, Plus, ListChecks, CalendarDays, Users, User, LogOut, LayoutGrid } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
 
 const SECTION_TITLES: Record<string, string> = {
@@ -19,6 +19,7 @@ export function Layout() {
   const section = SECTION_TITLES[loc.pathname] ?? 'TASKS'
 
   const menu = [
+    { to: '/', label: '← My Applications', icon: LayoutGrid },
     { to: '/create', label: 'Create Task', icon: Plus },
     { to: '/tasks', label: 'Tasks', icon: ListChecks },
     { to: '/availability', label: 'Teams Availability', icon: CalendarDays },
@@ -30,7 +31,7 @@ export function Layout() {
     <div className="min-h-full">
       <header className="relative flex items-center justify-between bg-brand-dark px-6 py-4 text-white">
         <div className="flex items-center gap-3">
-          <div className="text-xl font-extrabold tracking-tight text-sky-400">BASEMENT<span className="text-white">REMODELING</span></div>
+          <img src="/logo.png" alt="Basement Remodeling" className="h-9 w-auto" />
         </div>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold tracking-wide">
           DALY SCHEDULE — {section}

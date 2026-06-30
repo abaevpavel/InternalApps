@@ -11,7 +11,7 @@ export function LoginPage() {
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  if (user) nav('/tasks')
+  if (user) nav('/')
 
   async function google() {
     setErr(null)
@@ -28,7 +28,7 @@ export function LoginPage() {
     setBusy(true)
     try {
       await signIn(email, password)
-      nav('/tasks')
+      nav('/')
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Sign-in failed')
     } finally {
