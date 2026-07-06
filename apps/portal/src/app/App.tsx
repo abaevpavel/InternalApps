@@ -9,6 +9,8 @@ import { UserManagementPage } from '../pages/UserManagement'
 import { ProductionChecklistsPage } from '../pages/production-checklist/ProductionChecklists'
 import { TemplateEditorPage } from '../pages/production-checklist/ProductionChecklistDetail'
 import { ProjectChecklistPage } from '../pages/production-checklist/ProjectChecklistPage'
+import { EmployeeChecklistsPage } from '../pages/hr-checklists/EmployeeChecklists'
+import { ChecklistDetailPage } from '../pages/hr-checklists/ChecklistDetail'
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { authUser, profile, denied, loading } = useAuth()
@@ -41,6 +43,8 @@ function Shell() {
         <Route path="/production-checklist" element={<ProductionChecklistsPage />} />
         <Route path="/production-checklist/project/:projectId" element={<ProjectChecklistPage />} />
         <Route path="/production-checklist/:id" element={<TemplateEditorPage />} />
+        <Route path="/checklists" element={<EmployeeChecklistsPage />} />
+        <Route path="/checklist/:id" element={<ChecklistDetailPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

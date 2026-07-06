@@ -8,6 +8,7 @@ const TITLES: [prefix: string, title: string][] = [
   ['/account', 'MY ACCOUNT'],
   ['/users', 'USER MANAGEMENT'],
   ['/production-checklist', '03-PRODUCTION-CHECKLIST'],
+  ['/checklist', '06-HR-CHECKLISTS'],
   ['/', 'MY APPLICATIONS'],
 ]
 

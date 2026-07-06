@@ -2,8 +2,9 @@
 import {
   type ButtonHTMLAttributes, type InputHTMLAttributes, type SelectHTMLAttributes,
   type ReactNode, type Key,
+  useEffect, useRef, useState,
 } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { Check, ChevronDown } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 /* ---------------- Button ---------------- */
@@ -62,6 +63,59 @@ export function Select({ className, children, ...props }: SelectHTMLAttributes<H
         {children}
       </select>
       <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+    </div>
+  )
+}
+
+/** Кастомный дропдаун (нативный <select> нельзя стилизовать в раскрытом виде). */
+export function Dropdown<T extends string>({
+  value, onChange, options, placeholder, disabled, className,
+}: {
+  value: T | null
+  onChange: (v: T) => void
+  options: { value: T; label: string }[]
+  placeholder?: string
+  disabled?: boolean
+  className?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+  const current = options.find((o) => o.value === value)
+  return (
+    <div ref={ref} className={cn('relative', className)}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(fieldBase, 'flex items-center justify-between gap-2 pr-3 text-left', disabled && 'cursor-not-allowed opacity-50')}
+      >
+        <span className={cn('truncate', !current && 'text-gray-400')}>{current?.label ?? placeholder ?? 'Select…'}</span>
+        <ChevronDown size={15} className={cn('shrink-0 text-gray-400 transition', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-40 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+          {options.map((o) => {
+            const selected = o.value === value
+            return (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => { onChange(o.value); setOpen(false) }}
+                className={cn('flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50', selected ? 'font-medium text-gray-900' : 'text-gray-700')}
+              >
+                <Check size={14} className={cn('shrink-0', selected ? 'text-accent-600' : 'invisible')} />
+                <span className="truncate">{o.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
