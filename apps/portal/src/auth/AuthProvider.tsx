@@ -81,7 +81,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!supabase) throw new Error('Supabase is not configured')
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin },
+      // с завершающим слэшем — чтобы попадать в whitelist-паттерн Supabase вида
+      // `http://localhost:5173/**` (голый origin без «/» не матчится → откат на Site URL/прод)
+      options: { redirectTo: window.location.origin + '/' },
     })
     if (error) throw error
   }

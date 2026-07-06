@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthProvider'
 const TITLES: [prefix: string, title: string][] = [
   ['/account', 'MY ACCOUNT'],
   ['/users', 'USER MANAGEMENT'],
+  ['/production-checklist', '03-PRODUCTION-CHECKLIST'],
   ['/', 'MY APPLICATIONS'],
 ]
 

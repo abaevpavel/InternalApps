@@ -6,6 +6,9 @@ import { LoginPage } from '../pages/Login'
 import { MyApplicationsPage } from '../pages/MyApplications'
 import { MyAccountPage } from '../pages/MyAccount'
 import { UserManagementPage } from '../pages/UserManagement'
+import { ProductionChecklistsPage } from '../pages/production-checklist/ProductionChecklists'
+import { TemplateEditorPage } from '../pages/production-checklist/ProductionChecklistDetail'
+import { ProjectChecklistPage } from '../pages/production-checklist/ProjectChecklistPage'
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { authUser, profile, denied, loading } = useAuth()
@@ -35,6 +38,9 @@ function Shell() {
         <Route path="/" element={<MyApplicationsPage />} />
         <Route path="/account" element={<MyAccountPage />} />
         <Route path="/users" element={<AdminOnly><UserManagementPage /></AdminOnly>} />
+        <Route path="/production-checklist" element={<ProductionChecklistsPage />} />
+        <Route path="/production-checklist/project/:projectId" element={<ProjectChecklistPage />} />
+        <Route path="/production-checklist/:id" element={<TemplateEditorPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

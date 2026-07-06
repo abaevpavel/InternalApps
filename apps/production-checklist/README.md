@@ -1,8 +1,16 @@
 # production-checklist
 
-> 03-PRODUCTION-CHECKLIST. Плейсхолдер — приложение пока не построено.
-> План и оценка: [docs/app-estimates/03-Production-Checklist.md](../../docs/app-estimates/03-Production-Checklist.md)
+> 03-PRODUCTION-CHECKLIST **живёт роутами внутри портала** (`apps/portal`), а не как
+> отдельная апка — потому что делит ту же Supabase (`pilxwhtkhysanpukaliu`) и деплой с порталом.
+> (Отдельная только task-planner — у неё своя БД.)
 
-QA-чеклист по проектам (сиблинг HR-Checklists, но для проектов). dnd-kit редактор, AI-импорт,
-Make-вебхуки (вход/выход). В монорепе делит редактор/фото/AI-импорт с HR-Checklists через packages/ui.
-Маржинальная оценка ~7.5 ч (standalone ~13 ч).
+Код:
+- Страницы: `apps/portal/src/pages/production-checklist/*`
+- Домен: `apps/portal/src/domain/production-checklist.ts`
+- Сервис: `apps/portal/src/services/production-checklist.ts`
+- Роуты: `/production-checklist`, `/production-checklist/:id`, `/production-checklist/project/:projectId`
+
+Карточка в портале («My Applications») открывает приложение внутренней навигацией — для этого
+в таблице `applications` у строки `production-checklist` поле `url` должно быть относительным
+путём `'/production-checklist'` (см. SQL в PR/чате). План/оценка:
+[docs/app-estimates/03-Production-Checklist.md](../../docs/app-estimates/03-Production-Checklist.md)
