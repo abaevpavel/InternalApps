@@ -7,7 +7,7 @@
 ## Структура
 ```
 apps/
-  portal/                Платформа: My Applications + User Management + Roles. [плейсхолдер]
+  portal/                Платформа: My Applications + User Management + Roles. [каркас построен, ждёт креды Supabase]
   task-planner/          Daly Schedule — планировщик бригад (идёт доводка). Свой Supabase «crews scheduling».
   hr-checklists/         06-HR-Checklists. [плейсхолдер]
   gmail-sender/          06-HR-Gmail Auto Sender. [плейсхолдер]
@@ -44,7 +44,7 @@ npm run dev -w daly-schedule
 | Приложение | Папка | Статус | Оценка |
 |---|---|---|---|
 | Task Planner (Daly Schedule) | `apps/task-planner` | код есть, доводка | ~5–6 дней |
-| Платформа портала | `apps/portal` | плейсхолдер | в составе ~3–4 дн |
+| Платформа портала | `apps/portal` | **каркас построен** (Login/Grid/Users/Roles/Account + миграции), осталось: креды Supabase, Google OAuth, деплой | в составе ~3–4 дн |
 | 06-HR-Checklists | `apps/hr-checklists` | плейсхолдер | оценён |
 | 06-HR-Gmail Auto Sender | `apps/gmail-sender` | плейсхолдер | оценён |
 | 02-Sales-Send an Offer Email | `apps/sales-offer` | плейсхолдер | оценён |

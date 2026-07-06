@@ -481,6 +481,11 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
   return (
     <div className="space-y-4">
       <Card className="flex flex-wrap items-center gap-2 p-4">
+        {days[0]?.date && (
+          <Badge className="bg-accent-50 font-semibold text-accent-700">
+            📅 {new Date(days[0].date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+          </Badge>
+        )}
         <Badge className="bg-gray-100 text-gray-600">{total} tasks</Badge>
         <Button variant="outline" className="text-blue-600" disabled={isFetching} onClick={() => refetch()}>
           {isFetching ? 'Refreshing…' : 'Fetch AI Data'}
@@ -877,7 +882,7 @@ function TeamColumn({
         <Badge className="bg-blue-50 text-blue-700">Total: {minToHm(day.total_working_minutes)}</Badge>
         <Badge className="bg-green-50 text-green-700">Duration: {minToHoursLabel(day.tasks.reduce((s, t) => s + t.duration_minutes, 0))}</Badge>
         <Badge className="bg-purple-50 text-purple-700">Travel: {day.summary?.total_travel_in_day_minutes}m</Badge>
-        {day.overtime && <StatusBadge tone="danger">overtime</StatusBadge>}
+        {day.overtime && <StatusBadge tone="danger">overtime +{minToHm(Math.max(0, day.total_working_minutes - 480))}</StatusBadge>}
       </div>
 
       <div ref={setNodeRef} className={cn('min-h-[48px] rounded-lg', isOver && 'bg-accent-50/60 ring-1 ring-accent-200')}>
@@ -1008,7 +1013,7 @@ function EditableTeamDay({ day, onComputed }: { day: TeamDay; onComputed?: (d: T
         <Badge className="bg-blue-50 text-blue-700">Total: {minToHm(computed.total_working_minutes)}</Badge>
         <Badge className="bg-green-50 text-green-700">Duration: {minToHoursLabel(computed.tasks.reduce((s, t) => s + t.duration_minutes, 0))}</Badge>
         <Badge className="bg-purple-50 text-purple-700">Travel: {computed.summary?.total_travel_in_day_minutes}m</Badge>
-        {computed.overtime && <StatusBadge tone="danger">overtime</StatusBadge>}
+        {computed.overtime && <StatusBadge tone="danger">overtime +{minToHm(Math.max(0, computed.total_working_minutes - 480))}</StatusBadge>}
         {travelLoading && (
           <span className="flex items-center gap-1 text-xs text-gray-400">
             <Loader2 size={12} className="animate-spin" /> travel…
@@ -1339,6 +1344,9 @@ function Scheduled() {
             <span className="font-semibold text-accent-700">👥 {day.team_name}</span>
             <Badge className="bg-gray-800 text-white">{day.tasks.length} tasks</Badge>
             <Badge className="bg-blue-50 text-blue-700">Total: {minToHm(day.total_working_minutes)}</Badge>
+            {day.total_working_minutes > 480 && (
+              <StatusBadge tone="danger">overtime +{minToHm(day.total_working_minutes - 480)}</StatusBadge>
+            )}
           </div>
           <div className="space-y-2">
             {day.tasks.map((t, i) => (

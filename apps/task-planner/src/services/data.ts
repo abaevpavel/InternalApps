@@ -155,10 +155,13 @@ export async function fetchTeamMembers(): Promise<import('../domain/types').Team
     const k = String(r.user_id ?? r.id ?? '')
     if (k) roleByUser.set(k, prettyRole(String(r.role ?? '')))
   }
-  // правило: роль из user_roles → иначе член бригады (есть в teams) = Team Lead → иначе «—»
-  const roleFor = (id: string, email: string | null): string | null => {
-    const explicit = roleByUser.get(String(id))
-    if (explicit) return explicit
+  // роль из user_roles ищем по ОБОИМ ключам (profiles.user_id — auth uid, либо id) →
+  // иначе член бригады (есть в teams) = Team Lead → иначе «—»
+  const roleFor = (ids: (string | null | undefined)[], email: string | null): string | null => {
+    for (const id of ids) {
+      const explicit = id != null && roleByUser.get(String(id))
+      if (explicit) return explicit
+    }
     if (email && teamByEmail.has(email.toLowerCase())) return 'Team Lead'
     return null
   }
@@ -168,13 +171,13 @@ export async function fetchTeamMembers(): Promise<import('../domain/types').Team
       const email = p.email ?? ''
       const t = email ? teamByEmail.get(String(email).toLowerCase()) : null
       const name = [p.first_name, p.last_name].filter(Boolean).join(' ').trim() || p.full_name || p.name || email || p.id
-      return { id: p.id, name, email: email || null, address: t?.address ?? p.address ?? null, role: roleFor(p.id, email || null), status: t?.account_status ?? null }
+      return { id: p.id, name, email: email || null, address: t?.address ?? p.address ?? null, role: roleFor([p.user_id, p.id], email || null), status: t?.account_status ?? null }
     }).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
   }
   // фолбэк: только teams (если profiles закрыты RLS) — все они бригады = Team Lead
   return teams.map((t): import('../domain/types').TeamMember => ({
     id: t.id ?? t.email ?? t.name, name: t.name, email: t.email ?? null,
-    address: t.address ?? null, role: roleFor(String(t.id ?? ''), t.email ?? null), status: t.account_status ?? null,
+    address: t.address ?? null, role: roleFor([t.id], t.email ?? null), status: t.account_status ?? null,
   }))
 }
 
@@ -189,6 +192,39 @@ export async function runEdgeSync(fns: string[]): Promise<void> {
     const { error } = await supabase.functions.invoke(fn)
     if (error) throw new Error(`${fn}: ${error.message ?? error}`)
   }
+}
+
+/**
+ * Задать/сбросить пароль члену бригады (Admin → Team). Через Edge Function
+ * `set-team-password` (service_role на сервере). Универсально: создаёт аккаунт
+ * с паролем, если его ещё нет, иначе меняет пароль.
+ */
+export async function setTeamPassword(input: {
+  email: string
+  password: string
+  role?: string
+  first_name?: string | null
+  last_name?: string | null
+}): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { data: sessionData } = await supabase.auth.getSession()
+  const token = sessionData.session?.access_token
+  if (!token) throw new Error('Not signed in — please log in again')
+  const { data, error } = await supabase.functions.invoke('set-team-password', {
+    body: { ...input, access_token: token }, // токен в теле — платформа может портить заголовок
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (error) {
+    // При non-2xx supabase-js прячет тело в error.context (Response) — вытащим реальный текст.
+    let detail = error.message
+    try {
+      const ctx = (error as { context?: Response }).context
+      const body = ctx && (await ctx.json())
+      if (body?.error) detail = body.error
+    } catch { /* тело не JSON — оставляем message */ }
+    throw new Error(detail)
+  }
+  if (data?.error) throw new Error(data.error)
 }
 
 /* ---------------- Task Types CRUD (Admin) ---------------- */

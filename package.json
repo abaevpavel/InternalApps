@@ -9,6 +9,8 @@
   ],
   "scripts": {
     "dev:task-planner": "npm run dev -w daly-schedule",
-    "build:task-planner": "npm run build -w daly-schedule"
+    "build:task-planner": "npm run build -w daly-schedule",
+    "dev:portal": "npm run dev -w portal",
+    "build:portal": "npm run build -w portal"
   }
 }

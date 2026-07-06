@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, Plus, SquarePen, Trash2 } from 'lucide-react'
-import { Button, Card, PageTitle, Badge, Tabs, DataTable, Modal, Input, Textarea, Field, type Column } from '../components/ui'
+import { RefreshCw, Plus, SquarePen, Trash2, KeyRound } from 'lucide-react'
+import { Button, Card, PageTitle, Badge, Tabs, DataTable, Modal, Input, Textarea, Field, Select, type Column } from '../components/ui'
 import {
   fetchProjects, fetchSkills, fetchTeamMembers, fetchTaskTypes,
-  createTaskType, updateTaskType, deleteTaskType, runEdgeSync,
+  createTaskType, updateTaskType, deleteTaskType, runEdgeSync, setTeamPassword,
   fetchSetting, updateSetting,
 } from '../services/data'
 import { errMsg } from '../lib/utils'
@@ -56,6 +56,19 @@ export function AdminPage() {
   }, [skills.data])
 
   const [editTT, setEditTT] = useState<TaskType | 'new' | null>(null)
+  const [pwdFor, setPwdFor] = useState<TeamMember | null>(null)
+
+  const teamColumns: Column<TeamMember>[] = [
+    ...teamCols,
+    {
+      key: 'actions', header: '', align: 'right',
+      render: (t) => (
+        <Button variant="outline" onClick={() => setPwdFor(t)} disabled={!t.email}>
+          <KeyRound size={15} /> Set password
+        </Button>
+      ),
+    },
+  ]
 
   // синк из Airtable через Supabase Edge Functions
   const sync = useMutation({
@@ -76,7 +89,6 @@ export function AdminPage() {
       <div className="flex gap-2">
         <SyncBtn fns={['sync-airtable-teams']} label="Sync Teams info" />
         <SyncBtn fns={['sync-airtable-teams', 'sync-airtable-skills']} label="Sync Teams & Skills" />
-        <SyncBtn fns={['sync-team-accounts']} label="Sync Team Accounts" />
       </div>
     ) : tab === 'settings' ? null : (
       <Button variant="accent" onClick={() => setEditTT('new')}><Plus size={16} /> Add Task Type</Button>
@@ -92,7 +104,7 @@ export function AdminPage() {
       )}
 
       {tab === 'team' && (
-        <Card><DataTable columns={teamCols} rows={team.data ?? []} getRowKey={(t) => t.id} empty="No team accounts." /></Card>
+        <Card><DataTable columns={teamColumns} rows={team.data ?? []} getRowKey={(t) => t.id} empty="No team accounts." /></Card>
       )}
 
       {tab === 'skills' && (
@@ -145,7 +157,66 @@ export function AdminPage() {
           onSaved={() => { setEditTT(null); qc.invalidateQueries({ queryKey: ['taskTypes'] }) }}
         />
       )}
+
+      {pwdFor && (
+        <SetPasswordModal
+          member={pwdFor}
+          onClose={() => setPwdFor(null)}
+          onSaved={() => { setPwdFor(null); qc.invalidateQueries({ queryKey: ['teamMembers'] }) }}
+        />
+      )}
     </div>
+  )
+}
+
+/** Задать пароль + роль члену бригады (Edge Function set-team-password, super_admin only). */
+function SetPasswordModal({ member, onClose, onSaved }: { member: TeamMember; onClose: () => void; onSaved: () => void }) {
+  const [password, setPassword] = useState('')
+  const [role, setRole] = useState('team_lead')
+  const [error, setError] = useState<string | null>(null)
+
+  const [first, ...rest] = (member.name || '').trim().split(/\s+/)
+  const save = useMutation({
+    mutationFn: async () => {
+      if (password.length < 6) throw new Error('Password must be at least 6 characters')
+      await setTeamPassword({
+        email: member.email!,
+        password,
+        role,
+        first_name: first || null,
+        last_name: rest.join(' ') || null,
+      })
+    },
+    onSuccess: onSaved,
+    onError: (e: unknown) => setError(errMsg(e)),
+  })
+
+  return (
+    <Modal
+      open title={`Set password — ${member.name}`} onClose={onClose}
+      subtitle="Creates the login account if it doesn't exist yet, otherwise resets the password."
+      footer={<>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" disabled={save.isPending || password.length < 6} onClick={() => save.mutate()}>
+          {save.isPending ? 'Saving…' : 'Save'}
+        </Button>
+      </>}
+    >
+      <div className="space-y-3">
+        <Field label="Email"><Input value={member.email ?? ''} disabled /></Field>
+        <Field label="Password" required hint="Min 6 characters. The PM signs in with email + this password.">
+          <Input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Set a password" autoFocus />
+        </Field>
+        <Field label="Role">
+          <Select value={role} onChange={(e) => setRole(e.target.value)}>
+            <option value="team_lead">Team Lead (PM)</option>
+            <option value="pm">PM</option>
+            <option value="super_admin">Super Admin</option>
+          </Select>
+        </Field>
+        {error && <p className="text-sm text-red-600">⚠ {error}</p>}
+      </div>
+    </Modal>
   )
 }
 

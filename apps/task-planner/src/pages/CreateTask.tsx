@@ -7,6 +7,17 @@ import { fetchProjects, fetchSkills, fetchTeams, fetchTaskTypes, createTask } fr
 import { useAuth } from '../auth/AuthProvider'
 import type { TimeType } from '../domain/types'
 
+/** Следующий рабочий день (пропуская сб/вс) в формате YYYY-MM-DD, по локальному времени. */
+function nextWeekdayISO(): string {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1) // 0=вс, 6=сб
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export function CreateTaskPage() {
   const nav = useNavigate()
   const qc = useQueryClient()
@@ -23,7 +34,7 @@ export function CreateTaskPage() {
   const [projectId, setProjectId] = useState('')
   const [taskType, setTaskType] = useState('')
   const [description, setDescription] = useState('')
-  const [date, setDate] = useState('')
+  const [date, setDate] = useState(nextWeekdayISO())
   const [exactTime, setExactTime] = useState('')
   const [tfStart, setTfStart] = useState('')
   const [tfEnd, setTfEnd] = useState('')

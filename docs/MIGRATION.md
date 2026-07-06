@@ -1,15 +1,15 @@
 # Daly Schedule — миграция Lovable → новый фронт (прод-ready)
 
-> Цель: перенести **всё** приложение с Lovable на новый фронт (`taskplanner/frontend`)
+> Цель: перенести **всё** приложение с Lovable на новый фронт (`apps/task-planner`)
 > и провязать **напрямую на прод** (без тестовых кредов). Этот док — план миграции и
 > «как всё должно работать». Источники правды: [`SPEC.md`](SPEC.md) (правила),
-> [`AI-MODULES.md`](AI-MODULES.md) (n8n-пайплайн), [`frontend/README.md`](frontend/README.md)
+> [`AI-MODULES.md`](AI-MODULES.md) (n8n-пайплайн), [`../apps/task-planner/README.md`](../apps/task-planner/README.md)
 > (архитектура). Создано: 2026-06-29.
 
 ---
 
 ## 1. Подход
-- **НЕ переписываем с нуля.** Новый фронт `taskplanner/frontend` (React+Vite+TS) уже
+- **НЕ переписываем с нуля.** Новый фронт `apps/task-planner` (React+Vite+TS) уже
   реализует ядро (Tasks/Create/Availability/Admin/Profile/Login + движок якорей +
   Google travel + Proposed-редактор). Берём его как базу.
 - **Доводим до полного паритета с Lovable** — добавляем фичи/экраны Lovable, которых
@@ -75,10 +75,10 @@
 
 | # | Экран Lovable | Что делает (поведение) | В новом фронте | Действие/гэп |
 |---|---|---|---|---|
-| **L-01** | **My Applications** (портал/хаб) | Главный дашборд: сетка карточек-приложений (`06-HR-Checklists`, `06-HR-Gmail Auto Sender`, `02-Sales-Send an offer email`, `03-Production-Send Buildertrend Schedule`, `06-HR-Sync Airtable Contacts`, `03-Production-Checklist`, …), у каждой — «Open Application» (внешняя ссылка ↗). Хедер: лого Basement Remodeling, «MY APPLICATIONS», бургер-меню. Меню: «Signed in as <email>», **My Account**, **User Management**, **My Applications**, **Sign out**. | 🔴 нет | **Task Planner — одна из карточек этого портала.** Решить: портал отдельный/существующий Lovable, а Task Planner открывается как отдельный SPA? Или интегрируем в портал? (§8) |
-| **L-02** | **User Management** | _(жду скрин)_ — централизованное управление юзерами портала | 🔴 нет | задокументировать по скрину |
-| **L-03** | **My Account** | _(жду скрин)_ — профиль/пароль юзера портала | 🟡 есть Profile | сверить |
-| … | _(шлёшь скрины)_ | | | |
+| **L-01** | **My Applications** (портал/хаб) | Главный дашборд: сетка карточек-приложений (6 шт: `06-HR-Checklists`, `06-HR-Gmail Auto Sender`, `02-Sales-Send an offer email`, `03-Production-Send Buildertrend Schedule`, `06-HR-Sync Airtable Contacts`, `03-Production-Checklist`), карточки фильтруются по роли юзера, у каждой — «Open Application» (внешняя ссылка ↗). Хедер: лого, «MY APPLICATIONS», бургер-меню: «Signed in as <email>», My Account, User Management (только Admin), My Applications, Sign out. | ✅ построен как **отдельное приложение `apps/portal`** (решено: Task Planner — отдельный SPA со своим Supabase, портал открывает его карточкой) | Подключить существующий Lovable-Supabase (креды), сверить схему — `apps/portal/README.md` §Schema |
+| **L-02** | **User Management** (скрины 2026-07-02) | Вкладки **Users** / **Roles**. Users: таблица (аватар-инициалы, имя, email, роль, Joined dd.mm.yyyy, edit/delete), фильтр «All users (N)», Sort by Name, поиск. Roles: «Showing N roles • M applications available», **Create Role**, таблица (имя, описание, бейджи приложений «+N more», Created, edit/delete). Роль у юзера одна; роли динамические, роль→мультиселект приложений. | ✅ построен в `apps/portal` (+ Add User — whitelist-заведение юзера, в скрин не попал, решение: делаем) | Сверка с реальной схемой Lovable-Supabase |
+| **L-03** | **My Account** (скрин 2026-07-02) | Карточка профиля: аватар-инициалы, имя (редактируется карандашом), email, бейдж роли, «Joined: Month D, YYYY». | ✅ построен в `apps/portal` (Profile в task-planner — отдельная вещь, не сверяем) | — |
+| … | _(шлёшь скрины остальных приложений)_ | | | |
 
 > ⚠️ **Архитектура — мульти-апп портал.** Task Planner (Daly Schedule) — **одно из
 > приложений**. Вход, идентичность и User Management — на уровне портала. Доступ к
@@ -126,6 +126,17 @@
 
 Портал «My Applications» объединяет разные приложения, у которых **могут быть разные
 доступы**. Нужно зафиксировать модель прав. Вопросы по блокам:
+
+> ✅ **Закрыто 2026-07-02 (скрины + ответы юзера, реализовано в `apps/portal`):**
+> A2 — портал отдельный продукт, Task Planner открывается карточкой как отдельный SPA;
+> A3 — портал-апки на общем портал-Supabase (переиспользуем существующий Lovable-проект),
+> Task Planner на своём; B1/B2 — доступ к приложениям назначается **на роль**
+> (роль → мультиселект приложений), вручную в User Management; B4 — Admin видит всё;
+> C1 — User Management только для ролей с `is_admin`; C2/C3 — юзеры заводятся вручную
+> заранее (Add User, whitelist по email), роль назначается там же; C4 — права
+> централизованно в портал-БД. Переключение между апками — **бесшовно** (SSO-хэндофф
+> сессии, см. `apps/portal/README.md` §SSO). Остальное (блок D — роли ВНУТРИ Task
+> Planner, E) — открыто.
 
 ### A. Архитектура входа / портала
 - A1. **Единый вход на весь портал?** Один Supabase Auth / SSO для всех приложений, или

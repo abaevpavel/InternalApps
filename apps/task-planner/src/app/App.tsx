@@ -3,7 +3,6 @@ import { Providers } from './providers'
 import { Layout } from './Layout'
 import { useAuth } from '../auth/AuthProvider'
 import { LoginPage } from '../pages/Login'
-import { MyApplicationsPage } from '../pages/MyApplications'
 import { TasksPage } from '../pages/Tasks'
 import { CreateTaskPage } from '../pages/CreateTask'
 import { AvailabilityPage } from '../pages/Availability'
@@ -21,9 +20,9 @@ function Shell() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      {/* Портал «My Applications» — главная (свой layout) */}
-      <Route path="/" element={<Protected><MyApplicationsPage /></Protected>} />
-      {/* Task Planner — отдельный проект под общим Layout */}
+      {/* Хаб приложений теперь отдельный портал; корень ведёт сразу в планировщик */}
+      <Route path="/" element={<Navigate to="/tasks" replace />} />
+      {/* Task Planner — экраны под общим Layout */}
       <Route
         element={
           <Protected>
@@ -37,7 +36,7 @@ function Shell() {
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/profile" element={<ProfilePage />} />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/tasks" replace />} />
     </Routes>
   )
 }
