@@ -9,6 +9,7 @@ const TITLES: [prefix: string, title: string][] = [
   ['/users', 'USER MANAGEMENT'],
   ['/production-checklist', '03-PRODUCTION-CHECKLIST'],
   ['/checklist', '06-HR-CHECKLISTS'],
+  ['/gmail-auto-sender', '06-HR-GMAIL AUTO SENDER'],
   ['/', 'MY APPLICATIONS'],
 ]
 
