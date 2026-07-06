@@ -292,16 +292,29 @@ export function Modal({
   onClose: () => void
   size?: keyof typeof modalSizes
 }) {
+  // блокируем скролл фона, пока модалка открыта
+  useEffect(() => {
+    if (!open) return
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [open])
+
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className={cn('w-full rounded-xl bg-white shadow-xl', modalSizes[size])} onClick={(e) => e.stopPropagation()}>
-        <div className="border-b border-gray-100 px-6 py-4">
+      <div
+        className={cn('flex max-h-[calc(100vh-2rem)] w-full flex-col rounded-xl bg-white shadow-xl', modalSizes[size])}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="shrink-0 border-b border-gray-100 px-6 py-4">
           <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
           {subtitle && <p className="mt-0.5 text-sm text-gray-500">{subtitle}</p>}
         </div>
-        <div className="px-6 py-5 text-sm text-gray-600">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-gray-100 px-6 py-4">{footer}</div>}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 text-sm text-gray-600">{children}</div>
+        {footer && <div className="flex shrink-0 justify-end gap-2 border-t border-gray-100 px-6 py-4">{footer}</div>}
       </div>
     </div>
   )
