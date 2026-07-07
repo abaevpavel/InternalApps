@@ -1,0 +1,133 @@
+/**
+ * Реестр приложений портала для app-settings: настройки (вебхуки) и справка о ресурсах
+ * (таблицы/базы/бакеты/edge/внешние интеграции) каждой апки + роут-префиксы для определения
+ * «в какой апке мы сейчас». Расширяется по мере роста.
+ */
+export interface WebhookField {
+  key: string
+  label: string
+  hint?: string
+  envDefault?: string
+}
+
+export interface ExternalIntegration {
+  name: string
+  detail?: string
+}
+
+/** Read-only справка о ресурсах приложения (для админ-вью Resources). */
+export interface AppResources {
+  database?: string
+  tables?: string[]
+  storageBuckets?: string[]
+  edgeFunctions?: string[]
+  external?: ExternalIntegration[]
+}
+
+export interface AppConfig {
+  code: string
+  label: string
+  routePrefixes: string[]
+  webhooks: WebhookField[]
+  resources?: AppResources
+}
+
+const SUPABASE = 'Supabase — pilxwhtkhysanpukaliu (shared with the portal)'
+
+export const APPS: AppConfig[] = [
+  {
+    code: 'sales',
+    label: '02-Sales — Send an Offer Email',
+    routePrefixes: ['/sales-email-sender'],
+    webhooks: [
+      {
+        key: 'offer_webhook',
+        label: 'Sales offer webhook (Make)',
+        hint: 'POST target for the "Send Email" button.',
+        envDefault: import.meta.env.VITE_MAKE_SALES_OFFER_WEBHOOK as string | undefined,
+      },
+    ],
+    resources: {
+      database: SUPABASE,
+      tables: ['email_templates'],
+      external: [
+        { name: 'Make.com webhook', detail: 'Send Email → delivers the email to the recipient list from Airtable' },
+        { name: 'Airtable', detail: 'recipient list (handled on the Make side)' },
+      ],
+    },
+  },
+  {
+    code: 'production-checklist',
+    label: '03-Production Checklist',
+    routePrefixes: ['/production-checklist'],
+    webhooks: [
+      {
+        key: 'send_webhook',
+        label: 'Checklist Send webhook (Make)',
+        hint: 'POST target when a project checklist is sent.',
+        envDefault: import.meta.env.VITE_MAKE_SEND_WEBHOOK as string | undefined,
+      },
+    ],
+    resources: {
+      database: SUPABASE,
+      tables: [
+        'projects',
+        'production_checklists',
+        'production_checklist_items',
+        'project_checklists',
+        'project_checklist_progress',
+      ],
+      storageBuckets: ['production-checklist-photos'],
+      edgeFunctions: ['create-project-webhook (incoming project webhook → projects)', 'extract-checklist-from-image (AI import)'],
+      external: [
+        { name: 'Make.com (incoming)', detail: 'create-project-webhook → projects' },
+        { name: 'Make.com (outgoing)', detail: 'Send → webhook (see the Webhooks tab)' },
+      ],
+    },
+  },
+  {
+    code: 'hr-checklists',
+    label: '06-HR Checklists',
+    routePrefixes: ['/checklists', '/checklist'],
+    webhooks: [],
+    resources: {
+      database: SUPABASE,
+      tables: [
+        'employees',
+        'employee_types',
+        'checklists',
+        'checklist_items',
+        'employee_checklists',
+        'employee_checklist_progress',
+        'employee_phase_preferences',
+        'checklist_photos',
+      ],
+      storageBuckets: ['checklist-item-photos', 'checklist-photos'],
+      edgeFunctions: ['extract-checklist-from-image (AI import)'],
+      external: [{ name: 'Lovable AI Gateway', detail: 'gemini-2.5-flash — AI checklist import from image (via edge)' }],
+    },
+  },
+  {
+    code: 'gmail-auto-sender',
+    label: '06-HR Gmail Auto Sender',
+    routePrefixes: ['/gmail-auto-sender'],
+    webhooks: [],
+    resources: {
+      database: '— the app stores nothing (state and tokens live on AWS)',
+      tables: [],
+      edgeFunctions: ['gmail-auth (proxy to AWS API Gateway)'],
+      external: [
+        { name: 'AWS API Gateway', detail: '3mb71kyw2k.execute-api.us-east-1.amazonaws.com/dev/gmail/auth' },
+        { name: 'Google OAuth', detail: 'consent screen on the mailbox owner side' },
+      ],
+    },
+  },
+]
+
+export function appForPath(path: string): AppConfig | null {
+  return APPS.find((a) => a.routePrefixes.some((p) => path === p || path.startsWith(p + '/'))) ?? null
+}
+
+export function appByCode(code: string): AppConfig | null {
+  return APPS.find((a) => a.code === code) ?? null
+}

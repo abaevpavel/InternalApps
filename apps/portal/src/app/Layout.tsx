@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutGrid, LogOut, Menu, Settings, Users } from 'lucide-react'
+import { LayoutGrid, LogOut, Menu, Settings, SlidersHorizontal, Users } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
+import { appForPath } from './appRegistry'
 
 /** Заголовок хедера по маршруту (как в оригинале: страница = свой титул). */
 const TITLES: [prefix: string, title: string][] = [
@@ -10,6 +11,7 @@ const TITLES: [prefix: string, title: string][] = [
   ['/production-checklist', '03-PRODUCTION-CHECKLIST'],
   ['/checklist', '06-HR-CHECKLISTS'],
   ['/gmail-auto-sender', '06-HR-GMAIL AUTO SENDER'],
+  ['/sales-email-sender', '02-SALES-SEND AN OFFER EMAIL'],
   ['/', 'MY APPLICATIONS'],
 ]
 
@@ -20,6 +22,7 @@ export function Layout() {
   const nav = useNavigate()
   const { pathname } = useLocation()
   const title = TITLES.find(([p]) => pathname.startsWith(p) && p !== '/')?.[1] ?? 'MY APPLICATIONS'
+  const currentApp = appForPath(pathname) // для контекстного пункта App Settings
 
   useEffect(() => {
     if (!open) return
@@ -60,6 +63,13 @@ export function Layout() {
               <div className="border-t" />
               <MenuItem icon={<Settings size={16} />} label="My Account" onClick={() => go('/account')} />
               {isAdmin && <MenuItem icon={<Users size={16} />} label="User Management" onClick={() => go('/users')} />}
+              {isAdmin && currentApp && (
+                <MenuItem
+                  icon={<SlidersHorizontal size={16} />}
+                  label="App Settings"
+                  onClick={() => go(`/settings/${currentApp.code}`)}
+                />
+              )}
               <MenuItem icon={<LayoutGrid size={16} />} label="My Applications" onClick={() => go('/')} />
               <div className="border-t" />
               <MenuItem

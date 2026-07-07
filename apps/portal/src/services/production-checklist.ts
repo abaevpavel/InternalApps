@@ -1,4 +1,5 @@
 import { requireSupabase } from '../lib/supabase'
+import { resolveString } from './app-settings'
 import type {
   ChecklistItem,
   ChecklistTemplate,
@@ -338,7 +339,8 @@ export async function sendChecklistToMake(args: {
   items: ChecklistItem[]
   progress: ProgressRow[]
 }): Promise<void> {
-  if (!MAKE_WEBHOOK) throw new Error('VITE_MAKE_SEND_WEBHOOK не задан в .env')
+  const webhook = await resolveString('production-checklist', 'send_webhook', MAKE_WEBHOOK)
+  if (!webhook) throw new Error('Send webhook is not configured (App Settings → Webhooks or .env)')
   const progressByTask = new Map(args.progress.map((p) => [p.task_id, p]))
 
   const payload: SendPayload = {
@@ -358,7 +360,7 @@ export async function sendChecklistToMake(args: {
     }),
   }
 
-  const res = await fetch(MAKE_WEBHOOK, {
+  const res = await fetch(webhook, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

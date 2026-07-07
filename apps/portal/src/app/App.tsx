@@ -12,6 +12,8 @@ import { ProjectChecklistPage } from '../pages/production-checklist/ProjectCheck
 import { EmployeeChecklistsPage } from '../pages/hr-checklists/EmployeeChecklists'
 import { ChecklistDetailPage } from '../pages/hr-checklists/ChecklistDetail'
 import { GmailAutoSenderPage } from '../pages/gmail-sender/GmailAutoSender'
+import { SalesEmailSenderPage } from '../pages/sales/SalesEmailSender'
+import { AppSettingsPage } from '../pages/AppSettings'
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { authUser, profile, denied, loading } = useAuth()
@@ -47,6 +49,8 @@ function Shell() {
         <Route path="/checklists" element={<EmployeeChecklistsPage />} />
         <Route path="/checklist/:id" element={<ChecklistDetailPage />} />
         <Route path="/gmail-auto-sender" element={<GmailAutoSenderPage />} />
+        <Route path="/sales-email-sender" element={<SalesEmailSenderPage />} />
+        <Route path="/settings/:appCode" element={<AdminOnly><AppSettingsPage /></AdminOnly>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
