@@ -1,58 +1,75 @@
 # Портал — статус миграции с Lovable (памятка)
 
-> Обновлено: 2026-07-02. Портал `apps/portal`, БД — существующий Supabase
+> Обновлено: 2026-07-07. Портал `apps/portal`, БД — существующий Supabase
 > «HR DASHBOARD» `pilxwhtkhysanpukaliu` (переиспользуем, данные там же).
+> Все внутренние приложения — **роуты внутри портала** (один деплой, общая БД).
+> Отдельный только **Task Planner** (своя БД, внешний URL, открывается в новой вкладке).
 
-## Что нового / лучше, чем в Lovable
-- **Свой фронт вне Lovable** (Vite+React+TS), не зависим от их платформы.
-- **Whitelist-поток в наших руках**: свой триггер `portal_handle_new_user` —
-  первый вход → авто-создание профиля + выдача ролей из приглашения.
-- **Invited-строки в списке Users** + кнопка **Revoke** (в Lovable приглашённые
-  нигде не отображались до первого входа).
-- **Ловля «тихого no-op» RLS**: удаление/запись, заблокированные политикой, теперь
-  дают явную ошибку, а не ложный «успех».
-- **SSO-хэндофф** заложен (передача сессии дочерним апкам через URL-fragment).
+---
 
-## Где были дыры (в Lovable-БД)
-- **Нет политик RLS на запись** для админа: `user_roles`, `roles`,
-  `role_applications`, `applications`, `invitations`, `profiles` — из браузера
-  писать было нельзя (их админка, видимо, писала через edge-функции). Добавили
-  admin-политики через `user_has_admin_role(auth.uid())`.
-- **Деструктивная смена роли**: старый подход DELETE→INSERT мог оставить юзера без
-  роли при сбое. Переписали на неразрушающий (сначала добавить, потом убрать лишнее).
-- **Первого админа** пришлось заводить руками в SQL (курица-яйцо: чтобы раздать
-  админку, надо уже быть админом).
+## Приложения (собрано, роуты внутри портала)
 
-## Что сделали (кратко)
-- Собрали портал: Login (Google+whitelist), My Applications, My Account,
-  User Management (Users + Roles), всё на реальной БД.
-- Сняли реальную схему Lovable, адаптировали слой данных под неё.
-- Включили admin-политики RLS + триггер первого входа.
-- Добавили Invited/Revoke, защиту от тихих RLS-сбоев.
-- Логотип в хедере кликабелен → на главную (My Applications).
-- **Проверено вживую (2026-07-02):** первый админ (`todor.3d@basementremodeling.com`)
-  заведён через SQL, вход работает, видны все приложения, User Management (Users+Roles)
-  открывается и редактируется. Task Planner добавлен строкой в `applications`.
-  Google-вход — под доменом Workspace (consent = Internal).
+| Приложение | Роут(ы) | Статус | Заметки |
+|---|---|---|---|
+| **03-Production Checklist** | `/production-checklist`, `/production-checklist/:id`, `/production-checklist/project/:projectId` | ✅ собрано | QA-чеклист по проектам; tri-state, Send→Make (вебхук в app-settings), AI-импорт |
+| **06-HR Checklists** | `/checklists`, `/checklist/:id` | ✅ собрано | Онбординг/оффбординг; дерево ≥3 уровней, tri-state + каскад, PDF (@react-pdf), AI-импорт. **Legacy-фазы выпилены осознанно** |
+| **06-HR Gmail Auto Sender** | `/gmail-auto-sender` | ✅ собрано | Тонкий фронт над edge `gmail-auth`→AWS; БД нет |
+| **02-Sales — Send an Offer Email** | `/sales-email-sender` | ✅ собрано | Quill-редактор, шаблоны `email_templates`, черновик в localStorage, Send→Make |
+| **06-HR Sync Airtable Contacts** | `/hr-sync-airtable` | ✅ собрано | 2 кнопки Sync (работают, POST→Make). **Save Schedule — disabled с англ. подсказкой** (RPC в БД нет; проверено) |
+| **Task Planner** | внешний `http://localhost:5173`/прод | — | Отдельный деплой, своя БД |
 
-## Что ещё надо будет сделать (потом)
-- [ ] **Тест под реальным аккаунтом менеджера** (не-админ): видит только свои
-      приложения, НЕТ User Management, `/users` недоступен, роли/юзеров менять не может.
-- [ ] **Тест под тестовым приглашённым** (внутренний `@basementremodeling.com`/
-      `@achgroupllc.com`): Add User → первый вход → профиль и роль создались сами,
-      Invited-строка стала обычным юзером. (Единственное непроверенное звено —
-      `dev@todor3d.com` не годится: Internal-consent Google его блокирует.)
-- [ ] **Аудит RLS на escalation**: убедиться, что у Lovable не осталось дырявой
-      политики, позволяющей не-админу повысить себе роль.
-- [ ] **SSO-консюмер в `packages/lib`** — чтобы апки на субдоменах принимали сессию
-      портала без повторного входа (нужно к деплою первой апки).
-- [ ] **Прод-деплой** портала на AWS-субдомен + прод-URL в Google/Supabase Redirect.
-- [ ] **Вкладка Applications** в UI (сейчас новую апку добавляем только SQL).
-- [ ] **URL карточки Task Planner** (сейчас кнопка серая — впишем при деплое).
+Код каждой апки: `apps/portal/src/pages/<app>/*`, `src/services/<app>.ts`, `src/domain/<app>.ts`.
+Карточки на «My Applications» открываются: внутренние — навигацией (относительный `applications.url`, напр. `/checklists`); внешние (Task Planner, абсолютный URL) — в новой вкладке с SSO.
+
+### Общие компоненты
+`components/ui.tsx` (Button/Card/Modal/Field/Input/Textarea/Tabs/**Dropdown**/StatusBadge/DataTable…),
+`lib/imageCompression.ts` (JPEG ≤200KB), кастомные `Dropdown`/`SearchableCombobox`/`DatePicker`,
+общая edge `extract-checklist-from-image` (HR + Production).
+
+---
+
+## App-settings фреймворк (готов)
+Настройки **конкретного приложения** (не портала).
+- Таблица **`app_settings`** (key/value на апку) — миграция `0003_app_settings.sql`, **чтение — любой authenticated, запись — админ** (`user_has_admin_role`). ⚠️ **Прогнать SQL** на живой БД (иначе Save в настройках падает; сами апки работают на env-фолбэке).
+- Реестр `src/app/appRegistry.ts` — по каждой апке: вебхуки + `resources` (БД/таблицы/бакеты/edge/внешние) + роут-префиксы.
+- Экран **`/settings/:appCode`** (admin-only) с табами: **General** (описание проекта), **Resources**, **Webhooks** (если есть).
+- **Resources — живой**: реальные `count` строк по таблицам + реальные бакеты (public/private из `storage.listBuckets()`); edge/external — declared (с клиента не интроспектируются).
+- Вход — **контекстный пункт «App Settings»** в хедер-меню (админ + внутри апки).
+- Сервисы читают вебхуки из БД с фолбэком на env (`resolveString`): Sales, Production-Checklist, HR-Sync.
+
+---
+
+## Рекомендации / долги (сделать потом)
+
+### Доступ и безопасность
+- [ ] **Per-app route-gate** (`AppAccessProtected`): сейчас карточки на главной фильтруются по роли ✅, но **прямой URL к чужой апке не закрыт** (любой залогиненный зайдёт). План: хук `useAppAccess()` (доступные `applications.url` юзера) + обёртка роутов; admin bypass; экран «Access denied». Тест — под ограниченной ролью.
+- [ ] **Ужесточить RLS** (дополняем позже, возможно): у части таблиц политики «любой authenticated» → данные достижимы прямым API-запросом даже без route-доступа. Кандидаты: `email_templates` (owner/роль Sales), проверить checklist-таблицы. Route-gate = UI-слой; строгая изоляция данных = RLS.
+- [ ] **Секретность вебхуков**: все Make-вебхуки сейчас дёргаются прямым `fetch` из браузера (URL виден в Network, без HMAC). Правильно — **edge-прокси** (`send-*`) с ролевой проверкой + секрет + лог. app-settings делает URL редактируемым, но не скрывает.
+- [ ] **gmail-auth**: `verify_jwt=false` + захардкоженный AWS-токен = открытый прокси → secrets + `verify_jwt=true` + admin-check.
+
+### По приложениям
+- [ ] **HR-Sync**: сделать расписание реально редактируемым (таблица `sync_schedules` + рабочие cron-RPC), таймзона через IANA `America/New_York` (сейчас ET→UTC = +5, летом EDT уезжает на час). Сейчас — read-only + честная подсказка.
+- [ ] **Приватность фото**: бакеты `production-checklist-photos`, `checklist-item-photos`, `checklist-photos` — public. Рекомендация: private + signed URLs.
+- [ ] **HR Legacy-фазы**: выпилены; при необходимости завести их контент обычными шаблонами через редактор.
+- [ ] **Sales**: `updated_at` теперь проставляется явно; RLS `email_templates` — сузить до owner/роли.
+
+### Прочее из платформы (ранее)
+- [ ] **Тесты доступа**: не-админ видит только свои апки, нет User Management; приглашённый — первый вход создаёт профиль+роль. (`dev@todor3d.com` не годится — Internal-consent Google блокирует.)
+- [ ] **Аудит RLS на escalation** (не осталось ли дырявой Lovable-политики повышения роли).
+- [ ] **SSO-консюмер в `packages/lib`** (к деплою первой апки на субдомен).
+- [ ] **Прод-деплой** + прод-URL в Google/Supabase Redirect. Локально портал на **:5173** (порт в whitelist Supabase; иначе OAuth редиректит на прод).
+- [ ] **Вкладка Applications** в UI (сейчас апку добавляем SQL).
+
+---
+
+## Что было лучше, чем в Lovable (платформа)
+- Свой фронт вне Lovable (Vite+React+TS).
+- Whitelist-поток в наших руках (триггер первого входа → авто-профиль+роли).
+- Invited-строки + Revoke в Users; ловля «тихого no-op» RLS (явная ошибка вместо ложного успеха).
+- SSO-хэндофф (сессия дочерним апкам через URL-fragment).
+- Модалки: ограничение высоты + внутренний скролл + блок скролла фона (правка `ui.Modal`).
 
 ## С клиентом обсудить/сделать
-- [ ] Решить судьбу **дубля** «Pavel Abaev» (`pavel.a@...`: два — HR Manager и Admin).
-- [ ] Подтвердить домены Workspace (basementremodeling.com + achgroupllc.com — один
-      Workspace? от этого зависит, кто вообще может логиниться при Internal-consent).
-- [ ] Согласовать **прод-домены/субдомены** для портала и приложений (для Redirect URIs).
-- [ ] Как заходят разработчики t3d — под внутренними аккаунтами (решено: да).
+- [ ] Судьба **дубля** «Pavel Abaev» (два: HR Manager и Admin).
+- [ ] Подтвердить домены Workspace (basementremodeling.com + achgroupllc.com).
+- [ ] Согласовать **прод-домены/субдомены** (для Redirect URIs).

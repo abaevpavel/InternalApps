@@ -12,6 +12,7 @@ const TITLES: [prefix: string, title: string][] = [
   ['/checklist', '06-HR-CHECKLISTS'],
   ['/gmail-auto-sender', '06-HR-GMAIL AUTO SENDER'],
   ['/sales-email-sender', '02-SALES-SEND AN OFFER EMAIL'],
+  ['/hr-sync-airtable', '06-HR-SYNC AIRTABLE CONTACTS'],
   ['/', 'MY APPLICATIONS'],
 ]
 

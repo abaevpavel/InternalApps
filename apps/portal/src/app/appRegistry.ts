@@ -122,6 +122,35 @@ export const APPS: AppConfig[] = [
       ],
     },
   },
+  {
+    code: 'hr-sync',
+    label: '06-HR Sync Airtable Contacts',
+    routePrefixes: ['/hr-sync-airtable'],
+    webhooks: [
+      {
+        key: 'employees_webhook',
+        label: 'Employees sync webhook (Make)',
+        hint: 'POST target for "Sync Employees Contacts".',
+        envDefault: import.meta.env.VITE_MAKE_HR_SYNC_EMPLOYEES as string | undefined,
+      },
+      {
+        key: 'vendors_webhook',
+        label: 'Key Vendors sync webhook (Make)',
+        hint: 'POST target for "Sync Key Vendors Contacts".',
+        envDefault: import.meta.env.VITE_MAKE_HR_SYNC_VENDORS as string | undefined,
+      },
+    ],
+    resources: {
+      database: '— no own tables; automatic sync via pg_cron (4 jobs) + pg_net',
+      tables: [],
+      edgeFunctions: ['manage-sync-schedules (schedule RPCs not present in DB — Save Schedule is a no-op)'],
+      external: [
+        { name: 'Make.com — Employees sync', detail: 'POST {action:sync_employees} → Airtable (employee contacts)' },
+        { name: 'Make.com — Key Vendors sync', detail: 'POST {action:sync_vendors} → Airtable (vendor contacts)' },
+        { name: 'Server cron', detail: 'Employees 11:00 & 17:00 ET, Vendors 11:10 & 17:10 ET (pg_cron)' },
+      ],
+    },
+  },
 ]
 
 export function appForPath(path: string): AppConfig | null {
