@@ -1,0 +1,132 @@
+# Портал — сквозной аудит (дыры, баги, что фиксить)
+
+> Обновлено: 2026-07-07. Охват: `apps/portal` (все приложения-роуты) + общая БД
+> `pilxwhtkhysanpukaliu`. Один общий документ. Severity: 🔴 высокая · 🟠 средняя · 🟡 низкая.
+> Многое унаследовано от Lovable («перенос как есть») — помечено.
+
+---
+
+## TL;DR
+- **Хардкод секретов — НЕТ.** Ни anon-ключа, ни service_role, ни функциональных вебхуков в
+  исходниках; вся конфигурация через `import.meta.env` + `app_settings`. (Детали ниже.)
+- Основные риски — **унаследованные от Lovable**: открытые Make-вебхуки без подписи, свободные
+  RLS на части таблиц, `gmail-auth` с `verify_jwt=false`, публичные бакеты.
+- Наш новый долг: **нет per-app route-gate** (прямой URL к чужой апке открыт залогиненному).
+- Несколько мест без атомарности/идемпотентности (гонки при быстрых кликах) — из-за отсутствия
+  UNIQUE-констрейнтов в БД.
+
+---
+
+## 1. Хардкод — результат аудита ✅ (в основном чисто)
+Проверено grep'ом по `apps/portal/src` (`https?://`, `eyJ…`, `service_role`, `bearer`, вебхук-хвосты,
+emails) и `git grep` по отслеживаемым файлам.
+
+**Чисто:**
+- Supabase URL/anon-key — только `import.meta.env` (`lib/supabase.ts`); в git не утекли (`.env` в `.gitignore`).
+- Все Make-вебхуки — через `env` + `app_settings` (`resolveString`), в коде хвостов нет.
+- Нет `service_role`, `dangerouslySetInnerHTML`, `eval`, `TODO/FIXME`.
+
+**Косметический/справочный хардкод (не секреты, но может устаревать):** 🟡
+- `pages/gmail-sender/GmailAutoSender.tsx` — в макете Google-warning зашиты `abaevb@gmail.com` и
+  `3mb71kyw2k.execute-api…amazonaws.com` (воссоздание consent-экрана, только отображение).
+- `app/appRegistry.ts` — AWS-URL и cron-времена (11:00/17:00…) в справке Resources (информативно).
+- `pages/hr-sync/HRSyncAirtable.tsx` — cron-времена в read-only блоке (зеркалят реальный cron;
+  при изменении cron не обновятся автоматически).
+- `.env.example` содержит **реальные** URL вебхуков (не секрет — вебхуки и так публичны, но по-хорошему
+  плейсхолдеры).
+> Рекомендация: не критично. При желании — вынести email/AWS-URL Gmail-макета в конфиг; cron-времена
+> тянуть из БД/edge (см. §4 HR-Sync).
+
+---
+
+## 2. Безопасность
+
+### 🔴 SEC-1. Открытые Make-вебхуки без подписи (унаследовано)
+Send (Production-Checklist), Sales, HR-Sync — прямой `fetch` из браузера. URL виден в Network/бандле,
+без HMAC/секрета → любой, кто знает URL, дёргает сценарий Make.
+**Фикс:** серверный edge-прокси (`send-*`) с ролевой проверкой + секрет + лог. `app_settings` делает URL
+редактируемым, но **не скрывает** — нужен edge-слой.
+
+### 🔴 SEC-2. Нет per-app route-gate (наш долг)
+Карточки на «My Applications» фильтруются по роли ✅, но **роуты не гейтятся**: любой залогиненный
+открывает чужую апку прямым URL. **Фикс:** `useAppAccess()` (доступные `applications.url`) +
+`AppAccessProtected` вокруг app-роутов (admin bypass, экран «Access denied»). См. PORTAL-STATUS.
+
+### 🟠 SEC-3. Свободные RLS на части таблиц (унаследовано)
+У ряда таблиц политика «любой authenticated» → данные достижимы прямым API-запросом даже без
+route-доступа. Подтверждено: `email_templates` (Sales) — read/write всем. Проверить checklist-таблицы.
+**Фикс:** owner/роль на UPDATE/DELETE. (Дополняем RLS позже — по решению.)
+
+### 🟠 SEC-4. `gmail-auth` edge: `verify_jwt=false` + захардкоженный AWS-токен (унаследовано, в edge)
+Открытый прокси к AWS. Токен `bmasters2020` — в edge-функции (не в нашем клиенте). **Фикс:** secrets +
+`verify_jwt=true` + admin-check.
+
+### 🟠 SEC-5. Публичные бакеты (унаследовано)
+`production-checklist-photos`, `checklist-item-photos`, `checklist-photos` — public: фото сотрудников/
+стройплощадок по прямой ссылке без авторизации. **Фикс:** private + signed URLs.
+
+### 🟡 SEC-6. Ссылки пунктов рендерятся как `href` без валидации схемы
+`ChecklistItem.links[].url` → `<a href={url}>`. HR-редактор нормализует (`https://` если нет протокола),
+но стоит явно резать `javascript:`/`data:` схемы в обоих редакторах. Низкий риск (правят только
+авторизованные).
+
+---
+
+## 3. Корректность / баги
+
+### 🟠 BUG-1. Прогресс не атомарен (гонка → дубли)
+`upsertProgress` (production-checklist и hr-checklists) = read-then-write **без** UNIQUE-констрейнта на
+`(project_id/employee_id, task_id[, phase])`. Быстрый двойной клик → возможны дубли строк прогресса.
+**Фикс:** UNIQUE-констрейнты + `upsert(onConflict)` вместо read-then-write.
+
+### 🟠 BUG-2. Send не идемпотентен
+Production-Checklist Send: двойной клик → два POST в Make + два `Completed`. Мягкая защита (проверка
+`checklist_sent_at` вызывающим) не строгая. **Фикс:** серверная идемпотентность (в edge SEC-1) или
+блокировка кнопки + флаг.
+
+### 🟡 BUG-3. Назначения без UNIQUE
+`project_checklists` / `employee_checklists` — нет UNIQUE `(…_id, checklist_id)`; защита от дублей —
+проверкой в коде (гонка возможна). **Фикс:** UNIQUE-констрейнт.
+
+### 🟡 BUG-4. HR tri-state каскад — приближение
+Состояние родителя — производное от листьев (не хранится отдельной строкой), каскад императивный без
+транзакции. Функционально эквивалентно, но при плохой сети возможны частичные состояния. Осознанное
+упрощение vs оригинал.
+
+### 🟡 BUG-5. Sales — чистка HTML регулярками
+`cleanHtml` эмпирическая (пустые `<p>`, `</p>→<br>`, схлопывание `<br>`). Хрупко к нестандартной
+разметке. Работает для типовых писем; отдельного санитайзера нет.
+
+### 🟡 BUG-6. HR-Sync — расписание read-only + DST
+«Save Schedule» — disabled (RPC в БД нет, проверено). Времена read-only зеркалят реальный cron.
+Оригинальный ET→UTC=+5 не учитывал EDT. **Фикс (если надо редактируемое):** таблица `sync_schedules`
++ рабочие cron-RPC + IANA `America/New_York`.
+
+---
+
+## 4. Целостность данных (констрейнты, которых не хватает)
+- UNIQUE `project_checklist_progress (project_id, task_id)` — BUG-1.
+- UNIQUE `employee_checklist_progress (employee_id, task_id, phase)` — BUG-1.
+- UNIQUE `project_checklists (project_id, checklist_id)`, `employee_checklists (employee_id, checklist_id)` — BUG-3.
+- (Опц.) enum на `projects.status` (сейчас свободный text).
+- Дохлые колонки: `project_checklist_progress.photos` (в UI не пишется).
+
+---
+
+## 5. Требует действия СЕЙЧАС (иначе часть не работает)
+- [ ] **Прогнать `apps/portal/supabase/migrations/0003_app_settings.sql`** — иначе Save в App Settings
+      (General/Webhooks) падает (апки при этом работают на env-фолбэке, Resources — тоже).
+- [ ] Локальный портал держать на **:5173** (порт в whitelist Supabase Auth; иначе OAuth редиректит на прод).
+
+---
+
+## 6. Приоритезированный чек-лист фиксов
+1. 🔴 **SEC-2 route-gate** — быстро и полностью в нашей зоне (frontend). Первым.
+2. 🔴 **SEC-1 edge-прокси вебхуков** (+ идемпотентность BUG-2) — закрывает и открытые вебхуки, и дубли Send.
+3. 🟠 **UNIQUE-констрейнты** (BUG-1/BUG-3) — одна SQL-миграция, снимает гонки/дубли.
+4. 🟠 **RLS-сужение** (SEC-3) — по таблицам, «дополняем позже».
+5. 🟠 **Приватные бакеты** (SEC-5) + `gmail-auth` hardening (SEC-4).
+6. 🟡 Косметика/линки (SEC-6), Sales-санитайзер (BUG-5), HR-Sync реальное расписание (BUG-6).
+
+> Ничего из 🔴/🟠 не блокирует текущую работу приложений — это укрепление перед продом.
+> Связано с рекомендациями в [PORTAL-STATUS.md](PORTAL-STATUS.md).
