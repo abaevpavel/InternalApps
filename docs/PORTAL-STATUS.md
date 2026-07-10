@@ -30,7 +30,7 @@
 
 ## App-settings фреймворк (готов)
 Настройки **конкретного приложения** (не портала).
-- Таблица **`app_settings`** (key/value на апку) — миграция `0003_app_settings.sql`, **чтение — любой authenticated, запись — админ** (`user_has_admin_role`). ⚠️ **Прогнать SQL** на живой БД (иначе Save в настройках падает; сами апки работают на env-фолбэке).
+- Таблица **`app_settings`** (key/value на апку) — миграция `0003_app_settings.sql`, **чтение — любой authenticated, запись — админ** (`user_has_admin_role`). ✅ **Прогнано на живой БД** (2026-07-07): таблица есть, 2 RLS-политики, Save работает.
 - Реестр `src/app/appRegistry.ts` — по каждой апке: вебхуки + `resources` (БД/таблицы/бакеты/edge/внешние) + роут-префиксы.
 - Экран **`/settings/:appCode`** (admin-only) с табами: **General** (описание проекта), **Resources**, **Webhooks** (если есть).
 - **Resources — живой**: реальные `count` строк по таблицам + реальные бакеты (public/private из `storage.listBuckets()`); edge/external — declared (с клиента не интроспектируются).
@@ -71,5 +71,6 @@
 
 ## С клиентом обсудить/сделать
 - [ ] Судьба **дубля** «Pavel Abaev» (два: HR Manager и Admin).
-- [ ] Подтвердить домены Workspace (basementremodeling.com + achgroupllc.com).
+- [x] Подтвердить домены Workspace — ✅ подтверждено клиентом (2026-07-10): валидны ОБА
+      (basementremodeling.com + achgroupllc.com), юзеры обоих уже в whitelist. Учитывать оба при доступе.
 - [ ] Согласовать **прод-домены/субдомены** (для Redirect URIs).
