@@ -6,7 +6,7 @@
 
 ---
 
-## ⏸️ ЧЕКПОЙНТ — с чего продолжить (обновлено 2026-07-13)
+## ⏸️ ЧЕКПОЙНТ — с чего продолжить (обновлено 2026-07-14)
 
 **Сделано:**
 - ✅ Решение + полный план (этот файл).
@@ -33,14 +33,57 @@
   `.env`/`.env.example` переключены на портал (`pilxwhtkhysanpukaliu`, только anon). Build зелёный.
   (`streaming_logs` в коде не использовался — менять нечего; логи стрима при желании в localStorage.)
 
-**СЛЕДУЮЩИЙ ШАГ → Шаг 4 «Применить на HR DASHBOARD» (Влад):**
-1. SQL Editor: `0001_tp_schema.sql` → `0002_tp_retention.sql` (вкл. pg_cron) → `0003_tp_data.local.sql`.
-2. Задеплоить 6 edge-функций + секреты: `AIRTABLE_API_KEY`, `GOOGLE_PLACES_API_KEY` +
-   `AIRTABLE_PROJECT_BASE_ID/_TABLE/_VIEW`, `AIRTABLE_TEAM_BASE_ID`+`AIRTABLE_TEAMS_TABLE/_VIEW`,
-   `AIRTABLE_SKILLS_BASE_ID/_TABLE/_VIEW`. (`SUPABASE_URL`/`_ANON_KEY`/`_SERVICE_ROLE_KEY` инжектятся.)
-3. Прогнать синки (projects/teams/skills — апсерт по airtable_id/name, UUID сохранятся) +
-   `sync-team-accounts` (создаёт auth+profiles+user_roles бригадиров из Airtable).
-Затем Шаг 5 (n8n: коннект + `AI_teams_schedule`→`tp_ai_teams_schedule`), Шаг 6 (E2E).
+**СЛЕДУЮЩИЙ ШАГ → Шаг 4+ «Применить на HR DASHBOARD» — детальный runbook (Влад, Клод на подхвате).**
+Все файлы: `apps/task-planner/supabase/migrations/`. Проект: `pilxwhtkhysanpukaliu`.
+
+### 4.1 — Применить схему (SQL Editor, по порядку, по одному)
+1. `0001_tp_schema.sql`
+2. `0002_tp_retention.sql` — сперва включить pg_cron (Database → Extensions → `pg_cron`), затем файл.
+3. `0003_tp_data.local.sql` — тестовые данные (⚠️ gitignore, лежит только локально).
+✅ Проверка: `select count(*) from tp_tasks;` → 48; `select count(*) from tp_projects;` → 126.
+
+### 4.2 — Задеплоить 6 edge-функций
+Edge Functions → Deploy new function, имя = имя папки, код из `functions/<имя>/index.ts`:
+`sync-airtable-projects`, `sync-airtable-teams`, `sync-airtable-skills`, `sync-team-accounts`,
+`auto-sync-airtable`, `set-team-password`.
+
+### 4.3 — Секреты edge (Edge Functions → Secrets)
+`AIRTABLE_API_KEY`, `GOOGLE_PLACES_API_KEY`,
+`AIRTABLE_PROJECT_BASE_ID`/`_TABLE`/`_VIEW`,
+`AIRTABLE_TEAM_BASE_ID` + `AIRTABLE_TEAMS_TABLE`/`_VIEW`,
+`AIRTABLE_SKILLS_BASE_ID`/`_TABLE`/`_VIEW`.
+(`SUPABASE_URL`/`_ANON_KEY`/`_SERVICE_ROLE_KEY` инжектятся Supabase автоматически.)
+Значения `*_BASE_ID/_TABLE/_VIEW` — из env старого проекта `crews scheduling` / из Airtable.
+✅ Проверка: вызвать `sync-airtable-skills` → success, `tp_skills` не пустеет.
+
+### 4.4 — Прогнать синки
+Вызвать `auto-sync-airtable` (дёрнет projects/teams/skills), затем `sync-team-accounts`.
+projects/teams апсертятся по `airtable_id`, skills по `name` → перенесённые данные ОБНОВЯТСЯ,
+не задублируются (UUID сохранятся, FK задач целы). `sync-team-accounts` создаёт auth-аккаунты +
+`tp_profiles` + `tp_user_roles` бригадиров из Airtable (это и есть «синк юзеров»).
+✅ Проверка: `select count(*) from tp_teams;` = как в Airtable; `select count(*) from tp_profiles;` > 0.
+
+### 4.5 — Роли для PM/супер-админов (пока нет UI-синка юзеров)
+Бригадиры завелись в 4.4. Себе/PM роль добавить вручную:
+```sql
+insert into public.tp_user_roles (user_id, role) values ('<auth.uid из портала>', 'super_admin');
+```
+✅ Проверка: вход в Task Planner показывает PM-функционал.
+
+### 4.6 — Авто-профиль (опционально, решить)
+Триггер `auth.users → tp_handle_new_user` в 0001 НЕ навешен (auth.users общий для портала).
+Бригадиров создаёт `sync-team-accounts`; PM/админам роль ставим в 4.5. Триггер нужен, только если
+хотим авто-создание `tp_profiles` при каждом новом портал-юзере — тогда раскомментировать блок в
+конце `0001_tp_schema.sql` (имя `on_auth_user_created_tp`, чтобы не конфликтовать с портальным).
+
+### Шаг 5 — n8n
+Сценарий планировщика: переключить Supabase-коннект на портал + таблица `AI_teams_schedule` →
+`tp_ai_teams_schedule`. Вебхуки (`VITE_N8N_*`) не меняются.
+
+### Шаг 6 — Фронт + E2E
+Задеплоить фронт Task Planner (`.env` уже на портал, только выставить `VITE_SUPABASE_ANON_KEY`).
+Сквозной тест: создать задачу → сгенерировать расписание (n8n/ИИ) → увидеть результат →
+отметить выполнение бригадиром.
 
 ## 📌 После переноса — пересмотреть общие таблицы (future cleanup)
 Сейчас Task Planner изолирован префиксом `tp_` (осознанно, ради скорости) — есть параллельные
