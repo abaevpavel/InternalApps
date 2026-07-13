@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function loadUser(id: string, email: string) {
     let role: AppRole = 'pm'
     if (supabase) {
-      const { data } = await supabase.from('user_roles').select('role').eq('user_id', id).maybeSingle()
+      const { data } = await supabase.from('tp_user_roles').select('role').eq('user_id', id).maybeSingle()
       if (data?.role) role = data.role as AppRole
     }
     setUser({ id, email, role })

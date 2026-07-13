@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
 
     // Create sync log
     const { data: syncLog, error: syncLogError } = await supabase
-      .from('sync_logs')
+      .from('tp_sync_logs')
       .insert({
         sync_type: 'team_accounts',
         status: 'in_progress',
@@ -73,12 +73,12 @@ Deno.serve(async (req) => {
 
     // Fetch existing team leads from Supabase
     const { data: existingProfiles } = await supabase
-      .from('profiles')
+      .from('tp_profiles')
       .select('id, user_id, email, team_id, initial_password')
       .not('email', 'is', null);
 
     const { data: existingRoles } = await supabase
-      .from('user_roles')
+      .from('tp_user_roles')
       .select('user_id, role')
       .eq('role', 'team_lead');
 
@@ -113,7 +113,7 @@ Deno.serve(async (req) => {
         console.log(`Team ${teamName} has no email, skipping account creation`);
         // Update team status in Supabase
         await supabase
-          .from('teams')
+          .from('tp_teams')
           .update({
             account_status: 'no_email',
             account_error: 'No email address provided',
@@ -157,7 +157,7 @@ Deno.serve(async (req) => {
 
         // Get team_id from teams table
         const { data: teamData } = await supabase
-          .from('teams')
+          .from('tp_teams')
           .select('id')
           .eq('airtable_id', airtableId)
           .single();
@@ -165,7 +165,7 @@ Deno.serve(async (req) => {
         // Update profile with team_id and initial_password
         if (teamData) {
           await supabase
-            .from('profiles')
+            .from('tp_profiles')
             .update({
               team_id: teamData.id,
               initial_password: password,
@@ -175,7 +175,7 @@ Deno.serve(async (req) => {
 
         // Assign team_lead role
         const { error: roleError } = await supabase
-          .from('user_roles')
+          .from('tp_user_roles')
           .insert({
             user_id: userId,
             role: 'team_lead',
@@ -190,7 +190,7 @@ Deno.serve(async (req) => {
 
         // Update team status
         await supabase
-          .from('teams')
+          .from('tp_teams')
           .update({
             account_status: 'synced',
             account_error: null,
@@ -205,7 +205,7 @@ Deno.serve(async (req) => {
 
         // Update team status with error
         await supabase
-          .from('teams')
+          .from('tp_teams')
           .update({
             account_status: 'error',
             account_error: error.message || 'Failed to create account',
@@ -240,7 +240,7 @@ Deno.serve(async (req) => {
     // Update sync log
     if (syncLogId) {
       await supabase
-        .from('sync_logs')
+        .from('tp_sync_logs')
         .update({
           status: 'completed',
           completed_at: new Date().toISOString(),
@@ -270,7 +270,7 @@ Deno.serve(async (req) => {
     // Try to update sync log if we have the ID
     try {
       const { data: latestLog } = await supabase
-        .from('sync_logs')
+        .from('tp_sync_logs')
         .select('id')
         .eq('sync_type', 'team_accounts')
         .eq('status', 'in_progress')
@@ -280,7 +280,7 @@ Deno.serve(async (req) => {
 
       if (latestLog) {
         await supabase
-          .from('sync_logs')
+          .from('tp_sync_logs')
           .update({
             status: 'failed',
             completed_at: new Date().toISOString(),

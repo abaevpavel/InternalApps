@@ -11,3 +11,6 @@ dist-ssr
 # SSH keys / secrets
 *.pem
 *.key
+
+# Data-copy migrations with real business data (apply locally, never commit)
+*.local.sql

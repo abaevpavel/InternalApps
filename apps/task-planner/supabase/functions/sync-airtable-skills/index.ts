@@ -143,7 +143,7 @@ serve(async (req) => {
 
       // Check if skill already exists by name (no airtable_id for skills table)
       const { data: existingSkill } = await supabase
-        .from('skills')
+        .from('tp_skills')
         .select('id')
         .eq('name', skillData.name)
         .maybeSingle();
@@ -151,7 +151,7 @@ serve(async (req) => {
       if (existingSkill) {
         // Update existing skill with ALL fields to ensure changes from Airtable are reflected
         const { error: updateError } = await supabase
-          .from('skills')
+          .from('tp_skills')
           .update({
             name: skillData.name,
             description: skillData.description,
@@ -173,7 +173,7 @@ serve(async (req) => {
       } else {
         // Insert new skill
         const { error: insertError } = await supabase
-          .from('skills')
+          .from('tp_skills')
           .insert(skillData);
 
         if (insertError) {

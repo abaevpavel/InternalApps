@@ -53,7 +53,7 @@ serve(async (req) => {
 
     // Create initial sync log
     const { data: logData } = await supabase
-      .from('sync_logs')
+      .from('tp_sync_logs')
       .insert([{
         sync_type: 'teams',
         started_at: startTime.toISOString(),
@@ -182,7 +182,7 @@ serve(async (req) => {
 
       // Check if team already exists
       const { data: existingTeam } = await supabase
-        .from('teams')
+        .from('tp_teams')
         .select('id, coordinates, latitude, longitude')
         .eq('airtable_id', record.id)
         .single();
@@ -210,7 +210,7 @@ serve(async (req) => {
             };
             
         const { error: updateError } = await supabase
-          .from('teams')
+          .from('tp_teams')
           .update(updateData)
           .eq('airtable_id', record.id);
 
@@ -245,7 +245,7 @@ serve(async (req) => {
             };
             
         const { error: insertError } = await supabase
-          .from('teams')
+          .from('tp_teams')
           .insert(insertData);
 
         if (insertError) {
@@ -265,7 +265,7 @@ serve(async (req) => {
     // Clean up teams that are no longer in the Airtable view
     const syncedAirtableIds = allRecords.map(record => record.id);
     const { error: cleanupError } = await supabase
-      .from('teams')
+      .from('tp_teams')
       .delete()
       .not('airtable_id', 'in', `(${syncedAirtableIds.map(id => `"${id}"`).join(',')})`);
 
@@ -280,7 +280,7 @@ serve(async (req) => {
     // Update sync log with success
     if (logId) {
       await supabase
-        .from('sync_logs')
+        .from('tp_sync_logs')
         .update({
           completed_at: new Date().toISOString(),
           status: 'completed',
@@ -308,7 +308,7 @@ serve(async (req) => {
         if (supabaseUrl && supabaseKey) {
           const supabase = createClient(supabaseUrl, supabaseKey);
           await supabase
-            .from('sync_logs')
+            .from('tp_sync_logs')
             .update({
               completed_at: new Date().toISOString(),
               status: 'failed',

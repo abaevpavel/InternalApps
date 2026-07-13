@@ -6,27 +6,48 @@
 
 ---
 
-## ⏸️ ЧЕКПОЙНТ — с чего продолжить (обновлено 2026-07-10)
+## ⏸️ ЧЕКПОЙНТ — с чего продолжить (обновлено 2026-07-13)
 
 **Сделано:**
 - ✅ Решение + полный план (этот файл).
-- ✅ Скачаны 6 edge-функций в `apps/task-planner/supabase/functions/` (`sync-airtable-projects`,
-  `sync-airtable-teams`, `sync-airtable-skills`, `sync-team-accounts`, `auto-sync-airtable`,
-  `set-team-password`). ⚠️ Внутри `set-team-password/index.ts:23` — хардкод старого publishable-ключа.
-- ✅ Проанализировано: 12 таблиц (нашли `sync_logs`), 13 реально нужных секретов из 25
-  (2 ключа + 11 Airtable-ID), расширенная схема `tp_profiles`.
+- ✅ Скачаны 6 edge-функций в `apps/task-planner/supabase/functions/`. ⚠️ Внутри
+  `set-team-password/index.ts:23` — хардкод старого publishable-ключа.
+- ✅ **Шаг 1 — дамп схемы** снят (`crews scheduling`, PG17). Оказалась **21 таблица** (не 12).
+- ✅ **Шаг 2 — миграция написана и провалидирована локально** (Postgres 17, auth-стабы):
+  `apps/task-planner/supabase/migrations/0001_tp_schema.sql` — 14 таблиц, enum `tp_app_role`,
+  10 функций, 10 триггеров, 8 FK, 35 RLS-политик. Чисто применяется дважды (идемпотентно).
+  + `0002_tp_retention.sql` — pg_cron ретеншн логов 30 дней (`tp_sync_logs`, `tp_ai_teams_schedule`).
 
-**Разделение труда:** секреты (2 ключа `AIRTABLE_API_KEY`/`GOOGLE_PLACES_API_KEY` + 11 Airtable-ID)
-Влад добывает и сетит сам на Шаге 4 — они НЕ на критическом пути сейчас.
+**Решение по объёму (2026-07-13): переносим 14 из 21 таблиц. НЕ переносим 7:**
+- `async_jobs`, `streaming_logs` (→ localStorage), `add_prompt_responses`,
+  `test_proposal_payload_base` — удалены (пустые/эксперимент/тест).
+- `task_completion_history`, `task_notes`, `task_photos` — **отложены в отдельную доработку**
+  «user/бригадир: заметки, фото, история выполнения». Пустые. При реализации:
+  **переименовать в интуитивные имена** (напр. `tp_user_notes_for_tasks` с явной FK на `tp_tasks`,
+  понятной схемой), завести **бакет для фото**, продумать как правильно сохранять историю
+  выполнения. Делаем на этапе тестирования user-функционала.
 
-**СЛЕДУЮЩИЙ ШАГ при возобновлении → Шаг 1 «Дамп схемы»:**
-```
-supabase db dump --db-url "<CONNECTION_STRING crews scheduling>" --schema public \
-  -f <scratchpad>/crews_schema.sql
-```
-Connection string: dashboard `crews scheduling` → Connect → URI (подставить db password).
-CLI может требовать заново `supabase login` (прошлый токен временный, истёк).
-Как дамп готов — Клод пишет миграцию `tp_*` (Шаг 2).
+- ✅ **Шаг 3 — код переписан под `tp_`** (2026-07-14): фронт (`data.ts`, `AuthProvider.tsx`) +
+  5 edge-функций (`.from('X')`→`.from('tp_X')`), в `set-team-password` починен хардкод-ключ
+  (→ `SUPABASE_ANON_KEY` из env) и REST-URL `/rest/v1/user_roles`→`/rest/v1/tp_user_roles`.
+  `.env`/`.env.example` переключены на портал (`pilxwhtkhysanpukaliu`, только anon). Build зелёный.
+  (`streaming_logs` в коде не использовался — менять нечего; логи стрима при желании в localStorage.)
+
+**СЛЕДУЮЩИЙ ШАГ → Шаг 4 «Применить на HR DASHBOARD» (Влад):**
+1. SQL Editor: `0001_tp_schema.sql` → `0002_tp_retention.sql` (вкл. pg_cron) → `0003_tp_data.local.sql`.
+2. Задеплоить 6 edge-функций + секреты: `AIRTABLE_API_KEY`, `GOOGLE_PLACES_API_KEY` +
+   `AIRTABLE_PROJECT_BASE_ID/_TABLE/_VIEW`, `AIRTABLE_TEAM_BASE_ID`+`AIRTABLE_TEAMS_TABLE/_VIEW`,
+   `AIRTABLE_SKILLS_BASE_ID/_TABLE/_VIEW`. (`SUPABASE_URL`/`_ANON_KEY`/`_SERVICE_ROLE_KEY` инжектятся.)
+3. Прогнать синки (projects/teams/skills — апсерт по airtable_id/name, UUID сохранятся) +
+   `sync-team-accounts` (создаёт auth+profiles+user_roles бригадиров из Airtable).
+Затем Шаг 5 (n8n: коннект + `AI_teams_schedule`→`tp_ai_teams_schedule`), Шаг 6 (E2E).
+
+## 📌 После переноса — пересмотреть общие таблицы (future cleanup)
+Сейчас Task Planner изолирован префиксом `tp_` (осознанно, ради скорости) — есть параллельные
+пары с порталом: `tp_profiles`/`profiles`, `tp_projects`/`projects`, `tp_user_roles`/`user_roles`,
+`tp_app_settings`/`app_settings`. **Когда всё стабилизируется — просмотреть, какие таблицы реально
+общие для всех приложений портала, и что можно объединить** (единые `profiles`/`projects`/роли
+вместо дублей), чтобы не плодить рассинхрон. Это отдельная задача после успешного переезда.
 
 **Полный порядок (детали — в разделе «Пошаговый план» ниже):**
 1. ⏭️ Дамп схемы `crews scheduling` (Влад) → 2. Миграция `tp_*` SQL (Клод) →

@@ -54,7 +54,7 @@ serve(async (req) => {
 
     // Create initial sync log
     const { data: logData } = await supabase
-      .from('sync_logs')
+      .from('tp_sync_logs')
       .insert([{
         sync_type: 'projects',
         started_at: startTime.toISOString(),
@@ -166,7 +166,7 @@ serve(async (req) => {
 
       // Check if project already exists
       const { data: existingProject } = await supabase
-        .from('projects')
+        .from('tp_projects')
         .select('id, coordinates, latitude, longitude')
         .eq('airtable_id', record.id)
         .single();
@@ -196,7 +196,7 @@ serve(async (req) => {
             };
             
         const { error: updateError } = await supabase
-          .from('projects')
+          .from('tp_projects')
           .update(updateData)
           .eq('airtable_id', record.id);
 
@@ -226,7 +226,7 @@ serve(async (req) => {
             };
             
         const { error: insertError } = await supabase
-          .from('projects')
+          .from('tp_projects')
           .insert(insertData);
 
         if (insertError) {
@@ -241,7 +241,7 @@ serve(async (req) => {
     // Mark projects as inactive that are no longer in the Airtable view
     const syncedAirtableIds = allRecords.map(record => record.id);
     const { error: deactivateError } = await supabase
-      .from('projects')
+      .from('tp_projects')
       .update({ is_active: false, updated_at: new Date().toISOString() })
       .not('airtable_id', 'in', `(${syncedAirtableIds.map(id => `"${id}"`).join(',')})`)
       .eq('is_active', true);
@@ -257,7 +257,7 @@ serve(async (req) => {
     // Update sync log with success
     if (logId) {
       await supabase
-        .from('sync_logs')
+        .from('tp_sync_logs')
         .update({
           completed_at: new Date().toISOString(),
           status: 'completed',
@@ -285,7 +285,7 @@ serve(async (req) => {
         if (supabaseUrl && supabaseKey) {
           const supabase = createClient(supabaseUrl, supabaseKey);
           await supabase
-            .from('sync_logs')
+            .from('tp_sync_logs')
             .update({
               completed_at: new Date().toISOString(),
               status: 'failed',

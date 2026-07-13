@@ -11,7 +11,7 @@ export async function fetchTasks(status?: Task['status']): Promise<Task[]> {
   // ВАЖНО: FK tasks→teams в схеме нет, поэтому embed teams(...) даёт 400.
   // Имя бригады подтягиваем отдельным запросом и резолвим по team_id на клиенте.
   let q = supabase
-    .from('tasks')
+    .from('tp_tasks')
     .select('*, projects(name,address,project_manager,latitude,longitude)')
     .order('stop_number', { ascending: true })
   if (status) q = q.eq('status', status)
@@ -19,7 +19,7 @@ export async function fetchTasks(status?: Task['status']): Promise<Task[]> {
   if (error) throw error
   if (!data || data.length === 0) return []
   // карта team_id → {name, home} для подстановки имени и домашнего адреса бригады
-  const { data: teamRows } = await supabase.from('teams').select('id, name, address')
+  const { data: teamRows } = await supabase.from('tp_teams').select('id, name, address')
   const teamInfo = new Map(
     (teamRows ?? []).map((t) => [t.id as string, { name: t.name as string, home: (t.address as string) ?? '' }]),
   )
@@ -81,8 +81,8 @@ export async function fetchTeams(): Promise<Team[]> {
   // скиллы команды связаны через skills.description ("Available teams: recAAA, recBBB").
   // Тянем skills параллельно и инвертируем маппинг скилл→команды в команда→скиллы.
   const [teamsRes, skillsRes] = await Promise.all([
-    supabase.from('teams').select('*'),
-    supabase.from('skills').select('name, description'),
+    supabase.from('tp_teams').select('*'),
+    supabase.from('tp_skills').select('name, description'),
   ])
   if (teamsRes.error) throw teamsRes.error
   const skillsByTeam = new Map<string, TeamSkill[]>()
@@ -104,7 +104,7 @@ export async function fetchTeams(): Promise<Team[]> {
 
 export async function fetchProjects(): Promise<Project[]> {
   if (!supabase) return []
-  const { data, error } = await supabase.from('projects').select('*')
+  const { data, error } = await supabase.from('tp_projects').select('*')
   if (error) throw error
   return (data ?? []).map((r): Project => ({
     id: r.id, airtable_id: r.airtable_id, name: r.name, address: r.address ?? '',
@@ -117,7 +117,7 @@ export async function fetchProjects(): Promise<Project[]> {
 export async function fetchTeamAccounts(): Promise<import('../domain/types').TeamAccount[]> {
   if (!supabase) return []
   const { data, error } = await supabase
-    .from('teams')
+    .from('tp_teams')
     .select('id, name, email, address, slack_id, account_status')
     .order('name')
   if (error) throw error
@@ -142,9 +142,9 @@ function prettyRole(r: string): string {
 export async function fetchTeamMembers(): Promise<import('../domain/types').TeamMember[]> {
   if (!supabase) return []
   const [pRes, rRes, tRes] = await Promise.all([
-    supabase.from('profiles').select('*'),
-    supabase.from('user_roles').select('*'),
-    supabase.from('teams').select('id, name, email, address, account_status'),
+    supabase.from('tp_profiles').select('*'),
+    supabase.from('tp_user_roles').select('*'),
+    supabase.from('tp_teams').select('id, name, email, address, account_status'),
   ])
   const teams = (tRes.data ?? []) as Record<string, any>[]
   const teamByEmail = new Map<string, Record<string, any>>()
@@ -230,17 +230,17 @@ export async function setTeamPassword(input: {
 /* ---------------- Task Types CRUD (Admin) ---------------- */
 export async function createTaskType(name: string, description?: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured')
-  const { error } = await supabase.from('task_types').insert({ name, description: description ?? null })
+  const { error } = await supabase.from('tp_task_types').insert({ name, description: description ?? null })
   if (error) throw error
 }
 export async function updateTaskType(id: string, name: string, description?: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured')
-  const { error } = await supabase.from('task_types').update({ name, description: description ?? null }).eq('id', id)
+  const { error } = await supabase.from('tp_task_types').update({ name, description: description ?? null }).eq('id', id)
   if (error) throw error
 }
 export async function deleteTaskType(id: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured')
-  const { error } = await supabase.from('task_types').delete().eq('id', id)
+  const { error } = await supabase.from('tp_task_types').delete().eq('id', id)
   if (error) throw error
 }
 
@@ -250,13 +250,13 @@ export async function deleteTaskType(id: string): Promise<void> {
  */
 export async function fetchSetting(key: string): Promise<string | null> {
   if (!supabase) return null
-  const { data, error } = await supabase.from('app_settings').select('value').eq('key', key).maybeSingle()
+  const { data, error } = await supabase.from('tp_app_settings').select('value').eq('key', key).maybeSingle()
   if (error) throw error
   return (data?.value as string | undefined) ?? null
 }
 export async function updateSetting(key: string, value: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured')
-  const { error } = await supabase.from('app_settings').upsert({ key, value }, { onConflict: 'key' })
+  const { error } = await supabase.from('tp_app_settings').upsert({ key, value }, { onConflict: 'key' })
   if (error) throw error
 }
 
@@ -268,7 +268,7 @@ export async function fetchMyProfile(): Promise<{ first_name: string; last_name:
   const { data: auth } = await supabase.auth.getUser()
   const uid = auth.user?.id
   if (!uid) return null
-  const { data, error } = await supabase.from('profiles').select('first_name, last_name').eq('id', uid).maybeSingle()
+  const { data, error } = await supabase.from('tp_profiles').select('first_name, last_name').eq('id', uid).maybeSingle()
   if (error) throw error
   return data ? { first_name: data.first_name ?? '', last_name: data.last_name ?? '' } : null
 }
@@ -279,7 +279,7 @@ export async function updateMyProfile(firstName: string, lastName: string): Prom
   const { data: auth } = await supabase.auth.getUser()
   const uid = auth.user?.id
   if (!uid) throw new Error('Not signed in')
-  const { error } = await supabase.from('profiles').update({ first_name: firstName, last_name: lastName }).eq('id', uid)
+  const { error } = await supabase.from('tp_profiles').update({ first_name: firstName, last_name: lastName }).eq('id', uid)
   if (error) throw error
 }
 
@@ -306,7 +306,7 @@ function parseAvailableTeams(description: string | null): string[] {
 
 export async function fetchSkills(): Promise<Skill[]> {
   if (!supabase) return []
-  const { data, error } = await supabase.from('skills').select('*')
+  const { data, error } = await supabase.from('tp_skills').select('*')
   if (error) throw error
   return (data ?? []).map((r): Skill => ({
     id: r.id, name: r.name, category: r.category ?? 'Uncategorized',
@@ -318,7 +318,7 @@ export async function fetchSkills(): Promise<Skill[]> {
 /** Типы задач из БД (task_types) — для дропдауна Task Type (никакого хардкода). */
 export async function fetchTaskTypes(): Promise<import('../domain/types').TaskType[]> {
   if (!supabase) return []
-  const { data, error } = await supabase.from('task_types').select('id, name, description').order('name')
+  const { data, error } = await supabase.from('tp_task_types').select('id, name, description').order('name')
   if (error) throw error
   return (data ?? []).map((r): import('../domain/types').TaskType => ({ id: r.id, name: r.name, description: r.description ?? null }))
 }
@@ -327,7 +327,7 @@ export async function fetchAvailability(): Promise<TeamAvailability[]> {
   if (!supabase) return []
   // team_availability ссылается на team_id; имя команды подтянем join'ом
   const { data, error } = await supabase
-    .from('team_availability')
+    .from('tp_team_availability')
     .select('id, team_id, start_date, end_date, teams(name)')
   if (error) throw error
   return (data ?? []).map((r: Record<string, unknown>): TeamAvailability => ({
@@ -341,7 +341,7 @@ export async function fetchAvailability(): Promise<TeamAvailability[]> {
 export async function createAvailability(teamId: string, startDate: string, endDate: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured')
   const { data: auth } = await supabase.auth.getUser()
-  const { error } = await supabase.from('team_availability').insert({
+  const { error } = await supabase.from('tp_team_availability').insert({
     team_id: teamId, start_date: startDate, end_date: endDate, created_by: auth.user?.id ?? null,
   })
   if (error) throw error
@@ -350,7 +350,7 @@ export async function createAvailability(teamId: string, startDate: string, endD
 /** Удалить период недоступности. */
 export async function deleteAvailability(id: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured')
-  const { error } = await supabase.from('team_availability').delete().eq('id', id)
+  const { error } = await supabase.from('tp_team_availability').delete().eq('id', id)
   if (error) throw error
 }
 
@@ -397,7 +397,7 @@ export async function createTask(input: CreateTaskInput): Promise<string> {
     additional_stop: input.additional_stop ?? null,
     created_by: input.created_by ?? null,
   }
-  const { data, error } = await supabase.from('tasks').insert(row).select('id').single()
+  const { data, error } = await supabase.from('tp_tasks').insert(row).select('id').single()
   if (error) throw error
   return (data as { id: string }).id
 }
@@ -423,14 +423,14 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<vo
   if (input.scheduled_date !== undefined) row.scheduled_date = input.scheduled_date
   if (input.address !== undefined) row.address = input.address
   if (!Object.keys(row).length) return
-  const { error } = await supabase.from('tasks').update(row).eq('id', id)
+  const { error } = await supabase.from('tp_tasks').update(row).eq('id', id)
   if (error) throw error
 }
 
 /** Удаление задачи. */
 export async function deleteTask(id: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured')
-  const { error } = await supabase.from('tasks').delete().eq('id', id)
+  const { error } = await supabase.from('tp_tasks').delete().eq('id', id)
   if (error) throw error
 }
 
@@ -438,7 +438,7 @@ export async function deleteTask(id: string): Promise<void> {
 export async function updateTasksStatus(ids: string[], status: Task['status']): Promise<void> {
   if (!ids.length) return
   if (!supabase) throw new Error('Supabase is not configured')
-  const { error } = await supabase.from('tasks').update({ status }).in('id', ids)
+  const { error } = await supabase.from('tp_tasks').update({ status }).in('id', ids)
   if (error) throw error
 }
 
@@ -460,7 +460,7 @@ export async function applyScheduleToTasks(
       updates.push(
         (async () => {
           const { error } = await supabase!
-            .from('tasks')
+            .from('tp_tasks')
             .update({
               status,
               team_id: day.team_id === 'unassigned' ? null : day.team_id,
@@ -514,7 +514,7 @@ export async function materializeProposedCopies(
     }
   }
   if (!rows.length) return 0
-  const { error } = await supabase.from('tasks').insert(rows)
+  const { error } = await supabase.from('tp_tasks').insert(rows)
   if (error) throw error
   return rows.length
 }
@@ -522,7 +522,7 @@ export async function materializeProposedCopies(
 /** Удалить все задачи заданного статуса (для кнопки «Удалить все» в Proposed). */
 export async function deleteTasksByStatus(status: Task['status']): Promise<number> {
   if (!supabase) throw new Error('Supabase is not configured')
-  const { data, error } = await supabase.from('tasks').delete().eq('status', status).select('id')
+  const { data, error } = await supabase.from('tp_tasks').delete().eq('status', status).select('id')
   if (error) throw error
   return (data ?? []).length
 }
@@ -558,8 +558,8 @@ export async function restoreRequestedFromRun(requestId?: string): Promise<numbe
   if (!supabase) throw new Error('Supabase is not configured')
   const sel = 'request_ID, input_tasks, created_at'
   const q = requestId
-    ? supabase.from('AI_teams_schedule').select(sel).eq('request_ID', requestId).limit(1)
-    : supabase.from('AI_teams_schedule').select(sel).order('created_at', { ascending: false }).limit(1)
+    ? supabase.from('tp_ai_teams_schedule').select(sel).eq('request_ID', requestId).limit(1)
+    : supabase.from('tp_ai_teams_schedule').select(sel).order('created_at', { ascending: false }).limit(1)
   const { data, error } = await q
   if (error) throw error
   const row = data?.[0] as { input_tasks?: Record<string, any>[] } | undefined
@@ -572,7 +572,7 @@ export async function restoreRequestedFromRun(requestId?: string): Promise<numbe
         const anchor = TEST_ANCHOR_TIMES[t.id]
         const scheduled_time = anchor ? { type: 'exact', time: anchor } : (t.scheduled_time ?? null)
         const { error } = await supabase!
-          .from('tasks')
+          .from('tp_tasks')
           .update({
             status: 'requested',
             team_id: t.team?.team_id ?? null,
@@ -612,12 +612,12 @@ export async function fetchScheduleRun(requestId?: string): Promise<ScheduleRun 
   if (!supabase) return null
   // реальная таблица — AI_teams_schedule; comments лежат внутри output_data
   let q = supabase
-    .from('AI_teams_schedule')
+    .from('tp_ai_teams_schedule')
     .select('id, created_at, request_ID, output_data')
     .order('created_at', { ascending: false })
     .limit(1)
   if (requestId) q = supabase
-    .from('AI_teams_schedule')
+    .from('tp_ai_teams_schedule')
     .select('id, created_at, request_ID, output_data')
     .eq('request_ID', requestId)
     .limit(1)
@@ -651,7 +651,7 @@ export async function fetchTravelCache(pairs: [string, string][]): Promise<Map<s
   if (!froms.length || !tos.length) return out
   try {
     const { data, error } = await supabase
-      .from('travel_cache')
+      .from('tp_travel_cache')
       .select('from_address,to_address,minutes')
       .in('from_address', froms)
       .in('to_address', tos)
@@ -668,7 +668,7 @@ export async function saveTravelCache(entries: { from: string; to: string; minut
   if (!supabase || !entries.length) return
   try {
     await supabase
-      .from('travel_cache')
+      .from('tp_travel_cache')
       .upsert(
         entries.map((e) => ({ from_address: e.from, to_address: e.to, minutes: e.minutes })),
         { onConflict: 'from_address,to_address' },

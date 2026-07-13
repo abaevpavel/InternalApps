@@ -19,8 +19,9 @@ Deno.serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
     const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    // Новый публичный ключ (safe: publishable) — легаси anon/service отключены на проекте.
-    const PUBLISHABLE_KEY = 'sb_publishable_eVAySEoPVptAVOhzvGH_5Q_eVJg_90f'
+    // Публичный ключ для проверки токена через /rest — берём из env проекта (не хардкод).
+    // Supabase инжектит SUPABASE_ANON_KEY в edge-функции автоматически.
+    const PUBLISHABLE_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 
     const body = await req.json().catch(() => ({}))
 
@@ -41,7 +42,7 @@ Deno.serve(async (req) => {
 
     // 2) проверить токен + роль super_admin через /rest (тем же путём, что работает в app)
     const roleRes = await fetch(
-      `${SUPABASE_URL}/rest/v1/user_roles?select=role&user_id=eq.${sub}&role=eq.super_admin`,
+      `${SUPABASE_URL}/rest/v1/tp_user_roles?select=role&user_id=eq.${sub}&role=eq.super_admin`,
       { headers: { Authorization: `Bearer ${token}`, apikey: PUBLISHABLE_KEY } },
     )
     if (roleRes.status === 401 || roleRes.status === 403) return json({ error: `Invalid token (rest ${roleRes.status})` }, 401)
@@ -83,13 +84,13 @@ Deno.serve(async (req) => {
     }
 
     // 5) профиль + роль (идемпотентно)
-    const { error: pErr } = await admin.from('profiles').upsert(
+    const { error: pErr } = await admin.from('tp_profiles').upsert(
       { user_id: userId, email, first_name, last_name },
       { onConflict: 'user_id' },
     )
     if (pErr) return json({ error: `Profile upsert failed: ${pErr.message}` }, 400)
-    await admin.from('user_roles').delete().eq('user_id', userId)
-    const { error: urErr } = await admin.from('user_roles').insert({ user_id: userId, role })
+    await admin.from('tp_user_roles').delete().eq('user_id', userId)
+    const { error: urErr } = await admin.from('tp_user_roles').insert({ user_id: userId, role })
     if (urErr) return json({ error: `Role insert failed: ${urErr.message}` }, 400)
 
     return json({ ok: true, user_id: userId, created, role })
