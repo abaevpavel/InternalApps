@@ -15,6 +15,7 @@ import { GmailAutoSenderPage } from '../pages/gmail-sender/GmailAutoSender'
 import { SalesEmailSenderPage } from '../pages/sales/SalesEmailSender'
 import { AppSettingsPage } from '../pages/AppSettings'
 import { HRSyncAirtablePage } from '../pages/hr-sync/HRSyncAirtable'
+import { SendBuildertrendSchedulePage } from '../pages/buildertrend-schedule/SendBuildertrendSchedule'
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { authUser, profile, denied, loading } = useAuth()
@@ -52,6 +53,7 @@ function Shell() {
         <Route path="/gmail-auto-sender" element={<GmailAutoSenderPage />} />
         <Route path="/sales-email-sender" element={<SalesEmailSenderPage />} />
         <Route path="/hr-sync-airtable" element={<HRSyncAirtablePage />} />
+        <Route path="/buildertrend-schedule" element={<SendBuildertrendSchedulePage />} />
         <Route path="/settings/:appCode" element={<AdminOnly><AppSettingsPage /></AdminOnly>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

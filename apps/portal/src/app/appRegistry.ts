@@ -86,6 +86,35 @@ export const APPS: AppConfig[] = [
     },
   },
   {
+    code: 'buildertrend-schedule',
+    label: '03-Production — Send Buildertrend Schedule',
+    routePrefixes: ['/buildertrend-schedule'],
+    webhooks: [
+      {
+        key: 'schedule_webhook',
+        label: 'Schedule Send webhook (Make)',
+        hint: 'POST target for the "Submit" button (project name + photo URLs).',
+        envDefault: import.meta.env.VITE_MAKE_BUILDERTREND_SCHEDULE as string | undefined,
+      },
+    ],
+    resources: {
+      database: SUPABASE,
+      tables: ['— no own tables; project list comes live from Airtable via edge function'],
+      storageBuckets: ['buildertrend-schedule-photos'],
+      edgeFunctions: ['list-schedule-projects (Airtable "General Project Info" proxy → project dropdown)'],
+      external: [
+        {
+          name: 'Airtable (incoming)',
+          detail: 'General Project Info (appucrtf5MBcFXVza) → project dropdown; token in edge secrets (AIRTABLE_TOKEN)',
+        },
+        {
+          name: 'Make.com (outgoing)',
+          detail: 'Submit → "SEND SCHEDULE JOTFORM" scenario (formID 241016020135133): JotForm-shaped body, rawRequest carries { project, input119: [url] } → Airtable lookup → Slack + client email',
+        },
+      ],
+    },
+  },
+  {
     code: 'hr-checklists',
     label: '06-HR Checklists',
     routePrefixes: ['/checklists', '/checklist'],
