@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { recomputeTeamDay, type Point } from '../src/domain/scheduling-engine'
-import type { ScheduledTask } from '../src/domain/types'
+import { recomputeTeamDay, type Point } from '../src/domain/task-planner/scheduling-engine'
+import type { ScheduledTask } from '../src/domain/task-planner/types'
 
 // Простой travel-провайдер: фиксированные значения по ключу точки.
 function makeTravel(map: Record<string, number>) {

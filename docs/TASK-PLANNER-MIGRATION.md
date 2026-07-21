@@ -93,6 +93,20 @@
     Вебхуки в реестре намеренно пустые: они живут в `tp_app_settings`, а портал пишет
     в свою `app_settings` — дублировать нельзя.
 
+- ✅ **Task Planner ВСТРОЕН В ПОРТАЛ роутами (2026-07-22).** Отдельного SPA больше нет:
+  `apps/task-planner` удалён, код переехал в `apps/portal/src/{pages,services,domain}/task-planner/*`
+  + `components/task-planner-ui.tsx`, миграции и 6 edge-функций — в `apps/portal/supabase/`.
+  Роуты: `/task-planner` (Tasks), `/create`, `/availability`, `/admin` под общим `Layout`
+  портала; экраны апки попадают в бургер через новое поле `nav` в `appRegistry`.
+  Свой AuthProvider/Login/SSO-хэндофф выкинуты — вход общий портальный.
+  Вебхуки (`planner_webhook`, `slack_webhook`) переехали из `tp_app_settings` в портальную
+  `app_settings` и правятся на `/settings/task-planner`. `applications.url` = `/task-planner`.
+  `@dnd-kit/sortable` в портале поднят 8 → 10 (версия, под которую писался Tasks.tsx).
+  Причина: правила платформы в README (один домен, единый вход, единая оболочка, доступ
+  через роли портала) при отдельном бандле выполнялись бы копипастой в двух местах.
+  ⚠️ При удалении апки потерян её `.env` (gitignore): значения n8n-вебхуков восстановлены
+  из `.env.example`, а `VITE_GOOGLE_MAPS_API_KEY` надо вписать в `apps/portal/.env` заново.
+
 **СЛЕДУЮЩИЙ ШАГ → Шаг 5 (n8n) + прод-URL'ы.** Локально: портал `:5175`, Task Planner `:5173`
 (карточка `01-Task Planner (Daly Schedule)` в `applications.url` = `http://localhost:5173`).
 Перед продом: проставить боевые `VITE_PORTAL_URL` (в TP) и `VITE_TASK_PLANNER_URL` (в портале),

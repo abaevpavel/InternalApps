@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
-import { Button, Card, Input, Field, Select, PageTitle, Badge } from '../components/ui'
-import { fetchAvailability, fetchTeams, createAvailability, deleteAvailability } from '../services/data'
-import { errMsg } from '../lib/utils'
+import { Button, Card, Input, Field, Select, PageTitle, Badge } from '../../components/task-planner-ui'
+import { fetchAvailability, fetchTeams, createAvailability, deleteAvailability } from '../../services/task-planner/data'
+import { errMsg } from '../../lib/utils'
 
 export function AvailabilityPage() {
   const qc = useQueryClient()

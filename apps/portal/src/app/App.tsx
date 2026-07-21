@@ -16,6 +16,11 @@ import { SalesEmailSenderPage } from '../pages/sales/SalesEmailSender'
 import { AppSettingsPage } from '../pages/AppSettings'
 import { HRSyncAirtablePage } from '../pages/hr-sync/HRSyncAirtable'
 import { SendBuildertrendSchedulePage } from '../pages/buildertrend-schedule/SendBuildertrendSchedule'
+import { TasksPage } from '../pages/task-planner/Tasks'
+import { CreateTaskPage } from '../pages/task-planner/CreateTask'
+import { AvailabilityPage } from '../pages/task-planner/Availability'
+import { AdminPage as TaskPlannerAdminPage } from '../pages/task-planner/Admin'
+import { TaskPlannerLayout } from '../pages/task-planner/TaskPlannerLayout'
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { authUser, profile, denied, loading } = useAuth()
@@ -54,6 +59,13 @@ function Shell() {
         <Route path="/sales-email-sender" element={<SalesEmailSenderPage />} />
         <Route path="/hr-sync-airtable" element={<HRSyncAirtablePage />} />
         <Route path="/buildertrend-schedule" element={<SendBuildertrendSchedulePage />} />
+        {/* Task Planner (Daly Schedule) — роуты портала, общая БД (таблицы tp_*) */}
+        <Route path="/task-planner" element={<TaskPlannerLayout />}>
+          <Route index element={<TasksPage />} />
+          <Route path="create" element={<CreateTaskPage />} />
+          <Route path="availability" element={<AvailabilityPage />} />
+          <Route path="admin" element={<TaskPlannerAdminPage />} />
+        </Route>
         <Route path="/settings/:appCode" element={<AdminOnly><AppSettingsPage /></AdminOnly>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

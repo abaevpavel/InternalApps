@@ -7,7 +7,7 @@
  * Движок синхронный, а Matrix асинхронный, поэтому матрицу времён считаем ЗАРАНЕЕ
  * (buildTravelMatrix) и отдаём в движок синхронный lookup-провайдер.
  */
-import type { Point, TravelProvider } from '../domain/scheduling-engine'
+import type { Point, TravelProvider } from '../../domain/task-planner/scheduling-engine'
 import { fetchTravelCache, saveTravelCache } from './data'
 
 export const GOOGLE_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined

@@ -13,6 +13,10 @@ const TITLES: [prefix: string, title: string][] = [
   ['/gmail-auto-sender', '06-HR-GMAIL AUTO SENDER'],
   ['/sales-email-sender', '02-SALES-SEND AN OFFER EMAIL'],
   ['/hr-sync-airtable', '06-HR-SYNC AIRTABLE CONTACTS'],
+  ['/task-planner/create', 'DALY SCHEDULE — CREATE TASK'],
+  ['/task-planner/availability', 'DALY SCHEDULE — TEAMS AVAILABILITY'],
+  ['/task-planner/admin', 'DALY SCHEDULE — ADMIN'],
+  ['/task-planner', 'DALY SCHEDULE — TASKS'],
   ['/', 'MY APPLICATIONS'],
 ]
 
@@ -62,6 +66,22 @@ export function Layout() {
                 <div className="truncate text-sm font-medium text-brand-blue">{authUser?.email}</div>
               </div>
               <div className="border-t" />
+              {/* Экраны апки, внутри которой мы находимся (реестр → nav) */}
+              {currentApp?.nav?.length ? (
+                <>
+                  {currentApp.nav
+                    .filter((item) => !item.adminOnly || isAdmin)
+                    .map((item) => (
+                      <MenuItem
+                        key={item.to}
+                        icon={<item.icon size={16} />}
+                        label={item.label}
+                        onClick={() => go(item.to)}
+                      />
+                    ))}
+                  <div className="border-t" />
+                </>
+              ) : null}
               <MenuItem icon={<Settings size={16} />} label="My Account" onClick={() => go('/account')} />
               {isAdmin && <MenuItem icon={<Users size={16} />} label="User Management" onClick={() => go('/users')} />}
               {isAdmin && currentApp && (

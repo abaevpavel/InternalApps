@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, Input, Textarea, Field, Select, Tabs } from '../components/ui'
-import { cn, errMsg } from '../lib/utils'
-import { fetchProjects, fetchSkills, fetchTeams, fetchTaskTypes, createTask } from '../services/data'
-import { useAuth } from '../auth/AuthProvider'
-import type { TimeType } from '../domain/types'
+import { Button, Card, Input, Textarea, Field, Select, Tabs } from '../../components/task-planner-ui'
+import { cn, errMsg } from '../../lib/utils'
+import { fetchProjects, fetchSkills, fetchTeams, fetchTaskTypes, createTask } from '../../services/task-planner/data'
+import { useAuth } from '../../auth/AuthProvider'
+import type { TimeType } from '../../domain/task-planner/types'
 
 /** Следующий рабочий день (пропуская сб/вс) в формате YYYY-MM-DD, по локальному времени. */
 function nextWeekdayISO(): string {
@@ -21,7 +21,7 @@ function nextWeekdayISO(): string {
 export function CreateTaskPage() {
   const nav = useNavigate()
   const qc = useQueryClient()
-  const { user } = useAuth()
+  const { authUser } = useAuth()
   const [mode, setMode] = useState<'project' | 'other'>('project')
   const [timeType, setTimeType] = useState<TimeType | null>(null)
   const [stopWhen, setStopWhen] = useState<'before' | 'after'>('after')
@@ -75,7 +75,7 @@ export function CreateTaskPage() {
         additional_stop: stopAddress
           ? { when: stopWhen, address: stopAddress, duration_min: stopDuration }
           : null,
-        created_by: user?.id ?? null,
+        created_by: authUser?.id ?? null,
       })
     },
     onSuccess: () => {

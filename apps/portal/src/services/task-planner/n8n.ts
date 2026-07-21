@@ -1,9 +1,11 @@
 /** n8n-клиент: отправка задач планировщику и расписания в Slack. */
-import type { Task, Team, TeamAvailability, Skill, TeamDay } from '../domain/types'
+import type { Task, Team, TeamAvailability, Skill, TeamDay } from '../../domain/task-planner/types'
 
 // Фолбэк-дефолт; основной источник URL вебхука — настройка app_settings (Админка).
+import { resolveString } from '../app-settings'
+
 const PLANNER = import.meta.env.VITE_N8N_PLANNER_WEBHOOK as string | undefined
-const SLACK = import.meta.env.VITE_N8N_SLACK_WEBHOOK as string | undefined
+const SLACK_ENV = import.meta.env.VITE_N8N_SLACK_WEBHOOK as string | undefined
 
 export interface SendToAiParams {
   requestId: string
@@ -123,7 +125,9 @@ export function buildSlackPayload(days: TeamDay[], requestId: string, date: stri
 
 /** Send tasks → вебхук Slack-рассыльщика. */
 export async function sendToSlack(schedule: unknown): Promise<void> {
-  if (!SLACK) throw new Error('n8n slack webhook не настроен (VITE_N8N_SLACK_WEBHOOK)')
+  // Правило платформы: настройка живёт в app_settings, env — только фолбэк.
+  const SLACK = await resolveString('task-planner', 'slack_webhook', SLACK_ENV)
+  if (!SLACK) throw new Error('n8n slack webhook не настроен (App Settings → Webhooks)')
   const res = await fetch(SLACK, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(schedule),
   })

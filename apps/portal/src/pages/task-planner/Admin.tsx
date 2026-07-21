@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Plus, SquarePen, Trash2, KeyRound } from 'lucide-react'
-import { Button, Card, PageTitle, Badge, Tabs, DataTable, Modal, Input, Textarea, Field, Select, type Column } from '../components/ui'
+import { Button, Card, PageTitle, Badge, Tabs, DataTable, Modal, Input, Textarea, Field, Select, type Column } from '../../components/task-planner-ui'
 import {
   fetchProjects, fetchSkills, fetchTeamMembers, fetchTaskTypes,
   createTaskType, updateTaskType, deleteTaskType, runEdgeSync, setTeamPassword,
-} from '../services/data'
-import { errMsg } from '../lib/utils'
-import type { Project, Skill, TaskType, TeamMember } from '../domain/types'
+} from '../../services/task-planner/data'
+import { errMsg } from '../../lib/utils'
+import type { Project, Skill, TaskType, TeamMember } from '../../domain/task-planner/types'
 
 type Tab = 'projects' | 'team' | 'skills' | 'task_types'
 const TABS: { key: Tab; label: string }[] = [

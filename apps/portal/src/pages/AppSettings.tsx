@@ -6,7 +6,6 @@ import { Button, Card, Field, Input, PageTitle, Tabs, Textarea } from '../compon
 import { errMsg } from '../lib/utils'
 import { appByCode, type AppConfig, type WebhookField } from '../app/appRegistry'
 import { getSettingsMap, setSetting } from '../services/app-settings'
-import { openApp } from '../lib/sso'
 import { listBucketsSafe, probeTables } from '../services/resources'
 
 type SettingsTab = 'general' | 'resources' | 'webhooks'
@@ -28,9 +27,7 @@ export function AppSettingsPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-10">
       <button
-        // Внешняя апка живёт на своём origin — возвращаемся в неё через SSO-хэндофф,
-        // внутренняя — обычной навигацией по роуту.
-        onClick={() => (app.externalUrl ? openApp(app.externalUrl) : nav(app.routePrefixes[0] ?? '/'))}
+        onClick={() => nav(app.routePrefixes[0] ?? '/')}
         className="mb-6 inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800"
       >
         <ArrowLeft size={16} /> Back to app

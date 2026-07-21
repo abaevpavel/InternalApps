@@ -1,6 +1,6 @@
 /** Авто-поллинг результата планировщика из Supabase по request_id. */
 import { fetchScheduleRun } from './data'
-import type { ScheduleRun } from '../domain/types'
+import type { ScheduleRun } from '../../domain/task-planner/types'
 
 export interface PollOptions {
   intervalMs?: number

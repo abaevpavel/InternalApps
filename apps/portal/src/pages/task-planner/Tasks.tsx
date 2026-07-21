@@ -12,21 +12,22 @@ import {
   GripVertical, SquarePen, Clock, Calendar, Users, Wrench, MapPin, Loader2,
   ArrowRight, AlertTriangle, CheckCircle2, Lock, LockOpen, Trash2, Info, RefreshCw,
 } from 'lucide-react'
-import { Button, Card, Input, Badge, StatusBadge, Modal, Tabs } from '../components/ui'
-import { cn, errMsg } from '../lib/utils'
+import { Button, Card, Input, Badge, StatusBadge, Modal, Tabs } from '../../components/task-planner-ui'
+import { cn, errMsg } from '../../lib/utils'
 import {
   fetchTasks, fetchTeams, fetchSkills, fetchAvailability,
   fetchScheduleRun, applyScheduleToTasks, pullScheduleIntoTasks,
   replaceProposedWithSchedule, deleteTasksByStatus, restoreRequestedFromRun,
-  updateTask, deleteTask, fetchSetting, type UpdateTaskInput,
-} from '../services/data'
-import { sendToAi, sendToSlack, buildSlackPayload } from '../services/n8n'
-import { pollScheduleRun } from '../services/aiPoller'
-import { setPendingRequestId, getPendingRequestId, clearPendingRequestId } from '../services/pendingRun'
-import { buildTravelMatrix, matrixProvider, edgeKey, type MatrixPoint } from '../services/maps'
-import { recomputeTeamDay, type Point } from '../domain/scheduling-engine'
-import { minToAmPm, hhmmToMin, minToHm, minToHoursLabel } from '../lib/time'
-import type { ScheduledTask, TeamDay, Task } from '../domain/types'
+  updateTask, deleteTask, type UpdateTaskInput,
+} from '../../services/task-planner/data'
+import { sendToAi, sendToSlack, buildSlackPayload } from '../../services/task-planner/n8n'
+import { resolveString } from '../../services/app-settings'
+import { pollScheduleRun } from '../../services/task-planner/aiPoller'
+import { setPendingRequestId, getPendingRequestId, clearPendingRequestId } from '../../services/task-planner/pendingRun'
+import { buildTravelMatrix, matrixProvider, edgeKey, type MatrixPoint } from '../../services/task-planner/maps'
+import { recomputeTeamDay, type Point } from '../../domain/task-planner/scheduling-engine'
+import { minToAmPm, hhmmToMin, minToHm, minToHoursLabel } from '../../lib/task-planner-time'
+import type { ScheduledTask, TeamDay, Task } from '../../domain/task-planner/types'
 
 /** Простой генератор request_ID для запуска планировщика. */
 function newRequestId(): string {
@@ -125,7 +126,8 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       const list = tasks ?? []
       if (!list.length) throw new Error('No requested tasks')
       const [teams, skills, unavailable, webhookUrl] = await Promise.all([
-        fetchTeams(), fetchSkills(), fetchAvailability(), fetchSetting('planner_webhook_url'),
+        fetchTeams(), fetchSkills(), fetchAvailability(),
+        resolveString('task-planner', 'planner_webhook', import.meta.env.VITE_N8N_PLANNER_WEBHOOK as string | undefined),
       ])
       const requestId = newRequestId()
       // запоминаем запрос ДО ожидания — если поллинг прервётся (таймаут/refresh),

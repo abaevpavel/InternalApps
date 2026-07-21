@@ -1,3 +1,6 @@
+import type { LucideIcon } from 'lucide-react'
+import { CalendarDays, ListChecks, Plus, Users } from 'lucide-react'
+
 /**
  * Реестр приложений портала для app-settings: настройки (вебхуки) и справка о ресурсах
  * (таблицы/базы/бакеты/edge/внешние интеграции) каждой апки + роут-префиксы для определения
@@ -24,15 +27,22 @@ export interface AppResources {
   external?: ExternalIntegration[]
 }
 
+/** Пункт бургер-меню, показываемый, когда пользователь находится внутри этой апки. */
+export interface AppNavItem {
+  to: string
+  label: string
+  icon: LucideIcon
+  adminOnly?: boolean
+}
+
 export interface AppConfig {
   code: string
   label: string
-  /** Пусто у внешних апок: они живут на своём origin, а не роутом портала. */
   routePrefixes: string[]
   webhooks: WebhookField[]
   resources?: AppResources
-  /** Внешняя апка (свой деплой/origin) — её настройки редактируются внутри неё самой. */
-  externalUrl?: string
+  /** Экраны апки — попадают в общее бургер-меню, когда мы внутри неё. */
+  nav?: AppNavItem[]
 }
 
 const SUPABASE = 'Supabase — pilxwhtkhysanpukaliu (shared with the portal)'
@@ -184,16 +194,30 @@ export const APPS: AppConfig[] = [
     },
   },
   {
-    // Внешняя апка: свой Vite-деплой и свой origin (локально :5173), в портале только карточка.
-    // С 2026-07-21 работает в ОБЩЕЙ портальной БД — все её таблицы с префиксом tp_.
+    // Встроен в портал роутами 2026-07-22 (был отдельным SPA). БД общая, таблицы tp_*.
     code: 'task-planner',
     label: '01-Task Planner (Daly Schedule)',
-    routePrefixes: [], // роутов в портале нет — открывается по абсолютному applications.url с SSO
-    externalUrl: import.meta.env.VITE_TASK_PLANNER_URL as string | undefined,
-    // Настройки (planner_webhook_url) живут в tp_app_settings и правятся на экране
-    // «App Settings» внутри самой апки — здесь их не дублируем, иначе портал писал бы
-    // в свою app_settings, откуда Task Planner не читает.
-    webhooks: [],
+    routePrefixes: ['/task-planner'],
+    nav: [
+      { to: '/task-planner', label: 'Tasks', icon: ListChecks },
+      { to: '/task-planner/create', label: 'Create Task', icon: Plus },
+      { to: '/task-planner/availability', label: 'Teams Availability', icon: CalendarDays },
+      { to: '/task-planner/admin', label: 'Admin', icon: Users, adminOnly: true },
+    ],
+    webhooks: [
+      {
+        key: 'planner_webhook',
+        label: 'Planner webhook (n8n)',
+        hint: 'POST target for "Send to AI" — tasks go to the scheduling workflow.',
+        envDefault: import.meta.env.VITE_N8N_PLANNER_WEBHOOK as string | undefined,
+      },
+      {
+        key: 'slack_webhook',
+        label: 'Slack webhook (n8n)',
+        hint: 'POST target for sending the approved schedule to Slack.',
+        envDefault: import.meta.env.VITE_N8N_SLACK_WEBHOOK as string | undefined,
+      },
+    ],
     resources: {
       database: SUPABASE,
       tables: [

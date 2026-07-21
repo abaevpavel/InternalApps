@@ -1,0 +1,31 @@
+# Конфиг Supabase CLI для портала — все приложения живут в одном проекте.
+# Прод-проект: HR DASHBOARD `pilxwhtkhysanpukaliu`.
+# project_id ниже — локальное имя стека CLI, не ref; ref передаём флагом --project-ref.
+#
+# Деплой функции (Docker не нужен):
+#   supabase functions deploy <имя> --project-ref pilxwhtkhysanpukaliu --use-api
+project_id = "internal-apps-portal"
+
+# --- Task Planner: синхронизация из Airtable + выдача аккаунтов бригадирам ---
+# Ходят в БД под SUPABASE_SERVICE_ROLE_KEY, вызываются из UI с сессией пользователя.
+[functions.sync-airtable-projects]
+verify_jwt = true
+
+[functions.sync-airtable-teams]
+verify_jwt = true
+
+[functions.sync-airtable-skills]
+verify_jwt = true
+
+[functions.sync-team-accounts]
+verify_jwt = true
+
+[functions.auto-sync-airtable]
+verify_jwt = true
+
+[functions.set-team-password]
+verify_jwt = true
+
+# --- Send Buildertrend Schedule: список проектов живьём из Airtable ---
+[functions.list-schedule-projects]
+verify_jwt = true

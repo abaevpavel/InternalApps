@@ -3,8 +3,8 @@
  * отдаёт mock-данные (каркас работает офлайн). Реальные запросы добавляются
  * позже без изменения UI (фаза 2).
  */
-import { supabase } from '../lib/supabase'
-import type { Project, ScheduleRun, Skill, Task, Team, TeamAvailability, TeamSkill } from '../domain/types'
+import { supabase } from '../../lib/supabase'
+import type { Project, ScheduleRun, Skill, Task, Team, TeamAvailability, TeamSkill } from '../../domain/task-planner/types'
 
 export async function fetchTasks(status?: Task['status']): Promise<Task[]> {
   if (!supabase) return []
@@ -115,14 +115,14 @@ export async function fetchProjects(): Promise<Project[]> {
 }
 
 /** Аккаунты команд для Admin → Team (сырые строки teams: email/адрес/slack/статус). */
-export async function fetchTeamAccounts(): Promise<import('../domain/types').TeamAccount[]> {
+export async function fetchTeamAccounts(): Promise<import('../../domain/task-planner/types').TeamAccount[]> {
   if (!supabase) return []
   const { data, error } = await supabase
     .from('tp_teams')
     .select('id, name, email, address, slack_id, account_status')
     .order('name')
   if (error) throw error
-  return (data ?? []).map((r): import('../domain/types').TeamAccount => ({
+  return (data ?? []).map((r): import('../../domain/task-planner/types').TeamAccount => ({
     id: r.id, name: r.name, email: r.email ?? null, address: r.address ?? null,
     slack_id: r.slack_id ?? null, account_status: r.account_status ?? null,
   }))
@@ -140,7 +140,7 @@ function prettyRole(r: string): string {
  * profiles/user_roles под RLS — видны под залогиненным админом; иначе фолбэк на teams.
  * Защитно к именам колонок (first_name/last_name | full_name | name; user_id | id).
  */
-export async function fetchTeamMembers(): Promise<import('../domain/types').TeamMember[]> {
+export async function fetchTeamMembers(): Promise<import('../../domain/task-planner/types').TeamMember[]> {
   if (!supabase) return []
   const [pRes, rRes, tRes] = await Promise.all([
     supabase.from('tp_profiles').select('*'),
@@ -168,7 +168,7 @@ export async function fetchTeamMembers(): Promise<import('../domain/types').Team
   }
   const profiles = (pRes.data ?? []) as Record<string, any>[]
   if (profiles.length) {
-    return profiles.map((p): import('../domain/types').TeamMember => {
+    return profiles.map((p): import('../../domain/task-planner/types').TeamMember => {
       const email = p.email ?? ''
       const t = email ? teamByEmail.get(String(email).toLowerCase()) : null
       const name = [p.first_name, p.last_name].filter(Boolean).join(' ').trim() || p.full_name || p.name || email || p.id
@@ -176,7 +176,7 @@ export async function fetchTeamMembers(): Promise<import('../domain/types').Team
     }).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
   }
   // фолбэк: только teams (если profiles закрыты RLS) — все они бригады = Team Lead
-  return teams.map((t): import('../domain/types').TeamMember => ({
+  return teams.map((t): import('../../domain/task-planner/types').TeamMember => ({
     id: t.id ?? t.email ?? t.name, name: t.name, email: t.email ?? null,
     address: t.address ?? null, role: roleFor([t.id], t.email ?? null), status: t.account_status ?? null,
   }))
@@ -326,11 +326,11 @@ export async function fetchSkills(): Promise<Skill[]> {
 }
 
 /** Типы задач из БД (task_types) — для дропдауна Task Type (никакого хардкода). */
-export async function fetchTaskTypes(): Promise<import('../domain/types').TaskType[]> {
+export async function fetchTaskTypes(): Promise<import('../../domain/task-planner/types').TaskType[]> {
   if (!supabase) return []
   const { data, error } = await supabase.from('tp_task_types').select('id, name, description').order('name')
   if (error) throw error
-  return (data ?? []).map((r): import('../domain/types').TaskType => ({ id: r.id, name: r.name, description: r.description ?? null }))
+  return (data ?? []).map((r): import('../../domain/task-planner/types').TaskType => ({ id: r.id, name: r.name, description: r.description ?? null }))
 }
 
 export async function fetchAvailability(): Promise<TeamAvailability[]> {
@@ -457,7 +457,7 @@ export async function updateTasksStatus(ids: string[], status: Task['status']): 
  * перевести в status=scheduled. Источник — (возможно отредактированные) TeamDay[].
  */
 export async function applyScheduleToTasks(
-  days: import('../domain/types').TeamDay[],
+  days: import('../../domain/task-planner/types').TeamDay[],
   status: 'proposed' | 'scheduled' = 'scheduled',
 ): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured')
@@ -494,7 +494,7 @@ export async function applyScheduleToTasks(
  * `request_task_id` ссылается на исходную задачу. Поля берём из самого расписания.
  */
 export async function materializeProposedCopies(
-  days: import('../domain/types').TeamDay[],
+  days: import('../../domain/task-planner/types').TeamDay[],
 ): Promise<number> {
   if (!supabase) throw new Error('Supabase is not configured')
   const rows: Record<string, unknown>[] = []
@@ -542,7 +542,7 @@ export async function deleteTasksByStatus(status: Task['status']): Promise<numbe
  * и вставить новые. Requested остаётся нетронутым.
  */
 export async function replaceProposedWithSchedule(
-  days: import('../domain/types').TeamDay[],
+  days: import('../../domain/task-planner/types').TeamDay[],
 ): Promise<number> {
   await deleteTasksByStatus('proposed')
   return materializeProposedCopies(days)

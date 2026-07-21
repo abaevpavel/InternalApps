@@ -18,7 +18,7 @@
  */
 
 import type { ScheduledTask, AdditionalStop, TeamDay } from './types'
-import { hhmmToMin, minToHHMM } from '../lib/time'
+import { hhmmToMin, minToHHMM } from '../../lib/task-planner-time'
 
 export interface Point {
   lat: number | null
