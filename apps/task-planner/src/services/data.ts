@@ -12,7 +12,8 @@ export async function fetchTasks(status?: Task['status']): Promise<Task[]> {
   // Имя бригады подтягиваем отдельным запросом и резолвим по team_id на клиенте.
   let q = supabase
     .from('tp_tasks')
-    .select('*, projects(name,address,project_manager,latitude,longitude)')
+    // алиас projects: → таблица переименована в tp_projects, ключ в ответе оставляем прежним
+    .select('*, projects:tp_projects(name,address,project_manager,latitude,longitude)')
     .order('stop_number', { ascending: true })
   if (status) q = q.eq('status', status)
   const { data, error } = await q
@@ -268,18 +269,27 @@ export async function fetchMyProfile(): Promise<{ first_name: string; last_name:
   const { data: auth } = await supabase.auth.getUser()
   const uid = auth.user?.id
   if (!uid) return null
-  const { data, error } = await supabase.from('tp_profiles').select('first_name, last_name').eq('id', uid).maybeSingle()
+  // ВАЖНО: auth-uid лежит в user_id; tp_profiles.id — самостоятельный gen_random_uuid().
+  const { data, error } = await supabase.from('tp_profiles').select('first_name, last_name').eq('user_id', uid).maybeSingle()
   if (error) throw error
   return data ? { first_name: data.first_name ?? '', last_name: data.last_name ?? '' } : null
 }
 
-/** Сохранить имя/фамилию в profiles (своя строка, RLS: id = auth.uid()). */
+/** Сохранить имя/фамилию в profiles (своя строка, RLS: user_id = auth.uid()). */
 export async function updateMyProfile(firstName: string, lastName: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured')
   const { data: auth } = await supabase.auth.getUser()
   const uid = auth.user?.id
   if (!uid) throw new Error('Not signed in')
-  const { error } = await supabase.from('tp_profiles').update({ first_name: firstName, last_name: lastName }).eq('id', uid)
+  // upsert по user_id: у портальных юзеров (PM/админ) строки в tp_profiles может не быть —
+  // её создаёт только sync-team-accounts для бригадиров, триггера на auth.users нет.
+  const { data: auth2 } = await supabase.auth.getUser()
+  const { error } = await supabase
+    .from('tp_profiles')
+    .upsert(
+      { user_id: uid, email: auth2.user?.email ?? null, first_name: firstName, last_name: lastName },
+      { onConflict: 'user_id' },
+    )
   if (error) throw error
 }
 
@@ -328,7 +338,7 @@ export async function fetchAvailability(): Promise<TeamAvailability[]> {
   // team_availability ссылается на team_id; имя команды подтянем join'ом
   const { data, error } = await supabase
     .from('tp_team_availability')
-    .select('id, team_id, start_date, end_date, teams(name)')
+    .select('id, team_id, start_date, end_date, teams:tp_teams(name)')
   if (error) throw error
   return (data ?? []).map((r: Record<string, unknown>): TeamAvailability => ({
     id: r.id as string, team_id: r.team_id as string,

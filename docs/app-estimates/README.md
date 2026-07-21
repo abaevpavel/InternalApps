@@ -34,7 +34,7 @@
 | Блок | Док | Часы | Что это |
 |------|-----|------|---------|
 | **00 — Платформа портала** | [00-Portal-Platform-Auth-Users-Roles.md](00-Portal-Platform-Auth-Users-Roles.md) | **~8** | Google-вход (whitelist по email), User Management (Users+Roles+Create Role), доступы к 6 приложениям, My Applications, My Account. Делается **один раз**. |
-| **01 — Task Planner (остаток)** | [01-Task-Planner-Remaining.md](01-Task-Planner-Remaining.md) | **~27** | Логика n8n готова. Остаток: прод-модель статусов, доделки экранов, RLS под роли, **тим-лид-вью ~5.5 ч**, **n8n-харднинг ~10 ч** (ретраи + error-handlers), Slack, прод-провязка. Свой Supabase. |
+| **01 — Task Planner (остаток)** | [01-Task-Planner-Remaining.md](01-Task-Planner-Remaining.md) | **~27** | Логика n8n готова. Остаток: прод-модель статусов, доделки экранов, RLS под роли, **тим-лид-вью ~5.5 ч**, **n8n-харднинг ~10 ч** (ретраи + error-handlers), Slack, прод-провязка. С 2026-07-21 — общая БД портала (таблицы `tp_*`). |
 
 ## Итог по всей программе — в днях
 

@@ -27,9 +27,12 @@ export interface AppResources {
 export interface AppConfig {
   code: string
   label: string
+  /** Пусто у внешних апок: они живут на своём origin, а не роутом портала. */
   routePrefixes: string[]
   webhooks: WebhookField[]
   resources?: AppResources
+  /** Внешняя апка (свой деплой/origin) — её настройки редактируются внутри неё самой. */
+  externalUrl?: string
 }
 
 const SUPABASE = 'Supabase — pilxwhtkhysanpukaliu (shared with the portal)'
@@ -177,6 +180,37 @@ export const APPS: AppConfig[] = [
         { name: 'Make.com — Employees sync', detail: 'POST {action:sync_employees} → Airtable (employee contacts)' },
         { name: 'Make.com — Key Vendors sync', detail: 'POST {action:sync_vendors} → Airtable (vendor contacts)' },
         { name: 'Server cron', detail: 'Employees 11:00 & 17:00 ET, Vendors 11:10 & 17:10 ET (pg_cron)' },
+      ],
+    },
+  },
+  {
+    // Внешняя апка: свой Vite-деплой и свой origin (локально :5173), в портале только карточка.
+    // С 2026-07-21 работает в ОБЩЕЙ портальной БД — все её таблицы с префиксом tp_.
+    code: 'task-planner',
+    label: '01-Task Planner (Daly Schedule)',
+    routePrefixes: [], // роутов в портале нет — открывается по абсолютному applications.url с SSO
+    externalUrl: import.meta.env.VITE_TASK_PLANNER_URL as string | undefined,
+    // Настройки (planner_webhook_url) живут в tp_app_settings и правятся на экране
+    // «App Settings» внутри самой апки — здесь их не дублируем, иначе портал писал бы
+    // в свою app_settings, откуда Task Planner не читает.
+    webhooks: [],
+    resources: {
+      database: SUPABASE,
+      tables: [
+        'tp_tasks', 'tp_projects', 'tp_teams', 'tp_skills', 'tp_task_types', 'tp_team_availability',
+        'tp_ai_teams_schedule', 'tp_ai_settings', 'tp_travel_cache', 'tp_sync_logs',
+        'tp_task_batch_snapshots', 'tp_app_settings', 'tp_profiles', 'tp_user_roles',
+      ],
+      edgeFunctions: [
+        'sync-airtable-projects', 'sync-airtable-teams', 'sync-airtable-skills',
+        'sync-team-accounts', 'auto-sync-airtable', 'set-team-password',
+      ],
+      external: [
+        { name: 'n8n — Task Planner', detail: 'workflow cit7Gah53xPLLbdy; URL вебхука в tp_app_settings.planner_webhook_url' },
+        { name: 'Airtable — 03-Projects', detail: 'appucrtf5MBcFXVza / General Project Info / view TEAM MANAGEMENT' },
+        { name: 'Airtable — 05-Contacts Directory', detail: 'appiScywNMqBk3x9e / Directory (бригады) + Skills with Rating' },
+        { name: 'Google Maps / Places', detail: 'геокодинг адресов проектов и бригад, Distance Matrix' },
+        { name: 'Slack (через n8n)', detail: 'рассылка расписания бригадам' },
       ],
     },
   },

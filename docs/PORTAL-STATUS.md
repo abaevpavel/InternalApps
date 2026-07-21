@@ -1,9 +1,10 @@
 # Портал — статус миграции с Lovable (памятка)
 
-> Обновлено: 2026-07-07. Портал `apps/portal`, БД — существующий Supabase
+> Обновлено: 2026-07-21. Портал `apps/portal`, БД — существующий Supabase
 > «HR DASHBOARD» `pilxwhtkhysanpukaliu` (переиспользуем, данные там же).
 > Все внутренние приложения — **роуты внутри портала** (один деплой, общая БД).
-> Отдельный только **Task Planner** (своя БД, внешний URL, открывается в новой вкладке).
+> Отдельный по деплою только **Task Planner** (свой origin, открывается в новой вкладке
+> с SSO), но с 2026-07-21 он работает в **той же БД** — его таблицы с префиксом `tp_`.
 
 ---
 
@@ -16,7 +17,7 @@
 | **06-HR Gmail Auto Sender** | `/gmail-auto-sender` | ✅ собрано | Тонкий фронт над edge `gmail-auth`→AWS; БД нет |
 | **02-Sales — Send an Offer Email** | `/sales-email-sender` | ✅ собрано | Quill-редактор, шаблоны `email_templates`, черновик в localStorage, Send→Make |
 | **06-HR Sync Airtable Contacts** | `/hr-sync-airtable` | ✅ собрано | 2 кнопки Sync (работают, POST→Make). **Save Schedule — disabled с англ. подсказкой** (RPC в БД нет; проверено) |
-| **Task Planner** | внешний `http://localhost:5173`/прод | — | Отдельный деплой, своя БД |
+| **Task Planner** | внешний `http://localhost:5173`/прод | ✅ мигрирован | Отдельный деплой, **общая БД** (таблицы `tp_*`); в реестре `appRegistry` заведён как `externalUrl`-апка; своё меню/App Settings приведены к портальному виду |
 
 Код каждой апки: `apps/portal/src/pages/<app>/*`, `src/services/<app>.ts`, `src/domain/<app>.ts`.
 Карточки на «My Applications» открываются: внутренние — навигацией (относительный `applications.url`, напр. `/checklists`); внешние (Task Planner, абсолютный URL) — в новой вкладке с SSO.
@@ -35,7 +36,10 @@
 - Экран **`/settings/:appCode`** (admin-only) с табами: **General** (описание проекта), **Resources**, **Webhooks** (если есть).
 - **Resources — живой**: реальные `count` строк по таблицам + реальные бакеты (public/private из `storage.listBuckets()`); edge/external — declared (с клиента не интроспектируются).
 - Вход — **контекстный пункт «App Settings»** в хедер-меню (админ + внутри апки).
-- Сервисы читают вебхуки из БД с фолбэком на env (`resolveString`): Sales, Production-Checklist, HR-Sync.
+- Сервисы читают вебхуки из БД с фолбэком на env (`resolveString`): Sales, Production-Checklist,
+HR-Sync, Buildertrend-Schedule. **Task Planner — особняк**: у него своя key/value-таблица
+`tp_app_settings` (`value text`, без `app_code`) и собственный экран `/settings` внутри апки;
+портальная `app_settings` (`value jsonb`, с `app_code`) его не обслуживает.
 
 ---
 

@@ -8,6 +8,7 @@ import { CreateTaskPage } from '../pages/CreateTask'
 import { AvailabilityPage } from '../pages/Availability'
 import { AdminPage } from '../pages/Admin'
 import { ProfilePage } from '../pages/Profile'
+import { AppSettingsPage } from '../pages/AppSettings'
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -35,6 +36,7 @@ function Shell() {
         <Route path="/availability" element={<AvailabilityPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/settings" element={<AppSettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/tasks" replace />} />
     </Routes>

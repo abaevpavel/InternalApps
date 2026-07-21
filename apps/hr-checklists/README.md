@@ -2,7 +2,7 @@
 
 > 06-HR-CHECKLISTS **живёт роутами внутри портала** (`apps/portal`), а не как отдельная
 > апка — делит ту же Supabase (`pilxwhtkhysanpukaliu`) и деплой с порталом
-> (как и production-checklist). Отдельный только task-planner (своя БД).
+> (как и production-checklist). Отдельный по деплою только task-planner; БД с 2026-07-21 общая (таблицы `tp_*`).
 
 Код:
 - Страницы: `apps/portal/src/pages/hr-checklists/*`

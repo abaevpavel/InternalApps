@@ -1,0 +1,24 @@
+# Task Planner — конфиг Supabase CLI (нужен для `supabase functions deploy`).
+# Прод-проект: HR DASHBOARD `pilxwhtkhysanpukaliu` (общий портальный).
+# project_id ниже — только локальное имя стека CLI, не ref; ref передаём флагом --project-ref.
+project_id = "task-planner"
+
+# Все функции ходят в БД через SUPABASE_SERVICE_ROLE_KEY и дёргаются из фронта
+# с сессией пользователя → JWT проверяем (по умолчанию true, фиксируем явно).
+[functions.sync-airtable-projects]
+verify_jwt = true
+
+[functions.sync-airtable-teams]
+verify_jwt = true
+
+[functions.sync-airtable-skills]
+verify_jwt = true
+
+[functions.sync-team-accounts]
+verify_jwt = true
+
+[functions.auto-sync-airtable]
+verify_jwt = true
+
+[functions.set-team-password]
+verify_jwt = true

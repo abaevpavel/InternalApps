@@ -14,3 +14,6 @@ dist-ssr
 
 # Data-copy migrations with real business data (apply locally, never commit)
 *.local.sql
+
+# Supabase CLI служебный кэш
+**/supabase/.temp/

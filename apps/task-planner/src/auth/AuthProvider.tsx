@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
+import { consumeSsoHandoff } from '../lib/sso'
 import type { AppRole } from '../domain/types'
 
 interface AuthUser {
@@ -29,7 +30,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false)
       return
     }
-    supabase.auth.getSession().then(async ({ data }) => {
+    // Сначала — SSO-хэндофф из портала (#sso=…): он должен успеть положить сессию
+    // до getSession(), иначе пользователь увидит экран логина.
+    consumeSsoHandoff().then(async () => {
+      const { data } = await supabase!.auth.getSession()
       if (data.session?.user) await loadUser(data.session.user.id, data.session.user.email ?? '')
       setLoading(false)
     })

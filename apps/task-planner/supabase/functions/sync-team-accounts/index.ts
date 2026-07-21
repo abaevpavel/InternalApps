@@ -162,15 +162,24 @@ Deno.serve(async (req) => {
           .eq('airtable_id', airtableId)
           .single();
 
-        // Update profile with team_id and initial_password
-        if (teamData) {
-          await supabase
-            .from('tp_profiles')
-            .update({
-              team_id: teamData.id,
-              initial_password: password,
-            })
-            .eq('user_id', userId);
+        // Профиль СОЗДАЁМ здесь (upsert), а не рассчитываем на триггер auth.users →
+        // tp_handle_new_user: на общем портальном auth.users он намеренно не навешен.
+        // Раньше был .update() — на отсутствующей строке это тихий no-op, из-за чего
+        // терялся initial_password (пароль бригадира больше негде взять).
+        const { error: profileError } = await supabase
+          .from('tp_profiles')
+          .upsert({
+            user_id: userId,
+            email,
+            first_name: teamName.split(' ')[0] || 'Team',
+            last_name: teamName.split(' ').slice(1).join(' ') || 'Lead',
+            team_id: teamData?.id ?? null,
+            initial_password: password,
+          }, { onConflict: 'user_id' });
+
+        if (profileError) {
+          console.error(`Failed to upsert profile for ${email}:`, profileError);
+          throw profileError;
         }
 
         // Assign team_lead role

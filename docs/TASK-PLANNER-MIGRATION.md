@@ -33,10 +33,73 @@
   `.env`/`.env.example` переключены на портал (`pilxwhtkhysanpukaliu`, только anon). Build зелёный.
   (`streaming_logs` в коде не использовался — менять нечего; логи стрима при желании в localStorage.)
 
-**СЛЕДУЮЩИЙ ШАГ → Шаг 4+ «Применить на HR DASHBOARD» — детальный runbook (Влад, Клод на подхвате).**
+- ✅ **Шаг 4.1 — схема и данные ПРИМЕНЕНЫ на HR DASHBOARD** (2026-07-21).
+  `0001` → 14 таблиц / 35 политик / 10 функций / 10 триггеров (проверено запросом).
+  `0002` → `pg_cron` включён, 2 джоба активны (`tp_sync_logs_retention` 03:00 UTC,
+  `tp_ai_teams_schedule_retention` 03:10 UTC).
+  `0003` → данные залиты: projects 126, tasks 48, skills 92, teams 9, task_types 8,
+  travel_cache 58, ai_settings 2, team_availability 2, ai_teams_schedule 2.
+  ⚠️ В `0003` из pg_dump 17 остались psql-метакоманды `\restrict`/`\unrestrict` — SQL Editor
+  на них падает. Перед вставкой их надо вырезать (`grep -v '^\\'`).
+
+- ✅ **Шаг 4.2 — 6 edge-функций задеплоены** (2026-07-21) через CLI:
+  `supabase functions deploy <...> --project-ref pilxwhtkhysanpukaliu --use-api` (Docker не нужен).
+  Для этого заведён `apps/task-planner/supabase/config.toml` (все функции `verify_jwt = true`).
+
+- ✅ **Шаг 4.3 — секреты выставлены** (2026-07-21). Первая попытка провалилась (в секреты попали
+  SHA256-дайджесты старого проекта → `Airtable 404 NOT_FOUND`, см. грабли в 4.3). Реальные ID
+  найдены автоматически: временная edge-функция сходила в **Airtable Meta API** под новым PAT
+  (`/v0/meta/bases` → `/tables`) и нашла таблицы по полям из кода. Итог:
+  - `AIRTABLE_PROJECT_BASE_ID=appucrtf5MBcFXVza` (**03-Projects**),
+    `_TABLE=tblY5HQVxyDyR748b` (General Project Info), `_VIEW=viwlYREI3247vKaey` (**TEAM MANAGEMENT**)
+  - `AIRTABLE_TEAM_BASE_ID` = `AIRTABLE_BASE_ID` = `AIRTABLE_SKILLS_BASE_ID` = `appiScywNMqBk3x9e`
+    (**05-Contacts Directory**), `AIRTABLE_TEAMS_TABLE=tblVvfgjkGMGHWexL` (Directory),
+    `AIRTABLE_TEAMS_VIEW=viwwnLWKtQqUCvMUn` (**TEAM MANAGEMENT**, ровно 9 бригад — сверено
+    по `airtable_id` с перенесёнными `tp_teams`)
+  - `AIRTABLE_SKILLS_TABLE=tblTcFd2Y8H3cXdYu` (Skills with Rating), `_VIEW=viwmEm4xEIUQyRyWl`
+    — значения в URL не используются, но их наличие проверяется кодом (иначе throw).
+  - Подсказка на будущее: в старом проекте `PROJECT_VIEW` и `TEAMS_VIEW` имели одинаковый digest,
+    т.е. там лежало **имя** вьюхи `TEAM MANAGEMENT` (Airtable принимает и имя, и id).
+- ✅ **Шаг 4.4 — синки прогнаны** (2026-07-21): projects 38, teams 9, skills 69 — апсерты,
+  дублей нет (`tp_projects` 126→128 (+2 новых), `tp_skills` 92, `tp_teams` 9).
+  `sync-team-accounts` → 9 аккаунтов бригадиров, `tp_profiles` 9 (все с `team_id` и
+  `initial_password`), `tp_user_roles` 9×`team_lead`, `tp_teams.account_status` = synced.
+  ⚠️ **Починен баг**: функция делала `.update()` в `tp_profiles`, рассчитывая на триггер
+  `handle_new_user` (на общем `auth.users` он намеренно не навешен) → тихий no-op, профиль
+  не создавался и **терялся `initial_password`**. Заменено на `upsert(onConflict: user_id)`;
+  первые 9 учёток удалены и пересозданы, чтобы пароли записались.
+- ✅ **Шаг 4.5 — роли**: `super_admin` выдан `todor.3d@basementremodeling.com` и
+  `pavel.a@achgroupllc.com`.
+
+- ✅ **Пост-миграционный прогон UI (2026-07-21)** — найдено и починено:
+  - `data.ts` — embed'ы остались на старых именах: `select('*, projects(...)')` и `teams(name)`
+    → PostgREST 400 `PGRST200`, экраны Tasks и Teams Availability были пустые.
+    Исправлено алиасами `projects:tp_projects(...)` / `teams:tp_teams(name)`.
+  - `data.ts` — профиль искался по `.eq('id', uid)`, хотя auth-uid лежит в `user_id`
+    (пункт `:306` этого плана). Плюс `updateMyProfile` теперь `upsert`: у PM/админов строки
+    в `tp_profiles` нет вообще (её создаёт только `sync-team-accounts`), Save молча не работал.
+  - Бургер-меню Task Planner приведено к портальному виду (порядок, «Signed in as»,
+    My Account / App Settings / My Applications / Sign out), лого и «My Applications» ведут
+    в портал через новый `VITE_PORTAL_URL` (локально `:5175`).
+  - Настройки вынесены из вкладки Admin на отдельный экран `/settings` (`pages/AppSettings.tsx`).
+  - **SSO-консюмер реализован**: `src/lib/sso.ts` разбирает `#sso=<base64{at,rt}>` от портала,
+    делает `setSession` и чистит хэш. Хэш снимается СИНХРОННО на импорте модуля — иначе
+    `<Route path="/" element={<Navigate to="/tasks">}` затирает его раньше эффекта AuthProvider.
+  - Удалены легаси-миграции `app_settings.sql` и `profiles_self_edit.sql` (создавали
+    беспрефиксные `public.app_settings`/политики на несуществующую `public.user_roles` —
+    прогон на общей БД сломал бы настройки портала).
+  - Task Planner добавлен в `apps/portal/src/app/appRegistry.ts` как внешняя апка
+    (`routePrefixes: []`, `externalUrl` из `VITE_TASK_PLANNER_URL`, 14 таблиц + 6 edge + внешние).
+    Вебхуки в реестре намеренно пустые: они живут в `tp_app_settings`, а портал пишет
+    в свою `app_settings` — дублировать нельзя.
+
+**СЛЕДУЮЩИЙ ШАГ → Шаг 5 (n8n) + прод-URL'ы.** Локально: портал `:5175`, Task Planner `:5173`
+(карточка `01-Task Planner (Daly Schedule)` в `applications.url` = `http://localhost:5173`).
+Перед продом: проставить боевые `VITE_PORTAL_URL` (в TP) и `VITE_TASK_PLANNER_URL` (в портале),
+обновить `applications.url`, добавить origin Task Planner в Supabase Redirect URLs.
 Все файлы: `apps/task-planner/supabase/migrations/`. Проект: `pilxwhtkhysanpukaliu`.
 
-### 4.1 — Применить схему (SQL Editor, по порядку, по одному)
+### 4.1 — Применить схему (SQL Editor, по порядку, по одному) — ✅ СДЕЛАНО 2026-07-21
 1. `0001_tp_schema.sql`
 2. `0002_tp_retention.sql` — сперва включить pg_cron (Database → Extensions → `pg_cron`), затем файл.
 3. `0003_tp_data.local.sql` — тестовые данные (⚠️ gitignore, лежит только локально).
@@ -53,8 +116,34 @@ Edge Functions → Deploy new function, имя = имя папки, код из 
 `AIRTABLE_TEAM_BASE_ID` + `AIRTABLE_TEAMS_TABLE`/`_VIEW`,
 `AIRTABLE_SKILLS_BASE_ID`/`_TABLE`/`_VIEW`.
 (`SUPABASE_URL`/`_ANON_KEY`/`_SERVICE_ROLE_KEY` инжектятся Supabase автоматически.)
-Значения `*_BASE_ID/_TABLE/_VIEW` — из env старого проекта `crews scheduling` / из Airtable.
+
+⚠️ **Грабли (напоролись 2026-07-21):** значения секретов из старого проекта скопировать
+НЕЛЬЗЯ — Supabase показывает только SHA256-**дайджест**, самого значения не отдаёт ни UI,
+ни API/CLI. Скопированные «значения» из колонки DIGEST дают `Airtable API error: 404 NOT_FOUND`
+(в логах видно `Base ID: 67f21668…` вместо `app…`). Все значения берутся из первоисточника:
+
+- **`AIRTABLE_API_KEY`** — новый PAT: https://airtable.com/create/tokens
+  (scope `data.records:read` + `schema.bases:read`, доступ к обеим базам ниже). Формат `pat…`.
+- **`GOOGLE_PLACES_API_KEY`** — Google Cloud Console → Credentials (`AIza…`).
+  Возможно подойдёт тот же ключ, что в `apps/task-planner/.env` (`VITE_GOOGLE_MAPS_API_KEY`).
+- **ID Airtable — из URL таблицы** (`airtable.com/appXXX/tblYYY/viwZZZ`). Какие таблицы искать
+  (опознаются по полям, которые читает код):
+  - **База команд+навыков** (одна база: `AIRTABLE_TEAM_BASE_ID` = `AIRTABLE_SKILLS_BASE_ID`
+    = `AIRTABLE_BASE_ID`): таблица бригад с полями `Team Name` / `F_name`+`L_name`, `Email`,
+    `Address`, `Slack user ID` → `AIRTABLE_TEAMS_TABLE`/`_VIEW`. В этой же базе таблица
+    **`Skills with Rating`** (поля `Skill`, `Crews`, `Skill Category`/`Rating`) — её имя
+    **захардкожено** в `sync-airtable-skills`, поэтому `AIRTABLE_SKILLS_TABLE`/`_VIEW`
+    фактически не читаются, нужен только BASE_ID.
+  - **База проектов**: таблица с полями `Proj Name`, `Full address`, `PM for Team management`,
+    `Slack id` → `AIRTABLE_PROJECT_BASE_ID`/`_TABLE`/`_VIEW`.
+- `AIRTABLE_TEAMS_BASE_ID` можно не заводить: `sync-team-accounts` падает на фолбэк
+  `AIRTABLE_BASE_ID`. Легаси-дубли из старого проекта (`AIRTABLE_CREW*`, `AIRTABLE_PROJECTS_*`,
+  `MAPBOX_PUBLIC_TOKEN`, `MAKE_WEBHOOK_URL`, `OPENAI_API_KEY`) ни одной из 6 функций не нужны.
+
 ✅ Проверка: вызвать `sync-airtable-skills` → success, `tp_skills` не пустеет.
+Быстрый вызов без фронта (anon-ключ годится как Bearer, `verify_jwt=true` его принимает):
+`curl -X POST https://pilxwhtkhysanpukaliu.supabase.co/functions/v1/sync-airtable-skills -H "Authorization: Bearer <anon>" -d '{}'`
+Логи с реальным Base ID: Dashboard → Edge Functions → <имя> → Logs (у CLI команды `logs` нет).
 
 ### 4.4 — Прогнать синки
 Вызвать `auto-sync-airtable` (дёрнет projects/teams/skills), затем `sync-team-accounts`.

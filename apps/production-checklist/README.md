@@ -2,7 +2,7 @@
 
 > 03-PRODUCTION-CHECKLIST **живёт роутами внутри портала** (`apps/portal`), а не как
 > отдельная апка — потому что делит ту же Supabase (`pilxwhtkhysanpukaliu`) и деплой с порталом.
-> (Отдельная только task-planner — у неё своя БД.)
+> (Отдельная по деплою только task-planner; с 2026-07-21 БД у неё общая — таблицы `tp_*`.)
 
 Код:
 - Страницы: `apps/portal/src/pages/production-checklist/*`

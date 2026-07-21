@@ -5,18 +5,16 @@ import { Button, Card, PageTitle, Badge, Tabs, DataTable, Modal, Input, Textarea
 import {
   fetchProjects, fetchSkills, fetchTeamMembers, fetchTaskTypes,
   createTaskType, updateTaskType, deleteTaskType, runEdgeSync, setTeamPassword,
-  fetchSetting, updateSetting,
 } from '../services/data'
 import { errMsg } from '../lib/utils'
 import type { Project, Skill, TaskType, TeamMember } from '../domain/types'
 
-type Tab = 'projects' | 'team' | 'skills' | 'task_types' | 'settings'
+type Tab = 'projects' | 'team' | 'skills' | 'task_types'
 const TABS: { key: Tab; label: string }[] = [
   { key: 'projects', label: 'Projects' },
   { key: 'team', label: 'Team' },
   { key: 'skills', label: 'Skills' },
   { key: 'task_types', label: 'Task Types' },
-  { key: 'settings', label: 'Settings' },
 ]
 
 const projectCols: Column<Project>[] = [
@@ -90,7 +88,7 @@ export function AdminPage() {
         <SyncBtn fns={['sync-airtable-teams']} label="Sync Teams info" />
         <SyncBtn fns={['sync-airtable-teams', 'sync-airtable-skills']} label="Sync Teams & Skills" />
       </div>
-    ) : tab === 'settings' ? null : (
+    ) : (
       <Button variant="accent" onClick={() => setEditTT('new')}><Plus size={16} /> Add Task Type</Button>
     )
 
@@ -148,7 +146,6 @@ export function AdminPage() {
         </div>
       )}
 
-      {tab === 'settings' && <SettingsTab />}
 
       {editTT && (
         <TaskTypeModal
@@ -217,45 +214,6 @@ function SetPasswordModal({ member, onClose, onSaved }: { member: TeamMember; on
         {error && <p className="text-sm text-red-600">⚠ {error}</p>}
       </div>
     </Modal>
-  )
-}
-
-/** Settings: конфиг приложения из app_settings. Сейчас — URL вебхука планировщика. */
-function SettingsTab() {
-  const qc = useQueryClient()
-  const webhook = useQuery({ queryKey: ['setting', 'planner_webhook_url'], queryFn: () => fetchSetting('planner_webhook_url') })
-  const [url, setUrl] = useState<string | null>(null)
-  const value = url ?? webhook.data ?? ''
-  const save = useMutation({
-    mutationFn: (v: string) => updateSetting('planner_webhook_url', v.trim()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['setting', 'planner_webhook_url'] }); setUrl(null) },
-    onError: (e: unknown) => alert(errMsg(e)),
-  })
-  return (
-    <Card className="max-w-2xl p-6">
-      <h2 className="mb-1 text-lg font-semibold text-gray-900">Planner Webhook</h2>
-      <p className="mb-4 text-sm text-gray-500">
-        URL вебхука n8n, куда отправляются задачи по кнопке «Send to AI». Хранится в БД, не в коде.
-      </p>
-      <Field label="Planner Webhook URL">
-        <Input
-          value={value}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://…app.n8n.cloud/webhook/…"
-          disabled={webhook.isLoading}
-        />
-      </Field>
-      <div className="mt-4 flex items-center gap-3">
-        <Button
-          variant="accent"
-          disabled={save.isPending || webhook.isLoading || !value.trim() || value.trim() === (webhook.data ?? '')}
-          onClick={() => save.mutate(value)}
-        >
-          {save.isPending ? 'Saving…' : 'Save'}
-        </Button>
-        {webhook.isError && <span className="text-sm text-red-600">⚠ {errMsg(webhook.error)}</span>}
-      </div>
-    </Card>
   )
 }
 

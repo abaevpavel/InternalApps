@@ -33,9 +33,11 @@ npm run dev -w portal     # или npm run dev:portal
 Требование: юзер не должен логиниться в каждой апке. Приложения портала сидят на том же
 Supabase-проекте, поэтому «Open Application» передаёт текущую сессию через URL-fragment:
 `https://app.example.com#sso=<base64{at,rt}>` (см. `src/lib/sso.ts`). Приложение на
-своей стороне вызывает `supabase.auth.setSession(...)` и чистит hash — консюмер будет
-общим в `packages/lib`, чтобы каждая апка не писала своё. Fragment на сервер не уходит.
-Task Planner — исключение: свой Supabase и свой auth (открывается просто по ссылке).
+своей стороне вызывает `supabase.auth.setSession(...)` и чистит hash. Fragment на сервер
+не уходит. Консюмер реализован в Task Planner (`apps/task-planner/src/lib/sso.ts`, хэш
+снимается синхронно на импорте — иначе редирект роутера успевает его затереть); когда
+апок с отдельным деплоем станет больше, модуль переезжает в `packages/lib` как есть.
+Task Planner с 2026-07-21 сидит в **той же** БД и том же `auth.users`, что и портал.
 
 ### БД и RLS
 Референс-схема: `supabase/migrations/0001_portal_init.sql` (+ сид `0002`).
