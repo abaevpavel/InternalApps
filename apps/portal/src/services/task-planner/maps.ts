@@ -23,7 +23,10 @@ function loadGoogleMaps(): Promise<typeof google.maps> {
   if (mapsPromise) return mapsPromise
   mapsPromise = new Promise((resolve, reject) => {
     const s = document.createElement('script')
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_KEY}&v=weekly&loading=async`
+    // Синхронный (monolithic) загрузчик: на onload весь API, включая DistanceMatrixService,
+    // уже привязан к google.maps. Через loading=async классы не попадают в namespace без
+    // importLibrary, а сам importLibrary при простом <script src> не всегда инициализируется.
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_KEY}&v=weekly`
     s.async = true
     s.onerror = () => reject(new Error('google-maps-load-failed'))
     s.onload = () => resolve(window.google.maps)
@@ -184,7 +187,7 @@ export async function buildTravelMatrix(
           }
         }
         pending = rest
-        if (rest.length < missing.length) {
+        if (import.meta.env.DEV && rest.length < missing.length) {
           console.info(`[maps] travel_cache hit: ${missing.length - rest.length}/${missing.length} edges from DB`)
         }
       }
@@ -245,11 +248,13 @@ export async function buildTravelMatrix(
     }
   }
 
-  const nonZero = [...result.entries()].filter(([, v]) => v > 0)
-  console.info(
-    `[maps] matrix built: ${result.size} edges, ${nonZero.length} non-zero. samples:`,
-    nonZero.slice(0, 4).map(([k, v]) => `${k}=${v}m`),
-  )
+  if (import.meta.env.DEV) {
+    const nonZero = [...result.entries()].filter(([, v]) => v > 0)
+    console.info(
+      `[maps] matrix built: ${result.size} edges, ${nonZero.length} non-zero. samples:`,
+      nonZero.slice(0, 4).map(([k, v]) => `${k}=${v}m`),
+    )
+  }
   return result
 }
 
