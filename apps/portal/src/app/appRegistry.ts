@@ -222,7 +222,7 @@ export const APPS: AppConfig[] = [
       database: SUPABASE,
       tables: [
         'tp_tasks', 'tp_projects', 'tp_teams', 'tp_skills', 'tp_task_types', 'tp_team_availability',
-        'tp_ai_teams_schedule', 'tp_ai_settings', 'tp_travel_cache', 'tp_sync_logs',
+        'tp_ai_teams_schedule', 'tp_travel_cache', 'tp_sync_logs',
         'tp_task_batch_snapshots', 'tp_app_settings', 'tp_profiles', 'tp_user_roles',
       ],
       edgeFunctions: [

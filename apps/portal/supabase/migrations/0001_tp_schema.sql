@@ -199,15 +199,8 @@ create table if not exists public.tp_ai_teams_schedule (
   input_body jsonb
 );
 
-create table if not exists public.tp_ai_settings (
-  id uuid default gen_random_uuid() primary key,
-  prompt_text text not null,
-  setting_name text default 'scheduling_prompt'::text not null,
-  is_active boolean default true not null,
-  created_at timestamptz default now() not null,
-  updated_at timestamptz default now() not null,
-  human_prompt_description text default 'Enter your prompt for ChatGPT to generate a schedule for your tasks. For example: ''Schedule these tasks for the next 2 weeks, prioritizing high-priority items and grouping tasks by location to minimize travel time.'''::text
-);
+-- tp_ai_settings НЕ переносим: рабочий промпт планировщика зашит в ноды n8n,
+-- эта таблица нигде не читается (ни фронт, ни edge, ни воркфлоу). Удалена 2026-07-22.
 
 create table if not exists public.tp_sync_logs (
   id uuid default gen_random_uuid() primary key,
@@ -328,9 +321,6 @@ create trigger tp_update_tasks_updated_at before update on public.tp_tasks for e
 drop trigger if exists tp_trigger_cleanup_old_batch_snapshots on public.tp_task_batch_snapshots;
 create trigger tp_trigger_cleanup_old_batch_snapshots after insert on public.tp_task_batch_snapshots for each row execute function public.tp_cleanup_old_batch_snapshots();
 
-drop trigger if exists tp_update_ai_settings_updated_at on public.tp_ai_settings;
-create trigger tp_update_ai_settings_updated_at before update on public.tp_ai_settings for each row execute function public.tp_update_updated_at_column();
-
 drop trigger if exists tp_update_teams_updated_at on public.tp_teams;
 create trigger tp_update_teams_updated_at before update on public.tp_teams for each row execute function public.tp_update_updated_at_column();
 
@@ -348,7 +338,6 @@ create trigger tp_update_team_availability_updated_at before update on public.tp
 
 -- ---------- ROW LEVEL SECURITY ----------
 alter table public.tp_ai_teams_schedule    enable row level security;
-alter table public.tp_ai_settings          enable row level security;
 alter table public.tp_app_settings         enable row level security;
 alter table public.tp_profiles             enable row level security;
 alter table public.tp_projects             enable row level security;
@@ -366,9 +355,6 @@ alter table public.tp_user_roles           enable row level security;
 -- «allow all» служебные таблицы
 drop policy if exists "Allow all operations on AI_teams_schedule" on public.tp_ai_teams_schedule;
 create policy "Allow all operations on AI_teams_schedule" on public.tp_ai_teams_schedule using (true);
-
-drop policy if exists "Allow all operations on ai_settings" on public.tp_ai_settings;
-create policy "Allow all operations on ai_settings" on public.tp_ai_settings using (true);
 
 drop policy if exists "Allow all operations on sync_logs" on public.tp_sync_logs;
 create policy "Allow all operations on sync_logs" on public.tp_sync_logs using (true);

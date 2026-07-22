@@ -107,11 +107,16 @@
   ⚠️ При удалении апки потерян её `.env` (gitignore): значения n8n-вебхуков восстановлены
   из `.env.example`, а `VITE_GOOGLE_MAPS_API_KEY` надо вписать в `apps/portal/.env` заново.
 
-**СЛЕДУЮЩИЙ ШАГ → Шаг 5 (n8n) + прод-URL'ы.** Локально: портал `:5175`, Task Planner `:5173`
-(карточка `01-Task Planner (Daly Schedule)` в `applications.url` = `http://localhost:5173`).
-Перед продом: проставить боевые `VITE_PORTAL_URL` (в TP) и `VITE_TASK_PLANNER_URL` (в портале),
-обновить `applications.url`, добавить origin Task Planner в Supabase Redirect URLs.
-Все файлы: `apps/task-planner/supabase/migrations/`. Проект: `pilxwhtkhysanpukaliu`.
+- ✅ **Шаг 5 — n8n переключён** (2026-07-22). В воркфлоу `Task Planner` (`cit7Gah53xPLLbdy`)
+  обе Supabase-ноды (`Create a row1`, `Update a row`) переведены на портальный проект
+  `pilxwhtkhysanpukaliu`, таблица `AI_teams_schedule` → `tp_ai_teams_schedule`. Проверено
+  сквозным прогоном «Send to AI»: новая строка легла с заполненным `output_data`
+  (request_ID `289a03e5-…`, 2026-07-22 11:50).
+
+**МИГРАЦИЯ ЗАВЕРШЕНА.** Осталось только к продовой выкатке: `VITE_GOOGLE_MAPS_API_KEY`
+в `apps/portal/.env`, боевой прод-URL и деплой портала (`npm run build:portal` + rsync,
+см. `docs/DEPLOYMENT.md`). Task Planner теперь роут портала `/task-planner`; отдельного
+приложения и его миграций больше нет — всё в `apps/portal/supabase/`. Проект: `pilxwhtkhysanpukaliu`.
 
 ### 4.1 — Применить схему (SQL Editor, по порядку, по одному) — ✅ СДЕЛАНО 2026-07-21
 1. `0001_tp_schema.sql`
