@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { LayoutGrid, LogOut, Menu, Settings, SlidersHorizontal, Users } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
@@ -108,7 +108,11 @@ export function Layout() {
       </header>
 
       <main className="flex-1">
-        <Outlet />
+        {/* Suspense вокруг Outlet: при подгрузке lazy-чанка апки хедер/меню
+            остаются на месте, «Loading…» показывается только в области контента. */}
+        <Suspense fallback={<div className="p-10 text-gray-500">Loading…</div>}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   )

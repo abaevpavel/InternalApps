@@ -1,28 +1,34 @@
+import { lazy } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { Providers } from './providers'
 import { Layout } from './Layout'
 import { useAuth } from '../auth/AuthProvider'
 import { useAppAccess } from '../auth/useAppAccess'
 import { Button } from '../components/ui'
+// Ядро (первый экран) — eager: логин, список апок, аккаунт.
 import { LoginPage } from '../pages/Login'
 import { MyApplicationsPage } from '../pages/MyApplications'
 import { MyAccountPage } from '../pages/MyAccount'
-import { UserManagementPage } from '../pages/UserManagement'
-import { ProductionChecklistsPage } from '../pages/production-checklist/ProductionChecklists'
-import { TemplateEditorPage } from '../pages/production-checklist/ProductionChecklistDetail'
-import { ProjectChecklistPage } from '../pages/production-checklist/ProjectChecklistPage'
-import { EmployeeChecklistsPage } from '../pages/hr-checklists/EmployeeChecklists'
-import { ChecklistDetailPage } from '../pages/hr-checklists/ChecklistDetail'
-import { GmailAutoSenderPage } from '../pages/gmail-sender/GmailAutoSender'
-import { SalesEmailSenderPage } from '../pages/sales/SalesEmailSender'
-import { AppSettingsPage } from '../pages/AppSettings'
-import { HRSyncAirtablePage } from '../pages/hr-sync/HRSyncAirtable'
-import { SendBuildertrendSchedulePage } from '../pages/buildertrend-schedule/SendBuildertrendSchedule'
-import { TasksPage } from '../pages/task-planner/Tasks'
-import { CreateTaskPage } from '../pages/task-planner/CreateTask'
-import { AvailabilityPage } from '../pages/task-planner/Availability'
-import { AdminPage as TaskPlannerAdminPage } from '../pages/task-planner/Admin'
-import { TaskPlannerLayout } from '../pages/task-planner/TaskPlannerLayout'
+
+// Страницы апок — lazy: каждая апка в своём чанке, грузится только при переходе
+// на её роут. Тяжёлые зависимости (@react-pdf, @dnd-kit, react-quill, Google Maps)
+// уезжают из ядра. Компоненты — именованные экспорты → мапим в { default }.
+const UserManagementPage = lazy(() => import('../pages/UserManagement').then((m) => ({ default: m.UserManagementPage })))
+const AppSettingsPage = lazy(() => import('../pages/AppSettings').then((m) => ({ default: m.AppSettingsPage })))
+const ProductionChecklistsPage = lazy(() => import('../pages/production-checklist/ProductionChecklists').then((m) => ({ default: m.ProductionChecklistsPage })))
+const TemplateEditorPage = lazy(() => import('../pages/production-checklist/ProductionChecklistDetail').then((m) => ({ default: m.TemplateEditorPage })))
+const ProjectChecklistPage = lazy(() => import('../pages/production-checklist/ProjectChecklistPage').then((m) => ({ default: m.ProjectChecklistPage })))
+const EmployeeChecklistsPage = lazy(() => import('../pages/hr-checklists/EmployeeChecklists').then((m) => ({ default: m.EmployeeChecklistsPage })))
+const ChecklistDetailPage = lazy(() => import('../pages/hr-checklists/ChecklistDetail').then((m) => ({ default: m.ChecklistDetailPage })))
+const GmailAutoSenderPage = lazy(() => import('../pages/gmail-sender/GmailAutoSender').then((m) => ({ default: m.GmailAutoSenderPage })))
+const SalesEmailSenderPage = lazy(() => import('../pages/sales/SalesEmailSender').then((m) => ({ default: m.SalesEmailSenderPage })))
+const HRSyncAirtablePage = lazy(() => import('../pages/hr-sync/HRSyncAirtable').then((m) => ({ default: m.HRSyncAirtablePage })))
+const SendBuildertrendSchedulePage = lazy(() => import('../pages/buildertrend-schedule/SendBuildertrendSchedule').then((m) => ({ default: m.SendBuildertrendSchedulePage })))
+const TasksPage = lazy(() => import('../pages/task-planner/Tasks').then((m) => ({ default: m.TasksPage })))
+const CreateTaskPage = lazy(() => import('../pages/task-planner/CreateTask').then((m) => ({ default: m.CreateTaskPage })))
+const AvailabilityPage = lazy(() => import('../pages/task-planner/Availability').then((m) => ({ default: m.AvailabilityPage })))
+const TaskPlannerAdminPage = lazy(() => import('../pages/task-planner/Admin').then((m) => ({ default: m.AdminPage })))
+const TaskPlannerLayout = lazy(() => import('../pages/task-planner/TaskPlannerLayout').then((m) => ({ default: m.TaskPlannerLayout })))
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { authUser, profile, denied, loading } = useAuth()
