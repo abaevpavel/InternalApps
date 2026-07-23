@@ -16,8 +16,9 @@ import type {
 
 /**
  * Сервисный слой 06-HR-Checklists под реальную схему Lovable-Supabase.
- * Единственное место с именами таблиц/колонок. Upsert прогресса — read-then-write по
- * составному ключу (employee_id, task_id, phase), без опоры на DB-UNIQUE (его нет).
+ * Единственное место с именами таблиц/колонок. Прогресс/назначения — атомарный
+ * upsert(onConflict) по UNIQUE-индексам (миграция 0005), ключ прогресса —
+ * (employee_id, task_id, phase).
  */
 
 const ITEM_BUCKET = 'checklist-item-photos'
@@ -268,21 +269,18 @@ export async function listEmployeeChecklists(employeeId: string): Promise<Employ
 
 export async function assignChecklist(employeeId: string, checklistId: string, assignedBy?: string): Promise<void> {
   const sb = requireSupabase()
-  // без DB-UNIQUE: не плодим дубли — проверяем существующее назначение
-  const { data: existing } = await sb
-    .from('employee_checklists')
-    .select('id')
-    .eq('employee_id', employeeId)
-    .eq('checklist_id', checklistId)
-    .limit(1)
-    .maybeSingle()
-  if (existing?.id) return
-  const { error } = await sb.from('employee_checklists').insert({
-    employee_id: employeeId,
-    checklist_id: checklistId,
-    assigned_by: assignedBy ?? null,
-    assigned_at: new Date().toISOString(),
-  })
+  // Атомарно и идемпотентно: ON CONFLICT (employee_id, checklist_id) DO NOTHING
+  // (UNIQUE-индекс employee_checklists_emp_checklist_uq, миграция 0005). Повторное
+  // назначение — no-op, дубли невозможны даже при гонке (BUG-3).
+  const { error } = await sb.from('employee_checklists').upsert(
+    {
+      employee_id: employeeId,
+      checklist_id: checklistId,
+      assigned_by: assignedBy ?? null,
+      assigned_at: new Date().toISOString(),
+    },
+    { onConflict: 'employee_id,checklist_id', ignoreDuplicates: true },
+  )
   if (error) throw error
 }
 
@@ -309,8 +307,11 @@ export async function listProgress(employeeId: string): Promise<ProgressRow[]> {
 }
 
 /**
- * Upsert прогресса по (employee_id, task_id, phase) без опоры на DB-UNIQUE:
- * читаем строку, затем update/insert. На insert даём безопасные дефолты.
+ * Upsert прогресса по (employee_id, task_id, phase) — атомарно через ON CONFLICT
+ * (UNIQUE-индекс employee_checklist_progress_emp_task_phase_uq, миграция 0005).
+ * Шлём только ключи + patch: недостающие NOT NULL-колонки (completed, is_not_applicable)
+ * на INSERT приходят из DEFAULT, на UPDATE не затираются, если их нет в patch.
+ * Снимает гонку двойного клика (BUG-1) без read-then-write.
  */
 export async function upsertProgress(
   employeeId: string,
@@ -319,30 +320,13 @@ export async function upsertProgress(
   patch: Partial<Pick<ProgressRow, 'completed' | 'is_not_applicable' | 'selected_answer' | 'notes' | 'photos' | 'completed_at'>>,
 ): Promise<void> {
   const sb = requireSupabase()
-  const { data: existing, error: findErr } = await sb
+  const { error } = await sb
     .from('employee_checklist_progress')
-    .select('id')
-    .eq('employee_id', employeeId)
-    .eq('task_id', taskId)
-    .eq('phase', phase)
-    .limit(1)
-    .maybeSingle()
-  if (findErr) throw findErr
-
-  if (existing?.id) {
-    const { error } = await sb.from('employee_checklist_progress').update(patch).eq('id', existing.id)
-    if (error) throw error
-  } else {
-    const { error } = await sb.from('employee_checklist_progress').insert({
-      employee_id: employeeId,
-      task_id: taskId,
-      phase,
-      completed: false,
-      is_not_applicable: false,
-      ...patch,
-    })
-    if (error) throw error
-  }
+    .upsert(
+      { employee_id: employeeId, task_id: taskId, phase, ...patch },
+      { onConflict: 'employee_id,task_id,phase' },
+    )
+  if (error) throw error
 }
 
 /** Установить tri-state задачи (+ опционально selected_answer). */

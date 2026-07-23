@@ -12,8 +12,8 @@ import type {
 /**
  * Сервисный слой Production-Checklist под реальную схему Lovable-Supabase.
  * Единственное место с именами таблиц/колонок. «Перенос как есть»: без серверных
- * edge для Send (прямой fetch на Make), public-бакет, без опоры на UNIQUE-констрейнты
- * (upsert прогресса делаем read-then-write, чтобы не зависеть от onConflict).
+ * edge для Send (прямой fetch на Make), public-бакет. Прогресс/назначения — атомарный
+ * upsert(onConflict) по UNIQUE-индексам (миграция 0005).
  */
 
 const PHOTO_BUCKET = 'production-checklist-photos'
@@ -249,8 +249,11 @@ export async function listProgress(projectId: string): Promise<ProgressRow[]> {
 }
 
 /**
- * Upsert прогресса по (project_id, task_id) без опоры на UNIQUE-констрейнт:
- * читаем существующую строку, затем update или insert.
+ * Upsert прогресса по (project_id, task_id) — атомарно через ON CONFLICT
+ * (UNIQUE-индекс project_checklist_progress_project_task_uq, миграция 0005).
+ * Шлём только ключи + patch: на INSERT недостающие NOT NULL-колонки (is_not_applicable)
+ * приходят из DEFAULT, на UPDATE не затираются, если их нет в patch.
+ * Снимает гонку двойного клика (BUG-1) без read-then-write.
  */
 export async function upsertProgress(
   projectId: string,
@@ -258,26 +261,10 @@ export async function upsertProgress(
   patch: Partial<Pick<ProgressRow, 'completed' | 'is_not_applicable' | 'selected_answer' | 'notes' | 'completed_at'>>,
 ): Promise<void> {
   const sb = requireSupabase()
-  const { data: existing, error: findErr } = await sb
+  const { error } = await sb
     .from('project_checklist_progress')
-    .select('id')
-    .eq('project_id', projectId)
-    .eq('task_id', taskId)
-    .limit(1)
-    .maybeSingle()
-  if (findErr) throw findErr
-
-  if (existing?.id) {
-    const { error } = await sb.from('project_checklist_progress').update(patch).eq('id', existing.id)
-    if (error) throw error
-  } else {
-    // is_not_applicable — NOT NULL в схеме: даём дефолт false на случай вставки
-    // строки без ответа (например, заметка к блоку до кликов Y/N/NA). patch перекрывает.
-    const { error } = await sb
-      .from('project_checklist_progress')
-      .insert({ project_id: projectId, task_id: taskId, is_not_applicable: false, ...patch })
-    if (error) throw error
-  }
+    .upsert({ project_id: projectId, task_id: taskId, ...patch }, { onConflict: 'project_id,task_id' })
+  if (error) throw error
 }
 
 /* ================= Storage (фото пунктов шаблона) ================= */
