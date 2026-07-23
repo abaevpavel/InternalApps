@@ -18,8 +18,11 @@ packages/
   ui/                    Общий дизайн-система, лого, shadcn-компоненты. [плейсхолдер]
   lib/                   Общий Supabase-клиент, errMsg, типы. [плейсхолдер]
 docs/
+  PORTAL.md              Единый источник правды по порталу (статус, аудит, долги).
+  DEPLOYMENT.md          Деплой на AWS EC2 (билд + rsync, плавающий IP).
+  TASK-PLANNER.md        Подсистема Task Planner: n8n-мозг, бизнес-правила, дебаг.
+  TASK-PLANNER-MIGRATION.md  Рунбук миграции БД Task Planner в общий Supabase.
   app-estimates/         Планы и оценки по каждому приложению.
-  SPEC / AUDIT / MIGRATION / AI-MODULES  — спецификации и аудит.
 ```
 
 ## Workspaces (npm)
@@ -53,9 +56,10 @@ npm run dev -w daly-schedule
    и правятся на `/settings/:appCode` (реестр — `apps/portal/src/app/appRegistry.ts`);
    env — только фолбэк.
 
-> Правило 3 (UI-слой) закрыто: и карточки на главной фильтруются по ролям, и роуты
-> апок гейтятся (`AppAccessGuard` + `useAppAccess`, admin bypass, экран «Access denied»).
-> Остаётся долг по слою данных — ужесточение RLS на части таблиц (см. `docs/PORTAL-STATUS.md`).
+> Правило 3 закрыто на обоих слоях: карточки фильтруются по ролям, роуты апок гейтятся
+> (`AppAccessGuard` + `useAppAccess`, admin bypass, «Access denied»), а данные — RLS (все
+> PII-таблицы скоупнуты `user_has_application_access`/`user_has_admin_role`). Детали и статус —
+> `docs/PORTAL.md`.
 
 ## Принципы реализации
 - **Код вместе.** Монореп держит приложения рядом и даёт общий `packages/ui` + `packages/lib`.
