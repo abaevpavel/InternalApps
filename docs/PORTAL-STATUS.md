@@ -83,7 +83,7 @@ HR-Sync, Buildertrend-Schedule. **Task Planner — особняк**: у него
 
 ### По приложениям
 - [ ] **HR-Sync**: сделать расписание реально редактируемым (таблица `sync_schedules` + рабочие cron-RPC), таймзона через IANA `America/New_York` (сейчас ET→UTC = +5, летом EDT уезжает на час). Сейчас — read-only + честная подсказка.
-- [ ] **Приватность фото**: бакеты `production-checklist-photos`, `checklist-item-photos`, `checklist-photos` — public. Рекомендация: private + signed URLs.
+- [x] ~~**Приватность фото**~~ — ПРИНЯТЫЙ РИСК (2026-07-23): бакеты public, но внутр. инструмент, ссылки наружу не расходятся. Фикс на будущее — private + signed URLs.
 - [ ] **HR Legacy-фазы**: выпилены; при необходимости завести их контент обычными шаблонами через редактор.
 - [ ] **Sales**: `updated_at` теперь проставляется явно; RLS `email_templates` — сузить до owner/роли.
 
