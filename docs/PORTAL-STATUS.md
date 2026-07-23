@@ -46,7 +46,7 @@ HR-Sync, Buildertrend-Schedule. **Task Planner — особняк**: у него
 ## Рекомендации / долги (сделать потом)
 
 ### Доступ и безопасность
-- [ ] **Per-app route-gate** (`AppAccessProtected`): сейчас карточки на главной фильтруются по роли ✅, но **прямой URL к чужой апке не закрыт** (любой залогиненный зайдёт). План: хук `useAppAccess()` (доступные `applications.url` юзера) + обёртка роутов; admin bypass; экран «Access denied». Тест — под ограниченной ролью.
+- [x] **Per-app route-gate** — ✅ СДЕЛАНО (2026-07-23). Хук `useAppAccess()` (доступные апки юзера через тот же `listUserApplications`, react-query-кэш общий с карточками) + `codeForApplication` (строка `applications` → код реестра: url→`appForPath`, фолбэк по имени↔label) + обёртка `AppAccessGuard` вокруг всех app-роутов в `App.tsx` (портальные страницы снаружи), admin bypass, экран «Access denied». Юнит-тест маппинга — `tests/app-access.test.ts`. **Ручной тест под ограниченной ролью пройден (2026-07-23):** не-админ — свои апки открываются, чужой прямой URL → «Access denied». ✅
 - [ ] **Ужесточить RLS** (дополняем позже, возможно): у части таблиц политики «любой authenticated» → данные достижимы прямым API-запросом даже без route-доступа. Кандидаты: `email_templates` (owner/роль Sales), проверить checklist-таблицы. Route-gate = UI-слой; строгая изоляция данных = RLS.
 - [ ] **Секретность вебхуков**: все Make-вебхуки сейчас дёргаются прямым `fetch` из браузера (URL виден в Network, без HMAC). Правильно — **edge-прокси** (`send-*`) с ролевой проверкой + секрет + лог. app-settings делает URL редактируемым, но не скрывает.
 - [ ] **gmail-auth**: `verify_jwt=false` + захардкоженный AWS-токен = открытый прокси → secrets + `verify_jwt=true` + admin-check.
