@@ -64,7 +64,7 @@ Access denied вместо любого экрана планировщика. �
       в `appRegistry` (`appRoles`), вкладка появляется сама. Сервис — `getAppRoleIds()`.
 - [x] `useTaskPlannerRole()` — хук роли (портальный админ / маппинг ролей / бригада по email).
 - [x] `fetchTeamByEmail()` в `services/task-planner/data.ts`.
-- [x] `tp_my_team_id()` + закрытие RLS — миграция `0006_tp_rls_lockdown.sql` (**написана, не применена**).
+- [x] `tp_my_team_id()` + закрытие RLS — миграция `0006_tp_rls_lockdown.sql`, **применена на боевой** 2026-08-04.
 - [x] Убраны кнопка **Set password**, модалка и сервис `setTeamPassword`; на вкладке Team —
       пояснение, что доступ выдаётся в Portal Settings.
 - [x] Меню апки переименовано: **Admin → Directories** (не путать с админкой портала).
@@ -121,7 +121,8 @@ Access denied вместо любого экрана планировщика. �
 
 ### 4.6 Данные и RLS
 
-- [ ] **Применить `0006_tp_rls_lockdown.sql`** на боевой БД (SQL Editor, `pilxwhtkhysanpukaliu`).
+- [x] **`0006_tp_rls_lockdown.sql` применена** на боевой БД 2026-08-04 (SQL Editor,
+      `pilxwhtkhysanpukaliu`). Утечка закрыта: анониму все 7 таблиц отдают `0 rows`.
 - [ ] **`tp_tasks` — скоуп по бригаде в RLS**: `team_id = tp_my_team_id()` для не-админа.
       Без этого фильтр в UI обходится прямым запросом с anon-ключом.
 - [ ] Проверить после применения: админ видит всё, бригадир — только своё, синки и n8n живы
