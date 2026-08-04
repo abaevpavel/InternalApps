@@ -36,6 +36,25 @@
 - Общая edge `extract-checklist-from-image` (HR + Production).
 - Хедер/бургер-меню/App Settings — общие из портала; лого всегда ведёт на главную.
 
+### Бургер-меню (структура, 2026-08-04)
+Два блока с заголовками — видно, к какому контуру относится пункт:
+```
+Signed in as <email>
+─── <ИМЯ ТЕКУЩЕЙ АПКИ> ───   ← блока нет на главной портала
+  экраны апки (реестр appRegistry.nav)
+  App Settings               ← admin; /settings/<код апки>
+─── PORTAL ───────────────
+  My Account
+  Portal Settings            ← admin; /portal-settings (вкладки Users/Roles)
+──────────────────────────
+  Sign out
+```
+- **App Settings** = настройки *конкретной апки* (описание, ресурсы, вебхуки) — потому и живёт
+  в блоке апки. **Portal Settings** = верхний уровень (бывш. User Management; `/users` — редирект).
+- `My Applications` из меню убран: дублировал клик по лого.
+- Task Planner: пункт `Admin` переименован в **Directories** — это справочники апки
+  (Projects/Team/Skills/Task Types), их путали с админкой портала.
+
 ---
 
 ## 2. App-settings фреймворк (готов)
@@ -45,8 +64,13 @@
   `user_has_admin_role`), Save работает. ✅
 - Реестр `src/app/appRegistry.ts` — по каждой апке: вебхуки + `resources` (БД/таблицы/бакеты/edge/
   внешние) + роут-префиксы.
-- Экран **`/settings/:appCode`** (admin-only), табы: General / Resources / Webhooks.
+- Экран **`/settings/:appCode`** (admin-only), табы: General / **Roles** / Resources / Webhooks.
   Resources — живой (реальные `count` строк + бакеты из `storage.listBuckets()`).
+- **Roles** (2026-08-04) — сопоставление «внутренняя роль апки → портальные роли»: апка
+  объявляет свои виды в `appRegistry` (`AppConfig.appRoles`), админ отмечает чекбоксами, какие
+  роли портала их получают; значение — jsonb-массив `role_id` в `app_settings.roles_<slot>`.
+  Вкладка появляется только у апок с `appRoles` (сейчас — Task Planner: Planner Admin ↔ Team Lead).
+  Так точка настройки лежит в настройках апки, а реестр ролей остаётся один, портальный.
 - Сервисы читают вебхуки из БД с фолбэком на env (`resolveString`): Sales, Production-Checklist,
   HR-Sync, Buildertrend.
 - **Task Planner — особняк**: своя key/value-таблица `tp_app_settings` (`value text`, без
@@ -64,6 +88,8 @@
 | **SEC-4** | `gmail-auth` edge: `verify_jwt=false` + токен `bmasters2020` в edge | ⚪ **Принятый риск** (тот же класс, что SEC-1) |
 | **SEC-5** | Публичные бакеты (фото по прямой ссылке без логина) | ⚪ **Принятый риск** (2026-07-23): внутр. инструмент, ссылки наружу не расходятся. Фикс на будущее — private + signed URLs |
 | **SEC-6** | Ссылки пунктов рендерятся `<a href>` без валидации схемы | 🟡 Низкий риск. Стоит резать `javascript:`/`data:` в обоих редакторах |
+| **SEC-7** | **Таблицы `tp_*` читались анонимом** — с одним anon-ключом (он публичен, лежит в бандле) без логина отдавались `tp_projects` (128 строк, адреса объектов), `tp_teams` (9 — ФИО, рабочие email, **домашние адреса и координаты** бригадиров), `tp_skills`, `tp_task_types`, `tp_team_availability`, `tp_ai_teams_schedule`, `tp_sync_logs` | 🔴 Найдено 2026-08-04 прямой проверкой боевой БД. В SEC-3 не попало: там смотрели только портальные таблицы. Миграция `0006_tp_rls_lockdown.sql` написана (anon → authenticated, запись — админ), **применить на боевой** |
+| **SEC-8** | **`/task-planner/admin` был открыт роутом** любому с доступом к апке (роут без `AdminOnly`, `AppAccessGuard` различает апки, но не экраны внутри) | ✅ **Закрыто** (2026-08-04): `AdminOnly` на роут. Урок общий: per-app гейт не заменяет гейт админских экранов внутри апки |
 
 **Хардкод секретов — НЕТ** (проверено grep'ом по `apps/portal/src` + `git grep`): Supabase URL/anon —
 только `import.meta.env`; вебхуки — env + `app_settings`; нет `service_role`/`eval`/
@@ -119,9 +145,15 @@ Gmail-consent, cron-времена в справке `appRegistry`/HR-Sync (зе
 - [ ] **HR Legacy-фазы**: выпилены; при необходимости завести контент обычными шаблонами через редактор.
 - [ ] **BUG-2**: гасить двойной Send на клиенте (кнопка disabled + флаг).
 
+### Роли внутри Task Planner
+- [ ] Разграничение «админ планировщика ↔ бригадир/PM»: модель принята, каркас есть, полный
+      план UI-работ — [`TASK-PLANNER-ROLES.md`](TASK-PLANNER-ROLES.md). Ждём от заказчика
+      функционал бригадира. Там же — применение миграции `0006` (SEC-7).
+
 ### Прочее из платформы
 - [ ] **Тесты доступа**: приглашённый — первый вход создаёт профиль+роль (нужен реальный тест-юзер;
-      `dev@todor3d.com` не годится — Internal-consent Google блокирует).
+      `dev@todor3d.com` не годится — Internal-consent Google блокирует). Закроется вместе с
+      приглашением бригадиров (`TASK-PLANNER-ROLES.md` §4.7) — там как раз реальные ограниченные учётки.
 - [ ] **Аудит RLS на escalation** (не осталось ли дырявой Lovable-политики повышения роли).
 - [ ] **Вкладка Applications** в UI (сейчас апку добавляем SQL).
 - [ ] **SSO-консюмер в `packages/lib`** (к деплою апки на отдельный субдомен, если понадобится).
