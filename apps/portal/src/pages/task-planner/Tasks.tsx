@@ -1130,7 +1130,7 @@ function RecalcModal({
               <AlertTriangle size={16} className="mt-0.5 shrink-0" />
               <span>
                 Moving a task with a fixed <b>Exact time ({movedAnchor.anchor_time})</b>.
-                Это может сломать якорь и вызвать конфликты.
+                This may break the anchor and cause conflicts.
               </span>
             </div>
           )}

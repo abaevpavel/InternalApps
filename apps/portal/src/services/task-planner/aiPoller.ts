@@ -23,7 +23,7 @@ export async function pollScheduleRun(
     const run = await fetchScheduleRun(requestId)
     if (run && run.status !== 'processing') return run
     if (performance.now() - started > timeout) {
-      throw new Error('Таймаут ожидания результата AI')
+      throw new Error('Timed out waiting for the AI result')
     }
     await new Promise((r) => setTimeout(r, interval))
   }

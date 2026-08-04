@@ -88,7 +88,7 @@ export async function sendToAi(p: SendToAiParams): Promise<{ request_ID: string 
     total: p.tasks.length,
   }
 
-  if (!url) throw new Error('Planner webhook не настроен — задайте URL в Admin → Settings')
+  if (!url) throw new Error('Planner webhook is not set — configure it in App Settings → Webhooks')
   const res = await fetch(url, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
   })
@@ -127,7 +127,7 @@ export function buildSlackPayload(days: TeamDay[], requestId: string, date: stri
 export async function sendToSlack(schedule: unknown): Promise<void> {
   // Правило платформы: настройка живёт в app_settings, env — только фолбэк.
   const SLACK = await resolveString('task-planner', 'slack_webhook', SLACK_ENV)
-  if (!SLACK) throw new Error('n8n slack webhook не настроен (App Settings → Webhooks)')
+  if (!SLACK) throw new Error('n8n Slack webhook is not set (App Settings → Webhooks)')
   const res = await fetch(SLACK, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(schedule),
   })

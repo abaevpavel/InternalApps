@@ -13,7 +13,7 @@ export const supabase: SupabaseClient | null =
 export function requireSupabase(): SupabaseClient {
   if (!supabase) {
     throw new Error(
-      'Supabase не сконфигурирован. Заполните VITE_SUPABASE_URL и VITE_SUPABASE_ANON_KEY в .env',
+      'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env',
     )
   }
   return supabase
