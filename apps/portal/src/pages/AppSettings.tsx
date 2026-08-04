@@ -4,11 +4,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft } from 'lucide-react'
 import { Button, Card, Field, Input, PageTitle, Tabs, Textarea } from '../components/ui'
 import { errMsg } from '../lib/utils'
-import { appByCode, type AppConfig, type WebhookField } from '../app/appRegistry'
+import { appByCode, appRoleSettingKey, type AppConfig, type AppRoleSlot, type WebhookField } from '../app/appRegistry'
 import { getSettingsMap, setSetting } from '../services/app-settings'
+import { listRoles } from '../services/data'
 import { listBucketsSafe, probeTables } from '../services/resources'
+import type { Role } from '../domain/types'
 
-type SettingsTab = 'general' | 'resources' | 'webhooks'
+type SettingsTab = 'general' | 'roles' | 'resources' | 'webhooks'
 
 export function AppSettingsPage() {
   const { appCode = '' } = useParams()
@@ -37,6 +39,7 @@ export function AppSettingsPage() {
         className="mb-6 max-w-md"
         tabs={[
           { key: 'general' as SettingsTab, label: 'General' },
+          ...(app.appRoles?.length ? [{ key: 'roles' as SettingsTab, label: 'Roles' }] : []),
           { key: 'resources' as SettingsTab, label: 'Resources' },
           ...(app.webhooks.length ? [{ key: 'webhooks' as SettingsTab, label: 'Webhooks' }] : []),
         ]}
@@ -44,9 +47,121 @@ export function AppSettingsPage() {
         onChange={setTab}
       />
       {tab === 'general' && <GeneralTab app={app} />}
+      {tab === 'roles' && <RolesTab app={app} />}
       {tab === 'resources' && <ResourcesTab app={app} />}
       {tab === 'webhooks' && <WebhooksTab app={app} />}
     </div>
+  )
+}
+
+/**
+ * Roles — сопоставление «внутренняя роль апки → портальные роли». Апка не заводит
+ * собственный реестр пользователей (правило 3): админ отмечает, какие роли портала
+ * дают тот или иной вид. Значение — jsonb-массив role_id под ключом `roles_<slot>`.
+ */
+function RolesTab({ app }: { app: AppConfig }) {
+  const qc = useQueryClient()
+  const rolesQ = useQuery({ queryKey: ['roles'], queryFn: listRoles })
+  const settingsQ = useQuery({ queryKey: ['app-settings', app.code], queryFn: () => getSettingsMap(app.code) })
+
+  if (!app.appRoles?.length) {
+    return <Card className="px-6 py-10 text-center text-sm text-gray-400">This app has no internal roles.</Card>
+  }
+  if (rolesQ.isLoading || settingsQ.isLoading) {
+    return <Card className="px-6 py-10 text-center text-sm text-gray-400">Loading…</Card>
+  }
+  if (rolesQ.error) {
+    return <Card className="px-6 py-10 text-center text-sm text-red-600">{errMsg(rolesQ.error)}</Card>
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500">
+        Who sees which view of this app. Roles and users are managed in{' '}
+        <span className="font-medium">Portal Settings</span> — this tab only maps them.
+      </p>
+      {app.appRoles.map((slot) => (
+        <RoleSlotCard
+          key={slot.key}
+          app={app}
+          slot={slot}
+          allRoles={rolesQ.data ?? []}
+          current={settingsQ.data?.[appRoleSettingKey(slot.key)]}
+          onSaved={() => qc.invalidateQueries({ queryKey: ['app-settings', app.code] })}
+        />
+      ))}
+    </div>
+  )
+}
+
+function RoleSlotCard({
+  app,
+  slot,
+  allRoles,
+  current,
+  onSaved,
+}: {
+  app: AppConfig
+  slot: AppRoleSlot
+  allRoles: Role[]
+  current: unknown
+  onSaved: () => void
+}) {
+  const saved = Array.isArray(current) ? (current as unknown[]).map(String) : []
+  const [selected, setSelected] = useState<string[]>(saved)
+  // Пришли свежие данные из БД (первая загрузка / инвалидация) — синхронизируем локальный выбор.
+  const savedKey = saved.join(',')
+  useEffect(() => {
+    setSelected(saved)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedKey])
+
+  const saveM = useMutation({
+    mutationFn: () => setSetting(app.code, appRoleSettingKey(slot.key), selected),
+    onSuccess: onSaved,
+  })
+
+  const dirty = selected.join(',') !== savedKey
+
+  function toggle(id: string) {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  return (
+    <Card className="p-6">
+      <div className="mb-1 font-medium text-gray-900">{slot.label}</div>
+      {slot.hint && <p className="mb-4 text-sm text-gray-500">{slot.hint}</p>}
+
+      {allRoles.length === 0 ? (
+        <p className="text-sm text-gray-400">No portal roles yet — create them in Portal Settings → Roles.</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {allRoles.map((r) => {
+            const on = selected.includes(r.id)
+            return (
+              <label
+                key={r.id}
+                className={
+                  'inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition ' +
+                  (on ? 'border-brand-blue bg-blue-50 text-brand-blue' : 'border-gray-200 text-gray-700 hover:bg-gray-50')
+                }
+              >
+                <input type="checkbox" className="accent-brand-blue" checked={on} onChange={() => toggle(r.id)} />
+                {r.name}
+              </label>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center gap-2">
+        <Button variant="primary" disabled={!dirty || saveM.isPending} onClick={() => saveM.mutate()}>
+          Save
+        </Button>
+        {saveM.isSuccess && !dirty && <span className="text-sm text-green-600">Saved ✓</span>}
+        {saveM.error && <span className="text-sm text-red-600">{errMsg(saveM.error)}</span>}
+      </div>
+    </Card>
   )
 }
 

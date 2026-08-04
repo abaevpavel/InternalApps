@@ -114,6 +114,23 @@ export async function fetchProjects(): Promise<Project[]> {
   }))
 }
 
+/**
+ * Бригада текущего юзера — по совпадению email (основа роли `team_lead`, см.
+ * `pages/task-planner/useTaskPlannerRole.ts`). Узкий запрос: три колонки, без скиллов.
+ * `ilike` без wildcard = регистронезависимое равенство. Зеркалит SQL-функцию
+ * `tp_my_team_id()` из миграции 0006, которая тем же правилом скоупит RLS.
+ */
+export async function fetchTeamByEmail(email: string): Promise<{ id: string; name: string } | null> {
+  if (!supabase || !email) return null
+  const { data, error } = await supabase
+    .from('tp_teams')
+    .select('id, name')
+    .ilike('email', email)
+    .maybeSingle()
+  if (error) throw error
+  return data ? { id: data.id as string, name: (data.name as string) ?? '' } : null
+}
+
 /** Аккаунты команд для Admin → Team (сырые строки teams: email/адрес/slack/статус). */
 export async function fetchTeamAccounts(): Promise<import('../../domain/task-planner/types').TeamAccount[]> {
   if (!supabase) return []
@@ -195,38 +212,6 @@ export async function runEdgeSync(fns: string[]): Promise<void> {
   }
 }
 
-/**
- * Задать/сбросить пароль члену бригады (Admin → Team). Через Edge Function
- * `set-team-password` (service_role на сервере). Универсально: создаёт аккаунт
- * с паролем, если его ещё нет, иначе меняет пароль.
- */
-export async function setTeamPassword(input: {
-  email: string
-  password: string
-  role?: string
-  first_name?: string | null
-  last_name?: string | null
-}): Promise<void> {
-  if (!supabase) throw new Error('Supabase is not configured')
-  const { data: sessionData } = await supabase.auth.getSession()
-  const token = sessionData.session?.access_token
-  if (!token) throw new Error('Not signed in — please log in again')
-  const { data, error } = await supabase.functions.invoke('set-team-password', {
-    body: { ...input, access_token: token }, // токен в теле — платформа может портить заголовок
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (error) {
-    // При non-2xx supabase-js прячет тело в error.context (Response) — вытащим реальный текст.
-    let detail = error.message
-    try {
-      const ctx = (error as { context?: Response }).context
-      const body = ctx && (await ctx.json())
-      if (body?.error) detail = body.error
-    } catch { /* тело не JSON — оставляем message */ }
-    throw new Error(detail)
-  }
-  if (data?.error) throw new Error(data.error)
-}
 
 /* ---------------- Task Types CRUD (Admin) ---------------- */
 export async function createTaskType(name: string, description?: string): Promise<void> {

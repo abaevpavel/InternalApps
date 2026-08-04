@@ -23,6 +23,28 @@ export async function setSetting(appCode: string, key: string, value: unknown): 
   if (error) throw error
 }
 
+/**
+ * Портальные роли, назначенные внутренней роли апки (вкладка Roles в App Settings).
+ * Хранится как jsonb-массив role_id под ключом `roles_<slotKey>`; отсутствие ключа
+ * или мусор в значении → пустой список (апка падает на свои дефолты, а не ломается).
+ */
+export async function getAppRoleIds(appCode: string, slotKey: string): Promise<string[]> {
+  try {
+    const sb = requireSupabase()
+    const { data, error } = await sb
+      .from('app_settings')
+      .select('value')
+      .eq('app_code', appCode)
+      .eq('key', `roles_${slotKey}`)
+      .limit(1)
+      .maybeSingle()
+    if (error || !data) return []
+    return Array.isArray(data.value) ? (data.value as unknown[]).map(String) : []
+  } catch {
+    return []
+  }
+}
+
 /** Строковая настройка с фолбэком (напр. вебхук: БД → env). Тихо падает на fallback. */
 export async function resolveString(appCode: string, key: string, fallback?: string): Promise<string> {
   try {
