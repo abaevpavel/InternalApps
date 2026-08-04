@@ -4,7 +4,7 @@ import { Providers } from './providers'
 import { Layout } from './Layout'
 import { useAuth } from '../auth/AuthProvider'
 import { useAppAccess } from '../auth/useAppAccess'
-import { Button } from '../components/ui'
+import { AccessDenied } from '../components/AccessDenied'
 // Ядро (первый экран) — eager: логин, список апок, аккаунт.
 import { LoginPage } from '../pages/Login'
 import { MyApplicationsPage } from '../pages/MyApplications'
@@ -13,7 +13,7 @@ import { MyAccountPage } from '../pages/MyAccount'
 // Страницы апок — lazy: каждая апка в своём чанке, грузится только при переходе
 // на её роут. Тяжёлые зависимости (@react-pdf, @dnd-kit, react-quill, Google Maps)
 // уезжают из ядра. Компоненты — именованные экспорты → мапим в { default }.
-const UserManagementPage = lazy(() => import('../pages/UserManagement').then((m) => ({ default: m.UserManagementPage })))
+const PortalSettingsPage = lazy(() => import('../pages/PortalSettings').then((m) => ({ default: m.PortalSettingsPage })))
 const AppSettingsPage = lazy(() => import('../pages/AppSettings').then((m) => ({ default: m.AppSettingsPage })))
 const ProductionChecklistsPage = lazy(() => import('../pages/production-checklist/ProductionChecklists').then((m) => ({ default: m.ProductionChecklistsPage })))
 const TemplateEditorPage = lazy(() => import('../pages/production-checklist/ProductionChecklistDetail').then((m) => ({ default: m.TemplateEditorPage })))
@@ -59,21 +59,6 @@ function AppAccessGuard() {
   return <Outlet />
 }
 
-function AccessDenied() {
-  return (
-    <div className="mx-auto max-w-lg px-6 py-24 text-center">
-      <h2 className="text-2xl font-bold text-gray-900">Access denied</h2>
-      <p className="mt-3 text-gray-500">
-        You don’t have access to this application. Ask an administrator to grant your role
-        access, then try again.
-      </p>
-      <div className="mt-8">
-        <Button onClick={() => { window.location.href = '/' }}>Back to My Applications</Button>
-      </div>
-    </div>
-  )
-}
-
 function Shell() {
   return (
     <Routes>
@@ -88,7 +73,9 @@ function Shell() {
         {/* Портальные страницы — вне per-app гейта (свои гейты: Protected/AdminOnly). */}
         <Route path="/" element={<MyApplicationsPage />} />
         <Route path="/account" element={<MyAccountPage />} />
-        <Route path="/users" element={<AdminOnly><UserManagementPage /></AdminOnly>} />
+        {/* Настройки портала (Users/Roles и далее). `/users` — старый путь, редирект. */}
+        <Route path="/portal-settings" element={<AdminOnly><PortalSettingsPage /></AdminOnly>} />
+        <Route path="/users" element={<Navigate to="/portal-settings" replace />} />
         <Route path="/settings/:appCode" element={<AdminOnly><AppSettingsPage /></AdminOnly>} />
         {/* Роуты приложений — за per-app route-gate (доступ по ролям, admin bypass). */}
         <Route element={<AppAccessGuard />}>
@@ -106,7 +93,9 @@ function Shell() {
             <Route index element={<TasksPage />} />
             <Route path="create" element={<CreateTaskPage />} />
             <Route path="availability" element={<AvailabilityPage />} />
-            <Route path="admin" element={<TaskPlannerAdminPage />} />
+            {/* Directories — админский экран апки: гейт роутом, а не только пунктом меню
+                (AppAccessGuard пускает на апку целиком, внутренние роуты он не различает). */}
+            <Route path="admin" element={<AdminOnly><TaskPlannerAdminPage /></AdminOnly>} />
           </Route>
         </Route>
       </Route>

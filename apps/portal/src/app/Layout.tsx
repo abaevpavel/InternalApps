@@ -1,13 +1,13 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutGrid, LogOut, Menu, Settings, SlidersHorizontal, Users } from 'lucide-react'
+import { LogOut, Menu, Settings, SlidersHorizontal, UserRound } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
-import { appForPath } from './appRegistry'
+import { currentAppForPath } from './appRegistry'
 
 /** Заголовок хедера по маршруту (как в оригинале: страница = свой титул). */
 const TITLES: [prefix: string, title: string][] = [
   ['/account', 'MY ACCOUNT'],
-  ['/users', 'USER MANAGEMENT'],
+  ['/portal-settings', 'PORTAL SETTINGS'],
   ['/production-checklist', '03-PRODUCTION-CHECKLIST'],
   ['/checklist', '06-HR-CHECKLISTS'],
   ['/gmail-auto-sender', '06-HR-GMAIL AUTO SENDER'],
@@ -15,7 +15,7 @@ const TITLES: [prefix: string, title: string][] = [
   ['/hr-sync-airtable', '06-HR-SYNC AIRTABLE CONTACTS'],
   ['/task-planner/create', 'DALY SCHEDULE — CREATE TASK'],
   ['/task-planner/availability', 'DALY SCHEDULE — TEAMS AVAILABILITY'],
-  ['/task-planner/admin', 'DALY SCHEDULE — ADMIN'],
+  ['/task-planner/admin', 'DALY SCHEDULE — DIRECTORIES'],
   ['/task-planner', 'DALY SCHEDULE — TASKS'],
   ['/', 'MY APPLICATIONS'],
 ]
@@ -26,8 +26,12 @@ export function Layout() {
   const menuRef = useRef<HTMLDivElement>(null)
   const nav = useNavigate()
   const { pathname } = useLocation()
-  const title = TITLES.find(([p]) => pathname.startsWith(p) && p !== '/')?.[1] ?? 'MY APPLICATIONS'
-  const currentApp = appForPath(pathname) // для контекстного пункта App Settings
+  // Апка контекста — включая её экран настроек (`/settings/:appCode`), см. currentAppForPath.
+  const currentApp = currentAppForPath(pathname)
+  const onAppSettings = pathname.startsWith('/settings/')
+  const title = onAppSettings && currentApp
+    ? `${currentApp.shortLabel ?? currentApp.label} — SETTINGS`.toUpperCase()
+    : TITLES.find(([p]) => pathname.startsWith(p) && p !== '/')?.[1] ?? 'MY APPLICATIONS'
 
   useEffect(() => {
     if (!open) return
@@ -66,11 +70,13 @@ export function Layout() {
                 <div className="truncate text-sm font-medium text-brand-blue">{authUser?.email}</div>
               </div>
               <div className="border-t" />
-              {/* Экраны апки, внутри которой мы находимся (реестр → nav) */}
-              {currentApp?.nav?.length ? (
+              {/* Блок текущей апки: её экраны (реестр → nav) + её настройки.
+                  На главной портала (currentApp = null) блока нет вовсе. */}
+              {currentApp && (
                 <>
+                  <SectionLabel>{currentApp.shortLabel ?? currentApp.label}</SectionLabel>
                   {currentApp.nav
-                    .filter((item) => !item.adminOnly || isAdmin)
+                    ?.filter((item) => !item.adminOnly || isAdmin)
                     .map((item) => (
                       <MenuItem
                         key={item.to}
@@ -79,19 +85,21 @@ export function Layout() {
                         onClick={() => go(item.to)}
                       />
                     ))}
+                  {isAdmin && (
+                    <MenuItem
+                      icon={<SlidersHorizontal size={16} />}
+                      label="App Settings"
+                      onClick={() => go(`/settings/${currentApp.code}`)}
+                    />
+                  )}
                   <div className="border-t" />
                 </>
-              ) : null}
-              <MenuItem icon={<Settings size={16} />} label="My Account" onClick={() => go('/account')} />
-              {isAdmin && <MenuItem icon={<Users size={16} />} label="User Management" onClick={() => go('/users')} />}
-              {isAdmin && currentApp && (
-                <MenuItem
-                  icon={<SlidersHorizontal size={16} />}
-                  label="App Settings"
-                  onClick={() => go(`/settings/${currentApp.code}`)}
-                />
               )}
-              <MenuItem icon={<LayoutGrid size={16} />} label="My Applications" onClick={() => go('/')} />
+              <SectionLabel>Portal</SectionLabel>
+              <MenuItem icon={<UserRound size={16} />} label="My Account" onClick={() => go('/account')} />
+              {isAdmin && (
+                <MenuItem icon={<Settings size={16} />} label="Portal Settings" onClick={() => go('/portal-settings')} />
+              )}
               <div className="border-t" />
               <MenuItem
                 icon={<LogOut size={16} />}
@@ -114,6 +122,15 @@ export function Layout() {
           <Outlet />
         </Suspense>
       </main>
+    </div>
+  )
+}
+
+/** Заголовок секции меню: к какому контуру относятся пункты ниже. */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+      {children}
     </div>
   )
 }

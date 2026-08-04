@@ -4,9 +4,14 @@ import { Tabs } from '../components/ui'
 import { UsersTab } from './um/UsersTab'
 import { RolesTab } from './um/RolesTab'
 
+/**
+ * Настройки портала (самый верхний уровень админки) — в отличие от `/settings/:appCode`,
+ * который настраивает конкретную апку. Сейчас вкладки Users/Roles; сюда же со временем
+ * добавятся остальные портальные настройки (напр. управление списком Applications).
+ */
 type Tab = 'users' | 'roles'
 
-export function UserManagementPage() {
+export function PortalSettingsPage() {
   const [tab, setTab] = useState<Tab>('users')
 
   return (
