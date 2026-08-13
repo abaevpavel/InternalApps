@@ -29,6 +29,10 @@ const CreateTaskPage = lazy(() => import('../pages/task-planner/CreateTask').the
 const AvailabilityPage = lazy(() => import('../pages/task-planner/Availability').then((m) => ({ default: m.AvailabilityPage })))
 const TaskPlannerAdminPage = lazy(() => import('../pages/task-planner/Admin').then((m) => ({ default: m.AdminPage })))
 const TaskPlannerLayout = lazy(() => import('../pages/task-planner/TaskPlannerLayout').then((m) => ({ default: m.TaskPlannerLayout })))
+const PlannerAdminOnly = lazy(() => import('../pages/task-planner/TaskPlannerLayout').then((m) => ({ default: m.PlannerAdminOnly })))
+const PlannerHome = lazy(() => import('../pages/task-planner/TaskPlannerLayout').then((m) => ({ default: m.PlannerHome })))
+const MyTasksPage = lazy(() => import('../pages/task-planner/MyTasks').then((m) => ({ default: m.MyTasksPage })))
+const ApprovalsPage = lazy(() => import('../pages/task-planner/Approvals').then((m) => ({ default: m.ApprovalsPage })))
 
 function Protected({ children }: { children: React.ReactNode }) {
   const { authUser, profile, denied, loading } = useAuth()
@@ -90,8 +94,14 @@ function Shell() {
           <Route path="/buildertrend-schedule" element={<SendBuildertrendSchedulePage />} />
           {/* Task Planner (Daly Schedule) — роуты портала, общая БД (таблицы tp_*) */}
           <Route path="/task-planner" element={<TaskPlannerLayout />}>
-            <Route index element={<TasksPage />} />
-            <Route path="create" element={<CreateTaskPage />} />
+            {/* Корень апки: планировщику — список задач, бригадиру — его My Tasks
+                (карточка на «My Applications» ведёт сюда всех). */}
+            <Route index element={<PlannerHome adminScreen={<TasksPage />} />} />
+            <Route path="my-tasks" element={<MyTasksPage />} />
+            {/* Планировочные экраны — вид Planner Admin (не только админ портала):
+                в БД тому же условию соответствует tp_is_planner_admin(), миграция 0008. */}
+            <Route path="create" element={<PlannerAdminOnly><CreateTaskPage /></PlannerAdminOnly>} />
+            <Route path="approvals" element={<PlannerAdminOnly><ApprovalsPage /></PlannerAdminOnly>} />
             <Route path="availability" element={<AvailabilityPage />} />
             {/* Directories — админский экран апки: гейт роутом, а не только пунктом меню
                 (AppAccessGuard пускает на апку целиком, внутренние роуты он не различает). */}

@@ -4,6 +4,37 @@ export type AppRole = 'super_admin' | 'pm' | 'team_lead'
 
 export type TaskStatus = 'requested' | 'proposed' | 'scheduled' | 'archived'
 
+/**
+ * Ось ИСПОЛНЕНИЯ — независима от `status` (оси планирования): задача остаётся `scheduled`
+ * на свою дату и при этом может быть выполнена. Живёт только у `scheduled`.
+ * `pending → completed → approved`, ветка `rework → pending` (модель — docs/TASK-PLANNER-ROLES.md §5).
+ * Меняется ТОЛЬКО через RPC (`services/task-planner/execution.ts`), прямой UPDATE закрыт RLS.
+ */
+export type ExecutionStatus = 'pending' | 'completed' | 'approved' | 'rework'
+
+/** Событие журнала задачи (append-only `tp_task_events`) — лента в окне Task Details → info. */
+export interface TaskEvent {
+  id: string
+  task_id: string
+  actor_email: string | null
+  actor_role: 'admin' | 'team_lead'
+  event_type: 'completed' | 'approved' | 'rework' | 'note' | 'photo'
+  from_value: ExecutionStatus | null
+  to_value: ExecutionStatus | null
+  comment: string | null
+  created_at: string
+}
+
+/** Фото к задаче: путь в приватном бакете + подписанная (временная) ссылка для показа. */
+export interface TaskPhoto {
+  id: string
+  task_id: string
+  path: string
+  created_at: string
+  /** Подписанный URL, выданный на время просмотра; null — если подписать не удалось. */
+  url: string | null
+}
+
 export type TimeType = 'exact' | 'timeframe'
 
 export interface LatLng {
@@ -98,6 +129,8 @@ export interface TeamAvailability {
 export interface Task {
   id: string
   status: TaskStatus
+  execution_status: ExecutionStatus
+  completed_at?: string | null
   task_type: string
   project_id: string | null
   project_name?: string

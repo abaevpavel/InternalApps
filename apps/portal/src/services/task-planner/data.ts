@@ -4,9 +4,12 @@
  * позже без изменения UI (фаза 2).
  */
 import { supabase } from '../../lib/supabase'
-import type { Project, ScheduleRun, Skill, Task, Team, TeamAvailability, TeamSkill } from '../../domain/task-planner/types'
+import type { ExecutionStatus, Project, ScheduleRun, Skill, Task, Team, TeamAvailability, TeamSkill } from '../../domain/task-planner/types'
 
-export async function fetchTasks(status?: Task['status']): Promise<Task[]> {
+export async function fetchTasks(
+  status?: Task['status'],
+  opts?: { date?: string; executionStatus?: ExecutionStatus | ExecutionStatus[] },
+): Promise<Task[]> {
   if (!supabase) return []
   // ВАЖНО: FK tasks→teams в схеме нет, поэтому embed teams(...) даёт 400.
   // Имя бригады подтягиваем отдельным запросом и резолвим по team_id на клиенте.
@@ -16,6 +19,14 @@ export async function fetchTasks(status?: Task['status']): Promise<Task[]> {
     .select('*, projects:tp_projects(name,address,project_manager,latitude,longitude)')
     .order('stop_number', { ascending: true })
   if (status) q = q.eq('status', status)
+  // Скоуп «своя бригада» тут НЕ ставим: его держит RLS (миграция 0007), одинаково для
+  // любого запроса — фильтр в UI не обходится прямым запросом с anon-ключом.
+  if (opts?.date) q = q.eq('scheduled_date', opts.date)
+  if (opts?.executionStatus) {
+    q = Array.isArray(opts.executionStatus)
+      ? q.in('execution_status', opts.executionStatus)
+      : q.eq('execution_status', opts.executionStatus)
+  }
   const { data, error } = await q
   if (error) throw error
   if (!data || data.length === 0) return []
@@ -44,6 +55,10 @@ function mapDbTask(r: Record<string, any>, teamInfo?: Map<string, { name: string
   return {
     id: r.id,
     status: r.status ?? 'requested',
+    // ось исполнения (миграция 0007). Старые строки, где колонки ещё нет/она null,
+    // читаем как 'pending' — legacy-флаг completed backfill'ится миграцией.
+    execution_status: r.execution_status ?? 'pending',
+    completed_at: r.completed_at ?? null,
     task_type: r.task_type ?? 'Project task',
     project_id: r.project_id ?? null,
     project_name: proj?.name,

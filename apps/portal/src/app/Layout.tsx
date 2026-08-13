@@ -2,7 +2,8 @@ import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { LogOut, Menu, Settings, SlidersHorizontal, UserRound } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
-import { currentAppForPath } from './appRegistry'
+import { currentAppForPath, visibleNavItems } from './appRegistry'
+import { useCurrentAppRole } from './AppRoleContext'
 
 /** Заголовок хедера по маршруту (как в оригинале: страница = свой титул). */
 const TITLES: [prefix: string, title: string][] = [
@@ -13,6 +14,8 @@ const TITLES: [prefix: string, title: string][] = [
   ['/gmail-auto-sender', '06-HR-GMAIL AUTO SENDER'],
   ['/sales-email-sender', '02-SALES-SEND AN OFFER EMAIL'],
   ['/hr-sync-airtable', '06-HR-SYNC AIRTABLE CONTACTS'],
+  ['/task-planner/my-tasks', 'DALY SCHEDULE — MY TASKS'],
+  ['/task-planner/approvals', 'DALY SCHEDULE — APPROVALS'],
   ['/task-planner/create', 'DALY SCHEDULE — CREATE TASK'],
   ['/task-planner/availability', 'DALY SCHEDULE — TEAMS AVAILABILITY'],
   ['/task-planner/admin', 'DALY SCHEDULE — DIRECTORIES'],
@@ -26,6 +29,8 @@ export function Layout() {
   const menuRef = useRef<HTMLDivElement>(null)
   const nav = useNavigate()
   const { pathname } = useLocation()
+  // Вид внутри текущей апки (её публикует сама апка) — по нему фильтруются пункты её меню.
+  const appRole = useCurrentAppRole()
   // Апка контекста — включая её экран настроек (`/settings/:appCode`), см. currentAppForPath.
   const currentApp = currentAppForPath(pathname)
   const onAppSettings = pathname.startsWith('/settings/')
@@ -75,8 +80,7 @@ export function Layout() {
               {currentApp && (
                 <>
                   <SectionLabel>{currentApp.shortLabel ?? currentApp.label}</SectionLabel>
-                  {currentApp.nav
-                    ?.filter((item) => !item.adminOnly || isAdmin)
+                  {visibleNavItems(currentApp, { isAdmin, appRole })
                     .map((item) => (
                       <MenuItem
                         key={item.to}

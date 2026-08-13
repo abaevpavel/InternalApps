@@ -22,7 +22,7 @@
 | **02-Sales — Send an Offer Email** | `/sales-email-sender` | ✅ | Quill-редактор, шаблоны `email_templates`, черновик в localStorage, Send→Make |
 | **06-HR Sync Airtable Contacts** | `/hr-sync-airtable` | ✅ | 2 кнопки Sync (POST→Make). Save Schedule — disabled (RPC в БД нет; проверено) |
 | **03-Production — Send Buildertrend Schedule** | `/buildertrend-schedule` | ✅ | Селектор проекта (Airtable через edge) + фото → бакет → POST на Make |
-| **Task Planner (Daly Schedule)** | `/task-planner`, `/task-planner/{create,availability,admin}` | ✅ | Вплавлен роутами портала (App.tsx), общая БД (таблицы `tp_*`). Свой n8n-«мозг» в проде. Детали — [`TASK-PLANNER.md`](TASK-PLANNER.md) |
+| **Task Planner (Daly Schedule)** | `/task-planner`, `/task-planner/{my-tasks,create,approvals,availability,admin}` | ✅ | Вплавлен роутами портала (App.tsx), общая БД (таблицы `tp_*`). Свой n8n-«мозг» в проде. С 2026-08-13 — исполнение задачи: `My Tasks` у бригадира, `Approvals` у планировщика. Детали — [`TASK-PLANNER.md`](TASK-PLANNER.md), роли и модель исполнения — [`TASK-PLANNER-ROLES.md`](TASK-PLANNER-ROLES.md) |
 
 Код каждой апки: `apps/portal/src/pages/<app>/*`, `src/services/<app>.ts`, `src/domain/<app>.ts`.
 Карточки на «My Applications» открываются: внутренние — навигацией (относительный `applications.url`,
@@ -71,6 +71,10 @@ Signed in as <email>
   роли портала их получают; значение — jsonb-массив `role_id` в `app_settings.roles_<slot>`.
   Вкладка появляется только у апок с `appRoles` (сейчас — Task Planner: Planner Admin ↔ Team Lead).
   Так точка настройки лежит в настройках апки, а реестр ролей остаётся один, портальный.
+- **Видимость экранов по виду апки** (2026-08-13): `AppNavItem.appRoles` в реестре + канал
+  `AppRoleProvider`/`usePublishAppRole` (`app/AppRoleContext.tsx`) — апка публикует свой вид,
+  оболочка фильтрует меню чистой `visibleNavItems()` (тест `tests/app-nav-visibility.test.ts`).
+  Оболочка ролевую модель апки не знает; механизм общий для любой апки с `appRoles`.
 - Сервисы читают вебхуки из БД с фолбэком на env (`resolveString`): Sales, Production-Checklist,
   HR-Sync, Buildertrend.
 - **Task Planner — особняк**: своя key/value-таблица `tp_app_settings` (`value text`, без
@@ -146,9 +150,13 @@ Gmail-consent, cron-времена в справке `appRegistry`/HR-Sync (зе
 - [ ] **BUG-2**: гасить двойной Send на клиенте (кнопка disabled + флаг).
 
 ### Роли внутри Task Planner
-- [ ] Разграничение «админ планировщика ↔ бригадир/PM»: модель принята, каркас есть, полный
-      план UI-работ — [`TASK-PLANNER-ROLES.md`](TASK-PLANNER-ROLES.md). Ждём от заказчика
-      функционал бригадира. Там же — применение миграции `0006` (SEC-7).
+- Разграничение «админ планировщика ↔ бригадир/PM»: модель принята, функционал бригадира
+  получен 2026-08-13 и реализован (My Tasks + Approvals + журнал `tp_task_events`), миграция
+  `0007` применена. Остаток и открытые вопросы к заказчику — [`TASK-PLANNER-ROLES.md`](TASK-PLANNER-ROLES.md).
+- [ ] ⏳ Применить на боевой **`0008_tp_planner_admin.sql`** — без неё Planner Admin, выданный
+      маппингом ролей (не админ портала), теряет запись в `tp_tasks` и справочники.
+- [ ] Экраны Availability и Directories → Team ещё не переписаны под вид бригадира
+      (`TASK-PLANNER-ROLES.md` §4.4/4.5).
 
 ### Прочее из платформы
 - [ ] **Тесты доступа**: приглашённый — первый вход создаёт профиль+роль (нужен реальный тест-юзер;

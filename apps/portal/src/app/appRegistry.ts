@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { BookUser, CalendarDays, ListChecks, Plus } from 'lucide-react'
+import { BadgeCheck, BookUser, CalendarDays, ClipboardCheck, ListChecks, Plus } from 'lucide-react'
 
 /**
  * Реестр приложений портала для app-settings: настройки (вебхуки) и справка о ресурсах
@@ -51,7 +51,14 @@ export interface AppNavItem {
   to: string
   label: string
   icon: LucideIcon
+  /** Виден только админу ПОРТАЛА (`isAdmin`). */
   adminOnly?: boolean
+  /**
+   * Виден только этим ВНУТРЕННИМ ролям апки (ключи из `appRoles`). Текущую роль апка
+   * публикует через `AppRoleProvider` (см. `app/AppRoleContext.tsx`) — Layout сам ничего
+   * не знает про её модель ролей. Не задано — пункт виден всем, кто попал в апку.
+   */
+  appRoles?: string[]
 }
 
 export interface AppConfig {
@@ -229,8 +236,12 @@ export const APPS: AppConfig[] = [
     shortLabel: 'Daly Schedule',
     routePrefixes: ['/task-planner'],
     nav: [
-      { to: '/task-planner', label: 'Tasks', icon: ListChecks },
-      { to: '/task-planner/create', label: 'Create Task', icon: Plus },
+      // Планировочные экраны — только вид Planner Admin: у бригадира свой рабочий экран,
+      // а Requested/Proposed — кухня планирования, ему её показывать незачем.
+      { to: '/task-planner', label: 'Tasks', icon: ListChecks, appRoles: ['admin'] },
+      { to: '/task-planner/my-tasks', label: 'My Tasks', icon: ClipboardCheck },
+      { to: '/task-planner/create', label: 'Create Task', icon: Plus, appRoles: ['admin'] },
+      { to: '/task-planner/approvals', label: 'Approvals', icon: BadgeCheck, appRoles: ['admin'] },
       { to: '/task-planner/availability', label: 'Teams Availability', icon: CalendarDays },
       { to: '/task-planner/admin', label: 'Directories', icon: BookUser, adminOnly: true },
     ],
@@ -266,7 +277,9 @@ export const APPS: AppConfig[] = [
         'tp_tasks', 'tp_projects', 'tp_teams', 'tp_skills', 'tp_task_types', 'tp_team_availability',
         'tp_ai_teams_schedule', 'tp_travel_cache', 'tp_sync_logs',
         'tp_task_batch_snapshots', 'tp_app_settings', 'tp_profiles', 'tp_user_roles',
+        'tp_task_events', 'tp_task_photos',
       ],
+      storageBuckets: ['tp-task-photos'],
       edgeFunctions: [
         'sync-airtable-projects', 'sync-airtable-teams', 'sync-airtable-skills',
         'sync-team-accounts', 'auto-sync-airtable', 'set-team-password',
@@ -281,6 +294,25 @@ export const APPS: AppConfig[] = [
     },
   },
 ]
+
+/**
+ * Пункты меню апки, которые вправе видеть текущий пользователь.
+ *  - `adminOnly` — админ ПОРТАЛА (isAdmin);
+ *  - `appRoles`  — вид ВНУТРИ апки, который апка публикует через AppRoleProvider.
+ * Пока вид не вычислен (`appRole = null`), пункты со списком ролей не показываем: лучше
+ * дорисовать их через мгновение, чем мигнуть бригадиру планировочными экранами.
+ * Это UI-слой; настоящие гейты — на роутах и в RLS.
+ */
+export function visibleNavItems(
+  app: AppConfig | null,
+  { isAdmin, appRole }: { isAdmin: boolean; appRole: string | null },
+): AppNavItem[] {
+  return (app?.nav ?? []).filter(
+    (item) =>
+      (!item.adminOnly || isAdmin) &&
+      (!item.appRoles || (appRole !== null && item.appRoles.includes(appRole))),
+  )
+}
 
 export function appForPath(path: string): AppConfig | null {
   return APPS.find((a) => a.routePrefixes.some((p) => path === p || path.startsWith(p + '/'))) ?? null
