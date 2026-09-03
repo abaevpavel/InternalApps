@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
-import { checkAdmin, getMyProfile } from '../services/data'
+import { checkAdmin, getMyProfile, linkProfileToAuthUser } from '../services/data'
 import { roleIsAdmin, type Profile } from '../domain/types'
 
 /**
@@ -12,6 +12,12 @@ import { roleIsAdmin, type Profile } from '../domain/types'
 interface AuthCtx {
   authUser: { id: string; email: string } | null
   profile: Profile | null
+  /**
+   * Id, по которому считается доступ (роли → приложения). Обычно `profile.user_id`,
+   * но если строка профиля осталась без привязки и залинковать её не дала RLS —
+   * падаем на id аккаунта, иначе человек попадает в портал без единой апки (BUG-8).
+   */
+  effectiveUserId: string | null
   loading: boolean
   denied: boolean
   isAdmin: boolean
@@ -60,7 +66,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function loadProfile(id: string, email: string) {
     try {
-      const p = await getMyProfile(id, email)
+      let p = await getMyProfile(id, email)
+      // Приглашённый: строка профиля создана по email и не слинкована с аккаунтом.
+      // Привязываем при первом входе — иначе роли и приложения к нему не цепляются,
+      // а починить это из UI нельзя (BUG-8). Если UPDATE режет RLS — не падаем:
+      // доступ всё равно посчитается по `effectiveUserId`.
+      if (p && !p.user_id) {
+        const linked = await linkProfileToAuthUser(p.id, id)
+        if (linked) p = { ...p, user_id: id }
+      }
       setProfile(p)
       setDenied(!p)
       if (p) {
@@ -98,7 +112,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <Ctx.Provider value={{ authUser, profile, loading, denied, isAdmin, signInWithGoogle, signOut, refreshProfile }}>
+    <Ctx.Provider
+      value={{
+        authUser,
+        profile,
+        effectiveUserId: profile?.user_id ?? authUser?.id ?? null,
+        loading,
+        denied,
+        isAdmin,
+        signInWithGoogle,
+        signOut,
+        refreshProfile,
+      }}
+    >
       {children}
     </Ctx.Provider>
   )

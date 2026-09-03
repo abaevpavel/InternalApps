@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import ReactQuill from 'react-quill-new'
 import 'react-quill-new/dist/quill.snow.css'
-import { ChevronDown, Pencil, Save, Send, Trash2 } from 'lucide-react'
+import { CheckCircle2, ChevronDown, Pencil, Save, Send, Trash2 } from 'lucide-react'
 import { Button, Card, Field, Input, Modal } from '../../components/ui'
 import { cn, errMsg } from '../../lib/utils'
 import { DatePicker } from './DatePicker'
@@ -29,11 +29,31 @@ const LS = {
   from: 'sales-email-from',
   sender: 'sales-email-sender-name',
 }
+/**
+ * Запись черновика не должна ронять экран. Контент письма — HTML из Quill, и вставленная
+ * картинка попадает в него как base64: квота localStorage (~5 МБ) переполняется, а
+ * `setItem` бросает прямо из `useEffect`, где обработчика нет — падал весь экран (BUG-9).
+ * Черновик — удобство, а не данные: не сохранился, и ладно.
+ */
+const lsSet = (k: string, v: string) => {
+  try {
+    localStorage.setItem(k, v)
+  } catch {
+    // квота переполнена (или запись запрещена) — просто не храним черновик
+  }
+}
 const lsDate = (k: string): Date | null => {
   const v = localStorage.getItem(k)
   return v ? new Date(v) : null
 }
-const setLsDate = (k: string, d: Date | null) => (d ? localStorage.setItem(k, d.toISOString()) : localStorage.removeItem(k))
+const setLsDate = (k: string, d: Date | null) => {
+  try {
+    if (d) localStorage.setItem(k, d.toISOString())
+    else localStorage.removeItem(k)
+  } catch {
+    // см. lsSet
+  }
+}
 
 /* ---------------- Quill config ---------------- */
 
@@ -49,7 +69,10 @@ const quillModules = {
     [{ indent: '-1' }, { indent: '+1' }],
     [{ direction: 'rtl' }],
     [{ align: [] }],
-    ['link', 'image', 'video'],
+    // 'image' убрана осознанно: Quill вставляет картинку как base64 прямо в HTML —
+    // это раздувает и черновик, и тело вебхука. Нужна картинка в письме — заливать
+    // в бакет и вставлять ссылкой.
+    ['link', 'video'],
     ['blockquote', 'code-block'],
     ['clean'],
   ],
@@ -79,13 +102,13 @@ export function SalesEmailSenderPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   // persist to localStorage
-  useEffect(() => localStorage.setItem(LS.subject, subject), [subject])
-  useEffect(() => localStorage.setItem(LS.content, content), [content])
+  useEffect(() => lsSet(LS.subject, subject), [subject])
+  useEffect(() => lsSet(LS.content, content), [content])
   useEffect(() => setLsDate(LS.date1, date1), [date1])
   useEffect(() => setLsDate(LS.date2, date2), [date2])
   useEffect(() => setLsDate(LS.date3, date3), [date3])
-  useEffect(() => localStorage.setItem(LS.from, sendFrom), [sendFrom])
-  useEffect(() => localStorage.setItem(LS.sender, senderName), [senderName])
+  useEffect(() => lsSet(LS.from, sendFrom), [sendFrom])
+  useEffect(() => lsSet(LS.sender, senderName), [senderName])
 
   const templatesQ = useQuery({ queryKey: ['email-templates'], queryFn: listTemplates })
   const selected = templatesQ.data?.find((t) => t.id === selectedId) ?? null
@@ -97,6 +120,10 @@ export function SalesEmailSenderPage() {
   const [renameTarget, setRenameTarget] = useState<EmailTemplate | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [err, setErr] = useState<string | null>(null)
+  // Подтверждение отправки: раньше диалог просто закрывался, и было не понять, ушло ли.
+  const [sentAt, setSentAt] = useState<Date | null>(null)
+  // Письмо снова правят — прошлое подтверждение больше не про этот текст.
+  useEffect(() => setSentAt(null), [subject, content])
 
   const canSend = !!(subject.trim() && stripHtml(content) && sendFrom.trim() && senderName.trim())
   const canSaveNew = !!(saveName.trim() && subject.trim() && stripHtml(content))
@@ -167,7 +194,10 @@ export function SalesEmailSenderPage() {
         sendFrom: sendFrom.trim().toLowerCase(),
         senderName: senderName.trim(),
       }),
-    onSuccess: () => setDialog(null),
+    onSuccess: () => {
+      setDialog(null)
+      setSentAt(new Date())
+    },
     onError: (e) => setErr(errMsg(e)),
   })
 
@@ -182,6 +212,7 @@ export function SalesEmailSenderPage() {
     setSenderName('')
     setSelectedId(null)
     setDialog(null)
+    setSentAt(null)
   }
 
   return (
@@ -248,6 +279,13 @@ export function SalesEmailSenderPage() {
             </Button>
           </div>
         </div>
+        {sentAt && (
+          <div className="mt-4 flex items-center justify-end gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+            <CheckCircle2 size={15} className="shrink-0" />
+            Sent to the make.com webhook at {sentAt.toLocaleTimeString()}. It delivers the email to the
+            recipient list from Airtable.
+          </div>
+        )}
         <p className="mt-2 text-right text-xs text-gray-400">
           Note: "Send Email" sends a payload to the "Email with sales offer" webhook in make.com.
         </p>

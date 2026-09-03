@@ -173,13 +173,7 @@ export function TemplateEditorPage() {
       {preview && <PreviewModal tree={tree} name={templateQ.data?.name ?? ''} onClose={() => setPreview(false)} />}
 
       {importing && (
-        <ImportDialog
-          onClose={() => setImporting(false)}
-          onImported={invalidate}
-          checklistId={id}
-          existingTaskIds={existingTaskIds}
-          rootOrderStart={tree.length}
-        />
+        <ImportDialog onClose={() => setImporting(false)} onImported={invalidate} checklistId={id} />
       )}
 
       {(deleteM.error || saveM.error || reorderM.error) && (
@@ -282,18 +276,20 @@ function PreviewModal({ tree, name, onClose }: { tree: ItemNode[]; name: string;
 
 /* ======================= AI Import ======================= */
 
+/**
+ * Импорт пунктов из скриншота. Дерево вставляет сама edge-функция (она же считает
+ * sort_order от уже существующих корневых пунктов и генерирует task_id) — нам остаётся
+ * перечитать список. Раньше тут был свой цикл вставки на клиенте под ответ `{ items }`,
+ * которого функция никогда не возвращала (BUG-10).
+ */
 function ImportDialog({
   onClose,
   onImported,
   checklistId,
-  existingTaskIds,
-  rootOrderStart,
 }: {
   onClose: () => void
   onImported: () => void
   checklistId: string
-  existingTaskIds: Set<string>
-  rootOrderStart: number
 }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -314,40 +310,12 @@ function ImportDialog({
         r.readAsDataURL(file)
       })
       setStatus('Extracting checklist (AI)…')
-      const extracted = await extractChecklistFromImage(dataUrl)
-      if (!extracted.length) throw new Error('No items detected in the image.')
-
-      setStatus('Saving items…')
-      const seen = new Set(existingTaskIds)
-      let rootOrder = rootOrderStart
-      for (const top of extracted) {
-        const blockTaskId = makeTaskId(top.label, seen)
-        seen.add(blockTaskId)
-        const block = await createItem({
-          checklist_id: checklistId,
-          task_id: blockTaskId,
-          label: top.label,
-          description: top.description ?? null,
-          parent_id: null,
-          sort_order: rootOrder++,
-        })
-        const children = top.children ?? []
-        let qOrder = 0
-        for (const child of children) {
-          const qTaskId = makeTaskId(child.label, seen)
-          seen.add(qTaskId)
-          await createItem({
-            checklist_id: checklistId,
-            task_id: qTaskId,
-            label: child.label,
-            description: child.description ?? null,
-            parent_id: block.id,
-            sort_order: qOrder++,
-            answer_options: [...DEFAULT_ANSWERS],
-          })
-        }
-      }
+      const count = await extractChecklistFromImage(dataUrl, checklistId)
       onImported()
+      if (count === 0) {
+        setErr('No items detected in the image.')
+        return
+      }
       onClose()
     } catch (x) {
       setErr(errMsg(x))

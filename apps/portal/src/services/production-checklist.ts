@@ -281,22 +281,32 @@ export async function uploadItemPhoto(file: File): Promise<string> {
 
 /* ================= AI-импорт (extract-checklist-from-image) ================= */
 
-export interface ExtractedItem {
-  label: string
-  description?: string
-  children?: ExtractedItem[]
-}
-
-/** Парсит скриншот чеклиста в структуру пунктов через shared edge-функцию. */
-export async function extractChecklistFromImage(imageBase64: string): Promise<ExtractedItem[]> {
+/**
+ * Парсит скриншот чеклиста и ВСТАВЛЯЕТ пункты в checklist_id на стороне edge-функции —
+ * ровно как это делает HR (`services/hr-checklists.ts`). Возвращает число вставленных
+ * корневых узлов; вызывающий перечитывает items.
+ *
+ * До 2026-09-03 здесь был свой контракт (`{ image }`, ответ `{ items }` с вставкой на
+ * клиенте), которого у функции никогда не было: она читает `imageBase64` + `checklistId`
+ * и вставляет сама. Поэтому «Import from image» в этой апке не работал вообще (BUG-10).
+ * Единственное отличие от HR — таблица назначения.
+ */
+export async function extractChecklistFromImage(imageBase64: string, checklistId: string): Promise<number> {
   const sb = requireSupabase()
+  // Токен кладём и в тело: функция пускает только залогиненных (SEC-9), а заголовок
+  // Authorization платформа иногда портит.
+  const { data: auth } = await sb.auth.getSession()
   const { data, error } = await sb.functions.invoke('extract-checklist-from-image', {
-    body: { image: imageBase64 },
+    body: {
+      imageBase64,
+      checklistId,
+      table: 'production_checklist_items',
+      access_token: auth.session?.access_token ?? '',
+    },
   })
   if (error) throw error
-  // edge может вернуть {items:[...]} либо массив напрямую
-  const items = (data?.items ?? data) as ExtractedItem[]
-  return Array.isArray(items) ? items : []
+  if (data?.error) throw new Error(String(data.error))
+  return Number(data?.itemCount ?? 0)
 }
 
 /* ================= Send → Make ================= */

@@ -38,8 +38,9 @@ export function codeForApplication(app: Application): string | null {
 }
 
 export function useAppAccess() {
-  const { profile } = useAuth()
-  const userId = profile?.user_id ?? null
+  // effectiveUserId, а не profile.user_id: у непривязанной строки профиля он null,
+  // и тогда доступ считался пустым — «Access denied» на всех апках (BUG-8).
+  const { effectiveUserId: userId } = useAuth()
 
   const { data: apps = [], isLoading } = useQuery({
     queryKey: ['user-applications', userId],

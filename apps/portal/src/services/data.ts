@@ -131,13 +131,21 @@ export async function listProfiles(): Promise<Profile[]> {
   }))
 }
 
-/** Профиль текущего юзера по email (или user_id) + его роли. */
+/**
+ * Профиль текущего юзера по email (или user_id) + его роли.
+ *
+ * `order('user_id', nullsFirst: false)` — чтобы при ДУБЛЕ профиля (одна строка слинкована
+ * с аккаунтом, другая нет — см. дубль «Pavel Abaev») выигрывала слинкованная. Без сортировки
+ * выбор был недетерминирован, и человек мог получить строку без `user_id`, а с ней — пустой
+ * список приложений (BUG-8).
+ */
 export async function getMyProfile(userId: string, email: string): Promise<Profile | null> {
   const sb = requireSupabase()
   const { data, error } = await sb
     .from('profiles')
     .select('*')
     .or(`user_id.eq.${userId},email.ilike.${email}`)
+    .order('user_id', { nullsFirst: false })
     .limit(1)
     .maybeSingle()
   if (error) throw error
@@ -147,6 +155,26 @@ export async function getMyProfile(userId: string, email: string): Promise<Profi
   const { data: ur } = await sb.from('user_roles').select('role:roles(id, name, permissions)').eq('user_id', linkId)
   const roles = (ur ?? []).map((r) => r.role as unknown as RoleRef).filter(Boolean)
   return { ...(data as unknown as Omit<Profile, 'roles'>), roles }
+}
+
+/**
+ * Привязать строку профиля к аккаунту auth. Нужно для приглашённых, чья строка создана
+ * по email и осталась без `user_id`: без привязки роли и приложения к ним не цепляются,
+ * а из UI это не починить (селектор роли в Edit User для таких строк disabled) — BUG-8.
+ *
+ * Возвращает, удалось ли: `.select()` ловит тихий no-op, когда UPDATE режет RLS.
+ * Вызывающий на неудачу не падает — доступ подстрахован фолбэком на auth-id.
+ */
+export async function linkProfileToAuthUser(profileId: string, userId: string): Promise<boolean> {
+  const sb = requireSupabase()
+  const { data, error } = await sb
+    .from('profiles')
+    .update({ user_id: userId })
+    .eq('id', profileId)
+    .is('user_id', null)
+    .select('id')
+  if (error) return false
+  return !!data && data.length > 0
 }
 
 export async function updateProfileName(id: string, first_name: string | null, last_name: string | null): Promise<void> {

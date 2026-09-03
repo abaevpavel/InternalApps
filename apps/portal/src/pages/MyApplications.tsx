@@ -8,8 +8,8 @@ import { Card } from '../components/ui'
 import type { Application } from '../domain/types'
 
 export function MyApplicationsPage() {
-  const { profile } = useAuth()
-  const userId = profile?.user_id ?? null
+  // Тот же id, что в useAppAccess — иначе разойдутся ключи react-query (BUG-8).
+  const { effectiveUserId: userId } = useAuth()
 
   const { data: apps = [], isLoading } = useQuery({
     queryKey: ['user-applications', userId],
