@@ -10,7 +10,12 @@ import { requireSupabase } from '../lib/supabase'
  */
 export async function setupGmailAuth(email: string): Promise<string> {
   const sb = requireSupabase()
-  const { data, error } = await sb.functions.invoke('gmail-auth', { body: { email } })
+  // Токен кладём и в тело: функция пускает только залогиненных (SEC-9), а заголовок
+  // Authorization платформа иногда портит.
+  const { data: auth } = await sb.auth.getSession()
+  const { data, error } = await sb.functions.invoke('gmail-auth', {
+    body: { email, access_token: auth.session?.access_token ?? '' },
+  })
   if (error) throw error
   if (data?.error) throw new Error(String(data.details ?? data.error))
 

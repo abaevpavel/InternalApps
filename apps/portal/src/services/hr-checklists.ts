@@ -448,8 +448,16 @@ export function itemPhotoUrl(fileName: string): string {
  */
 export async function extractChecklistFromImage(imageBase64: string, checklistId: string): Promise<number> {
   const sb = requireSupabase()
+  // Токен кладём и в тело: функция пускает только залогиненных (SEC-9), а заголовок
+  // Authorization платформа иногда портит.
+  const { data: auth } = await sb.auth.getSession()
   const { data, error } = await sb.functions.invoke('extract-checklist-from-image', {
-    body: { imageBase64, checklistId, table: 'checklist_items' },
+    body: {
+      imageBase64,
+      checklistId,
+      table: 'checklist_items',
+      access_token: auth.session?.access_token ?? '',
+    },
   })
   if (error) throw error
   if (data?.error) throw new Error(String(data.error))

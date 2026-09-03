@@ -29,3 +29,13 @@ verify_jwt = true
 # --- Send Buildertrend Schedule: список проектов живьём из Airtable ---
 [functions.list-schedule-projects]
 verify_jwt = true
+
+# --- Унаследованные от Lovable, забраны в репо 2026-09-03 ---
+# ⚠️ verify_jwt проверяет только ПОДПИСЬ токена, а публичный anon-ключ из бандла портала —
+# валидный подписанный JWT проекта. Поэтому обе функции (как и list-schedule-projects)
+# опознают вызывающего сами: sub из payload + подтверждение через /rest. См. SEC-9.
+[functions.extract-checklist-from-image]
+verify_jwt = true
+
+[functions.gmail-auth]
+verify_jwt = true
