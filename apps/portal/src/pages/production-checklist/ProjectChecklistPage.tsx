@@ -124,16 +124,22 @@ export function ProjectChecklistPage() {
   const sendM = useMutation({
     mutationFn: async () => {
       const project = projectQ.data!
+      // Заметку, набранную только что, дожимаем в БД до отправки: иначе она уедет
+      // в Make (payload берём из `answers`), но в базе не сохранится.
+      debouncedNotes.flush()
       await sendChecklistToMake({
         project,
         template: templateQ.data ?? null,
         items: itemsQ.data ?? [],
-        progress: progressQ.data ?? [],
+        // Источник правды — состояние экрана, а не снимок прогресса на момент загрузки:
+        // ответы этой сессии в кэш ['progress'] не попадают (BUG-7).
+        answers,
       })
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['project', projectId] })
       qc.invalidateQueries({ queryKey: ['projects'] })
+      qc.invalidateQueries({ queryKey: ['progress', projectId] })
     },
   })
 
@@ -198,11 +204,13 @@ export function ProjectChecklistPage() {
               {percent < 100 && <span className="text-sm text-gray-400">Answer all items to send.</span>}
               <Button
                 variant="green"
-                disabled={percent < 100 || sendM.isPending}
+                // isSuccess держит кнопку выключенной и в окне между ответом Make и
+                // перечитыванием проекта — иначе второй клик шлёт чеклист дважды (BUG-2).
+                disabled={percent < 100 || sendM.isPending || sendM.isSuccess}
                 onClick={() => sendM.mutate()}
                 title={percent < 100 ? 'Complete the checklist first' : undefined}
               >
-                <Send size={16} /> {sendM.isPending ? 'Sending…' : 'Send'}
+                <Send size={16} /> {sendM.isPending ? 'Sending…' : sendM.isSuccess ? 'Sent' : 'Send'}
               </Button>
             </div>
           )}

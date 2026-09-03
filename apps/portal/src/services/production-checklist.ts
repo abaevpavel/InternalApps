@@ -315,37 +315,62 @@ export interface SendPayload {
   }[]
 }
 
+/** Ответ по задаче в том виде, в каком его держит экран прохождения. */
+export interface AnswerState {
+  selected_answer: string | null
+  is_not_applicable: boolean
+  notes: string | null
+}
+
 /**
- * Отправляет пройденный чеклист на Make-вебхук и помечает проект отправленным.
- * «Перенос как есть»: прямой fetch из браузера, без HMAC. Идемпотентность — мягкая:
- * не шлём повторно, если у проекта уже стоит checklist_sent_at (проверяет вызывающий).
+ * Тело запроса на Make. Вынесено чистой функцией, чтобы на неё был тест: раньше ответы
+ * брались из кэша react-query, который после проставления ответов не обновлялся, и в Make
+ * уходил чеклист с пустыми `selected_answer` (BUG-7).
  */
-export async function sendChecklistToMake(args: {
+export function buildSendPayload(args: {
   project: Project
   template: ChecklistTemplate | null
   items: ChecklistItem[]
-  progress: ProgressRow[]
-}): Promise<void> {
-  const webhook = await resolveString('production-checklist', 'send_webhook', MAKE_WEBHOOK)
-  if (!webhook) throw new Error('Send webhook is not configured (App Settings → Webhooks or .env)')
-  const progressByTask = new Map(args.progress.map((p) => [p.task_id, p]))
-
-  const payload: SendPayload = {
+  answers: Record<string, AnswerState>
+}): SendPayload {
+  return {
     payload_from: 'production-checklist',
     sent_at: new Date().toISOString(),
     project: args.project,
     checklist: args.template,
     items: args.items.map((it) => {
-      const p = progressByTask.get(it.task_id)
+      const a = args.answers[it.task_id]
       return {
         task_id: it.task_id,
         label: it.label,
-        selected_answer: p?.selected_answer ?? null,
-        is_not_applicable: !!p?.is_not_applicable,
-        notes: p?.notes ?? null,
+        selected_answer: a?.selected_answer ?? null,
+        is_not_applicable: !!a?.is_not_applicable,
+        notes: a?.notes ?? null,
       }
     }),
   }
+}
+
+/**
+ * Отправляет пройденный чеклист на Make-вебхук и помечает проект отправленным.
+ * «Перенос как есть»: прямой fetch из браузера, без HMAC. Идемпотентность — мягкая:
+ * не шлём повторно, если у проекта уже стоит checklist_sent_at (проверяет вызывающий).
+ *
+ * Ответы принимаем картой task_id → AnswerState, а НЕ строками прогресса из react-query:
+ * тот кэш после проставления ответов не инвалидируется, и раньше сюда уезжал снимок на
+ * момент открытия страницы — у чеклиста, заполненного в один заход, все ответы уходили
+ * пустыми (BUG-7). Карта экрана — то, что реально видит пользователь.
+ */
+export async function sendChecklistToMake(args: {
+  project: Project
+  template: ChecklistTemplate | null
+  items: ChecklistItem[]
+  answers: Record<string, AnswerState>
+}): Promise<void> {
+  const webhook = await resolveString('production-checklist', 'send_webhook', MAKE_WEBHOOK)
+  if (!webhook) throw new Error('Send webhook is not configured (App Settings → Webhooks or .env)')
+
+  const payload = buildSendPayload(args)
 
   const res = await fetch(webhook, {
     method: 'POST',

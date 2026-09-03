@@ -32,10 +32,18 @@ export interface ScheduleProject {
   label: string
 }
 
-/** Живой список проектов из Airtable «General Project Info» (через edge-функцию). */
+/**
+ * Живой список проектов из Airtable «General Project Info» (через edge-функцию).
+ * Функция пускает только залогиненных (SEC-9), поэтому кладём токен сессии ещё и в тело:
+ * заголовок `Authorization` платформа иногда портит, и тогда своя проверка не находит
+ * пользователя. Тот же приём — в `set-team-password`.
+ */
 export async function listProjects(): Promise<ScheduleProject[]> {
   const sb = requireSupabase()
-  const { data, error } = await sb.functions.invoke('list-schedule-projects')
+  const { data: auth } = await sb.auth.getSession()
+  const { data, error } = await sb.functions.invoke('list-schedule-projects', {
+    body: { access_token: auth.session?.access_token ?? '' },
+  })
   if (error) throw error
   if (data?.error) throw new Error(data.error)
   return (data?.projects ?? []) as ScheduleProject[]
