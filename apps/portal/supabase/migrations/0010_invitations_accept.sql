@@ -65,9 +65,12 @@ begin
   end if;
 
   -- Роли из приглашения. `to_jsonb` — чтобы работало и с uuid[], и с jsonb в role_ids.
+  -- coalesce строго ПОСЛЕ приведения: у role_ids тип uuid[], и `coalesce(role_ids,
+  -- '[]'::jsonb)` не компилируется («COALESCE types uuid[] and jsonb cannot be matched»).
+  -- to_jsonb строгая, на NULL вернёт NULL — его и подменяем пустым массивом.
   for v_role_id in
     select (value #>> '{}')::uuid
-    from jsonb_array_elements(to_jsonb(coalesce(v_invite.role_ids, '[]'::jsonb))) as value
+    from jsonb_array_elements(coalesce(to_jsonb(v_invite.role_ids), '[]'::jsonb)) as value
   loop
     if not exists (
       select 1 from public.user_roles
