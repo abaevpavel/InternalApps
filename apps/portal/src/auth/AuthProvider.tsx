@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
-import { checkAdmin, getMyProfile, linkProfileToAuthUser } from '../services/data'
+import { acceptMyInvitation, checkAdmin, getMyProfile, linkProfileToAuthUser } from '../services/data'
 import { roleIsAdmin, type Profile } from '../domain/types'
 
 /**
@@ -67,6 +67,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function loadProfile(id: string, email: string) {
     try {
       let p = await getMyProfile(id, email)
+      // Профиля нет — возможно, человека пригласили уже после того, как он завёл
+      // Google-аккаунт: тогда триггер на `auth.users` не сработал. Принимаем
+      // приглашение сами и перечитываем профиль (миграция 0010).
+      if (!p && (await acceptMyInvitation())) {
+        p = await getMyProfile(id, email)
+      }
       // Приглашённый: строка профиля создана по email и не слинкована с аккаунтом.
       // Привязываем при первом входе — иначе роли и приложения к нему не цепляются,
       // а починить это из UI нельзя (BUG-8). Если UPDATE режет RLS — не падаем:

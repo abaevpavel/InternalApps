@@ -219,6 +219,21 @@ export async function deleteUser(userId: string): Promise<void> {
 
 /* ---------------- Invitations (Add User) ---------------- */
 
+/**
+ * Принять своё приглашение (профиль + роли + accepted_at) — миграция 0010.
+ *
+ * Обычно приглашение принимает триггер на `auth.users` при первом входе. Но если
+ * Google-аккаунт существовал ДО приглашения (человек уже логинился и получил «Access
+ * denied»), INSERT'а в `auth.users` больше не будет и триггер не сработает никогда —
+ * для этого случая зовём RPC при входе. Ошибку глотаем: нет приглашения → просто false.
+ */
+export async function acceptMyInvitation(): Promise<boolean> {
+  const sb = requireSupabase()
+  const { data, error } = await sb.rpc('accept_my_invitation')
+  if (error) return false
+  return !!data
+}
+
 /** Add User = приглашение: юзер появится в profiles при первом входе с этим email. */
 export async function createInvitation(input: { email: string; role_ids: string[]; invited_by: string }): Promise<void> {
   const sb = requireSupabase()

@@ -20,6 +20,11 @@ function inviteRoleNames(invite: Invitation, roles: Role[]): string[] {
   return invite.role_ids.map((id) => roles.find((r) => r.id === id)?.name).filter(Boolean) as string[]
 }
 
+/** Истёкшее приглашение уже не примется (см. `accept_invitation_for` в миграции 0010). */
+function inviteExpired(invite: Invitation): boolean {
+  return !!invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()
+}
+
 export function UsersTab() {
   const qc = useQueryClient()
   const { authUser } = useAuth()
@@ -71,12 +76,19 @@ export function UsersTab() {
       header: 'Name',
       render: (row) => {
         if (row.kind === 'invite') {
+          const expired = inviteExpired(row.invite)
           return (
             <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-sm font-semibold text-amber-700">
+              <span
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                  expired ? 'bg-gray-100 text-gray-500' : 'bg-amber-100 text-amber-700'
+                }`}
+              >
                 {initials(null, row.invite.email)}
               </span>
-              <Badge className="bg-amber-50 text-amber-700">Invited</Badge>
+              <Badge className={expired ? 'bg-gray-100 text-gray-500' : 'bg-amber-50 text-amber-700'}>
+                {expired ? 'Expired' : 'Invited'}
+              </Badge>
             </div>
           )
         }
@@ -96,7 +108,18 @@ export function UsersTab() {
       key: 'role',
       header: 'Role',
       render: (row) => {
-        const names = row.kind === 'invite' ? inviteRoleNames(row.invite, roles) : row.user.roles.map((r) => r.name)
+        // У приглашения роли ещё НЕ назначены: они лежат в `invitations.role_ids` и
+        // попадут в `user_roles` только когда человек войдёт. Показываем их как
+        // намерение, а не как действующую роль — иначе строка врёт (в БД ролей нет).
+        if (row.kind === 'invite') {
+          const names = inviteRoleNames(row.invite, roles)
+          return (
+            <span className="text-gray-400">
+              {names.length ? `${names.join(', ')} — after first sign-in` : 'No role'}
+            </span>
+          )
+        }
+        const names = row.user.roles.map((r) => r.name)
         return names.length ? names.join(', ') : <span className="text-gray-400">No role</span>
       },
     },
