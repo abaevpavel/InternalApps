@@ -230,7 +230,13 @@ export async function deleteUser(userId: string): Promise<void> {
 export async function acceptMyInvitation(): Promise<boolean> {
   const sb = requireSupabase()
   const { data, error } = await sb.rpc('accept_my_invitation')
-  if (error) return false
+  if (error) {
+    // Не падаем — человек просто увидит «Access denied». Но и не молчим: без этого
+    // лога неотличимы «приглашения нет» и «функции не видно» (PostgREST держит кеш
+    // схемы и до `notify pgrst, 'reload schema'` отдаёт PGRST202 на новую RPC).
+    console.warn('[portal] accept_my_invitation failed:', error.code, error.message)
+    return false
+  }
   return !!data
 }
 
