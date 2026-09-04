@@ -119,9 +119,16 @@ $$;
 revoke all on function public.accept_my_invitation() from public;
 grant execute on function public.accept_my_invitation() to authenticated;
 
--- Ядро и триггерная функция вызываются только изнутри БД.
+-- Ядро зовут только accept_my_invitation() и триггер — обе security definer с owner
+-- postgres, так что их собственных прав хватает. Клиентам доступ не нужен.
 revoke all on function public.accept_invitation_for(uuid, text) from public, anon, authenticated;
-revoke all on function public.handle_new_user_invitation() from public, anon, authenticated;
+
+-- ВАЖНО: у триггерной функции права НЕ отзываем. Триггер на auth.users выполняется
+-- под ролью GoTrue (`supabase_auth_admin`), и EXECUTE проверяется по НЕЙ. Если отобрать
+-- право у public, вставка в auth.users падает с «permission denied for function» —
+-- а это ломает регистрацию: любой новый Google-аккаунт получает «Database error saving
+-- new user» вместо входа. Функция возвращает trigger, напрямую её вызвать нельзя.
+grant execute on function public.handle_new_user_invitation() to supabase_auth_admin;
 
 -- ---------------- 4. Backfill ----------------
 -- Приглашения, чей Google-аккаунт уже заведён (человек логинился до/после приглашения):
