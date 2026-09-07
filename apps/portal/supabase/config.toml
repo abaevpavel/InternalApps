@@ -26,6 +26,10 @@ verify_jwt = true
 [functions.set-team-password]
 verify_jwt = true
 
+# --- Портал: пароль вместо Google-входа (кому OAuth Internal закрыт) ---
+[functions.set-portal-password]
+verify_jwt = true
+
 # --- Send Buildertrend Schedule: список проектов живьём из Airtable ---
 [functions.list-schedule-projects]
 verify_jwt = true

@@ -287,3 +287,43 @@ export async function checkAdmin(userId: string): Promise<boolean> {
   if (error) return false
   return !!data
 }
+
+/**
+ * Задать/сбросить пароль пользователю портала (только админ) — edge `set-portal-password`.
+ *
+ * Нужно тем, кто не может войти через Google: OAuth-клиент портала Internal, и почта вне
+ * домена организации в него не пускается в принципе. Аккаунт создаётся сразу подтверждённым,
+ * писем не шлём — пароль админ передаёт человеку сам.
+ *
+ * Токен кладём и в тело: заголовок `Authorization` платформа иногда портит (см.
+ * `set-team-password`), и тогда своя проверка не находит вызывающего.
+ */
+export async function setUserPassword(input: { email: string; password: string }): Promise<void> {
+  const sb = requireSupabase()
+  const { data: auth } = await sb.auth.getSession()
+  const { data, error } = await sb.functions.invoke('set-portal-password', {
+    body: {
+      access_token: auth.session?.access_token ?? '',
+      email: input.email.trim().toLowerCase(),
+      password: input.password,
+    },
+  })
+  // Ошибку из тела достаём руками: FunctionsHttpError отдаёт только «non-2xx status».
+  if (error) {
+    const detail = await extractFunctionError(error)
+    throw new Error(detail || error.message)
+  }
+  if (data?.error) throw new Error(data.error)
+}
+
+/** Текст ошибки из ответа edge-функции (FunctionsHttpError прячет тело в `context`). */
+async function extractFunctionError(error: unknown): Promise<string | null> {
+  const ctx = (error as { context?: Response }).context
+  if (!ctx || typeof ctx.json !== 'function') return null
+  try {
+    const body = await ctx.json()
+    return typeof body?.error === 'string' ? body.error : null
+  } catch {
+    return null
+  }
+}

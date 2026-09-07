@@ -2,12 +2,15 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { ShieldX } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
-import { Button, Card } from '../components/ui'
+import { Button, Card, Field, Input } from '../components/ui'
 import { errMsg } from '../lib/utils'
 
 export function LoginPage() {
-  const { authUser, profile, denied, loading, signInWithGoogle, signOut } = useAuth()
+  const { authUser, profile, denied, loading, signInWithGoogle, signInWithPassword, signOut } = useAuth()
   const [error, setError] = useState<string | null>(null)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
 
   if (loading) return <div className="p-10 text-gray-500">Loading…</div>
   if (authUser && profile && !denied) return <Navigate to="/" replace />
@@ -18,6 +21,19 @@ export function LoginPage() {
       await signInWithGoogle()
     } catch (e) {
       setError(errMsg(e))
+    }
+  }
+
+  async function password_(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setBusy(true)
+    try {
+      await signInWithPassword(email, password)
+    } catch (err) {
+      setError(errMsg(err))
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -53,6 +69,47 @@ export function LoginPage() {
                 <GoogleIcon />
                 Sign in with Google
               </Button>
+
+              {/* Пароль — для тех, кому Google закрыт (почта вне домена организации).
+                  Регистрации нет: пароль выдаёт админ в User Management. */}
+              <div className="my-5 flex items-center gap-3 text-xs uppercase tracking-wide text-gray-400">
+                <span className="h-px flex-1 bg-gray-200" />
+                or
+                <span className="h-px flex-1 bg-gray-200" />
+              </div>
+
+              <form onSubmit={password_} className="space-y-3 text-left">
+                <Field label="Email">
+                  <Input
+                    type="email"
+                    autoComplete="username"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@example.com"
+                  />
+                </Field>
+                <Field label="Password">
+                  <Input
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                  />
+                </Field>
+                <Button
+                  type="submit"
+                  variant="outline"
+                  className="w-full py-2.5"
+                  disabled={busy || !email.trim() || !password}
+                >
+                  {busy ? 'Signing in…' : 'Sign in with password'}
+                </Button>
+              </form>
+
+              <p className="mt-3 text-xs text-gray-400">
+                No password? Ask an administrator to set one for you.
+              </p>
               {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
             </>
           )}

@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { MailX, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { KeyRound, MailX, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import {
   createInvitation, deleteInvitation, deleteUser, listPendingInvitations, listProfiles,
-  listRoles, setUserRoles, updateProfileName,
+  listRoles, setUserPassword, setUserRoles, updateProfileName,
 } from '../../services/data'
 import { Badge, Button, Card, DataTable, Field, Input, Modal, Select, type Column } from '../../components/ui'
 import { errMsg, initials } from '../../lib/utils'
@@ -40,6 +40,7 @@ export function UsersTab() {
   const [editing, setEditing] = useState<Profile | null>(null)
   const [deleting, setDeleting] = useState<Profile | null>(null)
   const [revoking, setRevoking] = useState<Invitation | null>(null)
+  const [pwdFor, setPwdFor] = useState<string | null>(null)
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['profiles'] })
@@ -138,17 +139,35 @@ export function UsersTab() {
       header: 'Actions',
       render: (row) =>
         row.kind === 'invite' ? (
-          <button
-            onClick={() => setRevoking(row.invite)}
-            className="flex items-center gap-1 text-red-400 hover:text-red-600"
-            aria-label="revoke invitation"
-            title="Revoke invitation"
-          >
-            <MailX size={16} />
-            <span className="text-xs">Revoke</span>
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setPwdFor(row.invite.email)}
+              className="text-gray-400 hover:text-gray-700"
+              aria-label="set password"
+              title="Set password"
+            >
+              <KeyRound size={16} />
+            </button>
+            <button
+              onClick={() => setRevoking(row.invite)}
+              className="flex items-center gap-1 text-red-400 hover:text-red-600"
+              aria-label="revoke invitation"
+              title="Revoke invitation"
+            >
+              <MailX size={16} />
+              <span className="text-xs">Revoke</span>
+            </button>
+          </div>
         ) : (
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setPwdFor(row.user.email)}
+              className="text-gray-400 hover:text-gray-700"
+              aria-label="set password"
+              title="Set password"
+            >
+              <KeyRound size={16} />
+            </button>
             <button onClick={() => setEditing(row.user)} className="text-gray-400 hover:text-gray-700" aria-label="edit">
               <Pencil size={16} />
             </button>
@@ -225,6 +244,7 @@ export function UsersTab() {
       {editing && <EditUserModal user={editing} onClose={() => setEditing(null)} onSaved={invalidate} />}
       {deleting && <DeleteUserModal user={deleting} onClose={() => setDeleting(null)} onDeleted={invalidate} />}
       {revoking && <RevokeInviteModal invite={revoking} onClose={() => setRevoking(null)} onDone={invalidate} />}
+      {pwdFor && <SetPasswordModal email={pwdFor} onClose={() => setPwdFor(null)} onSaved={invalidate} />}
     </div>
   )
 }
@@ -420,6 +440,77 @@ function RevokeInviteModal({
         longer be able to join the portal with this invite.
       </p>
       {mut.isError && <p className="mt-2 text-sm text-red-600">{errMsg(mut.error)}</p>}
+    </Modal>
+  )
+}
+
+/* ---------------- Set password ---------------- */
+
+/**
+ * Выдать пароль вместо Google-входа. Нужно тем, кого Google не пускает: OAuth-клиент
+ * портала Internal, и почта вне домена организации не войдёт в принципе.
+ *
+ * Письмо не уходит: аккаунт создаётся подтверждённым, пароль админ передаёт человеку сам.
+ * Работает и для строки-приглашения — тогда аккаунт создастся заранее, а роли из
+ * приглашения проставит триггер `on_auth_user_created_accept_invitation`.
+ */
+function SetPasswordModal({
+  email, onClose, onSaved,
+}: { email: string; onClose: () => void; onSaved: () => void }) {
+  const [password, setPassword] = useState('')
+  const [done, setDone] = useState(false)
+
+  const mut = useMutation({
+    mutationFn: () => setUserPassword({ email, password }),
+    onSuccess: () => {
+      setDone(true)
+      onSaved()
+    },
+  })
+
+  const valid = password.length >= 8
+
+  return (
+    <Modal
+      open
+      title="Set password"
+      subtitle={done ? undefined : 'The user will be able to sign in with email and password instead of Google.'}
+      onClose={onClose}
+      footer={
+        done ? (
+          <Button variant="blue" onClick={onClose}>Done</Button>
+        ) : (
+          <>
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button variant="blue" disabled={!valid || mut.isPending} onClick={() => mut.mutate()}>
+              {mut.isPending ? 'Saving…' : 'Set password'}
+            </Button>
+          </>
+        )
+      }
+    >
+      {done ? (
+        <p>
+          Password set for <span className="font-semibold">{email}</span>. Send it to them over a
+          secure channel — it is not emailed automatically and cannot be viewed again here.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          <Field label="Email">
+            <Input value={email} disabled />
+          </Field>
+          <Field label="New password" required hint="At least 8 characters. Not emailed — pass it on yourself.">
+            <Input
+              type="text"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+            />
+          </Field>
+          {mut.isError && <p className="text-sm text-red-600">{errMsg(mut.error)}</p>}
+        </div>
+      )}
     </Modal>
   )
 }

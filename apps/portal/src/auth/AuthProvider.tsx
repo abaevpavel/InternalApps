@@ -4,10 +4,13 @@ import { acceptMyInvitation, checkAdmin, getMyProfile, linkProfileToAuthUser } f
 import { roleIsAdmin, type Profile } from '../domain/types'
 
 /**
- * Auth портала: Google OAuth (Supabase) + whitelist-гейт.
- * Залогиниться Google-аккаунтом может кто угодно, но доступ получает только тот,
- * у кого есть строка в `profiles` (её создаёт Lovable-триггер по приглашению).
- * Нет профиля → состояние `denied`.
+ * Auth портала: Google OAuth + email/пароль (Supabase) + whitelist-гейт.
+ * Залогиниться может кто угодно, но доступ получает только тот, у кого есть строка
+ * в `profiles` (её создаёт триггер/RPC по приглашению). Нет профиля → состояние `denied`.
+ *
+ * Пароль — для тех, кому Google закрыт: OAuth-клиент портала Internal, почта вне домена
+ * организации в него не входит вообще. Регистрации по паролю нет: аккаунт заводит админ
+ * в User Management (edge `set-portal-password`), поэтому гейт не ослабевает.
  */
 interface AuthCtx {
   authUser: { id: string; email: string } | null
@@ -22,6 +25,7 @@ interface AuthCtx {
   denied: boolean
   isAdmin: boolean
   signInWithGoogle: () => Promise<void>
+  signInWithPassword: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
 }
@@ -108,6 +112,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error
   }
 
+  async function signInWithPassword(email: string, password: string) {
+    if (!supabase) throw new Error('Supabase is not configured')
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    })
+    // Профиль и `denied` посчитает onAuthStateChange — здесь только ошибка входа.
+    if (error) throw error
+  }
+
   async function signOut() {
     if (supabase) await supabase.auth.signOut()
     reset()
@@ -127,6 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         denied,
         isAdmin,
         signInWithGoogle,
+        signInWithPassword,
         signOut,
         refreshProfile,
       }}
