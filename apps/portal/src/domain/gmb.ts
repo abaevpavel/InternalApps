@@ -174,6 +174,27 @@ export const FIELDS: Record<string, GmbFieldMeta> = {
   },
 }
 
+/**
+ * Порядок полей на экране. В `gmb_setting_keys` колонки сортировки нет, а PostgREST без
+ * `order` отдаёт строки в порядке хранения — то есть поля могли бы перетасоваться между
+ * загрузками. Порядок взят из спеки (BAS-1353): он не случайный — сначала голос, потом
+ * тон по типам отзыва, потом ограничения, потом расписание.
+ * Ключ, которого здесь нет (появился в каталоге позже кода), уходит в конец своей секции.
+ */
+const FIELD_ORDER: string[] = [
+  'reviews_voice', 'tone_positive', 'tone_neutral', 'tone_negative', 'reviews_signature',
+  'reviews_forbidden', 'reviews_max_chars', 'reviews_cron', 'employee_names',
+  'posts_topic_guidance', 'posts_voice', 'posts_length_words', 'posts_max_chars',
+  'posts_cta_default', 'posts_forbidden', 'posts_examples', 'posts_cron', 'post_topics',
+  'listing_check_cron',
+  'agent_paused',
+]
+
+export function fieldRank(key: string): number {
+  const i = FIELD_ORDER.indexOf(key)
+  return i === -1 ? FIELD_ORDER.length : i
+}
+
 export function fieldMeta(key: string): GmbFieldMeta {
   return FIELDS[key] ?? { label: key }
 }

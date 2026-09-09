@@ -294,24 +294,25 @@ export const APPS: AppConfig[] = [
     },
   },
   {
-    // GMB-агент (BAS-1353). Настройки живут НЕ в портальной базе: схема `gmb` в проекте
-    // Forge (dpsmbarayebinqcaqhsd) — портал ходит туда edge-прокси. Пока прокси не подключён,
-    // экран работает в режиме preview (данные зашиты, правки в localStorage).
+    // GMB-агент (BAS-1353). Настройки лежат в базе портала, четыре таблицы `gmb_*`
+    // (завёл Никита, BAS-1344). Прав своих апка не заводит: RLS построена на
+    // `user_has_application_access(auth.uid(), '/gmb-agent')`, а ключи `editable_by = developer`
+    // база отдаёт на запись только админу — форма их не «прячет», гейт стоит ниже.
     code: 'gmb-agent',
     label: 'GMB Agent',
     shortLabel: 'GMB Agent',
     routePrefixes: ['/gmb-agent'],
     webhooks: [],
     resources: {
-      database: 'Supabase — dpsmbarayebinqcaqhsd (Forge), schema `gmb` — NOT the portal DB',
-      tables: [],
-      edgeFunctions: ['gmb-settings (proxy to the Forge project — not deployed yet)'],
+      database: SUPABASE,
+      tables: ['gmb_settings', 'gmb_setting_keys', 'gmb_agent_status', 'gmb_regions'],
       external: [
-        { name: 'Forge Supabase — gmb."Setting"', detail: 'the 20 settings the agent reads; one row per key' },
-        { name: 'Forge Supabase — gmb."SettingKey"', detail: 'catalogue of valid keys; the form is built from it' },
-        { name: 'Forge Supabase — gmb."AgentStatus"', detail: 'written by the agent: applied / appliedError' },
-        { name: 'Forge Supabase — gmb."Region"', detail: 'closed vocabulary for post topic regions (DMV, PA)' },
-        { name: 'GMB agent (Mykyta)', detail: 'polls the settings every ~5 min; counterpart ticket BAS-1344' },
+        {
+          name: 'GMB agent (Mykyta)',
+          detail:
+            'connects as its own Postgres role `gmb_agent`, which reaches these four tables and nothing else; reads the settings and writes gmb_agent_status. A save reaches production on its next poll — measured at 127 seconds. Counterpart ticket BAS-1344',
+        },
+        { name: 'Google Business Profile', detail: 'review replies, posts and listing-name checks — on the agent side' },
       ],
     },
   },

@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Info, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { Info, Plus, Trash2 } from 'lucide-react'
 import { Button, Card, Dropdown, Field, Input, PageTitle, StatusBadge, Tabs, Textarea } from '../../components/ui'
 import { errMsg } from '../../lib/utils'
 import { useAuth } from '../../auth/AuthProvider'
-import { loadBundle, resetPreview, saveChanges } from '../../services/gmb'
+import { loadBundle, saveChanges } from '../../services/gmb'
 import {
   CTA_OPTIONS, GMB_TZ_LABEL, SECTION_ORDER, SECTION_TITLES, WEEKDAYS,
-  asRange, asString, asStringList, asTopics, buildCron, describeCron, fieldMeta, normalizeValue,
+  asRange, asString, asStringList, asTopics, buildCron, describeCron, fieldMeta, fieldRank, normalizeValue,
   parseCron, sameValue, validateValue,
   type GmbRegion, type GmbSection, type GmbSettingKey, type GmbTopic,
 } from '../../domain/gmb'
@@ -81,18 +81,10 @@ export function GmbAgentSettingsPage() {
     },
   })
 
-  const resetM = useMutation({
-    mutationFn: resetPreview,
-    onSuccess: async () => {
-      setEdits({})
-      await qc.invalidateQueries({ queryKey: ['gmb-settings'] })
-    },
-  })
-
   if (q.isLoading) return <div className="p-10 text-gray-500">Loading…</div>
   if (q.error) return <div className="p-10 text-red-600">{errMsg(q.error)}</div>
 
-  const sectionKeys = keys.filter((k) => k.section === tab)
+  const sectionKeys = keys.filter((k) => k.section === tab).sort((a, b) => fieldRank(a.key) - fieldRank(b.key))
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-10 pb-32">
@@ -101,12 +93,7 @@ export function GmbAgentSettingsPage() {
         subtitle="What the Google Business Profile agent says and when it runs. Saved values are the values the agent runs with."
       />
 
-      <SourceBanner
-        source={q.data!.source}
-        note={q.data!.note}
-        onReset={() => resetM.mutate()}
-        resetting={resetM.isPending}
-      />
+      <AgentHeartbeat status={q.data!.status} />
       <AppliedStatus status={q.data!.status} />
 
       <Tabs
@@ -149,24 +136,28 @@ export function GmbAgentSettingsPage() {
 
 /* ---------------- шапка ---------------- */
 
-function SourceBanner({
-  source, note, onReset, resetting,
-}: { source: string; note?: string; onReset: () => void; resetting: boolean }) {
-  if (source === 'live') return null
+/**
+ * Когда агент последний раз отмечался в `gmb_agent_status`.
+ *
+ * Тревогу здесь НЕ поднимаем: строку агент обновляет, когда применяет настройки, а не
+ * на каждом опросе — значит долгая тишина означает всего лишь «никто ничего не менял».
+ * Отличить её от упавшего агента по одной строке без истории нельзя, поэтому показываем
+ * факт и дату, а не вывод. Красным экран говорит только там, где агент сам сообщил
+ * причину — `applied_error` (см. AppliedStatus).
+ *
+ * [uncertain] Периодичность записи не подтверждена Никитой (BAS-1344). Если окажется,
+ * что агент пишет строку на каждом опросе, отсюда можно вернуть порог и настоящую тревогу.
+ */
+function AgentHeartbeat({
+  status,
+}: { status: { updatedAt: string | null; appliedAt: string | null } | null }) {
+  const last = status?.updatedAt ?? status?.appliedAt ?? null
+  if (!last) return null
   return (
-    <Card className="mb-4 flex items-start gap-3 border-amber-200 bg-amber-50 p-4">
-      <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" />
-      <div className="flex-1 text-sm text-amber-900">
-        <div className="font-medium">Preview — these values do not reach the agent yet.</div>
-        <p className="mt-1 text-amber-800">
-          {note} Edits are kept in this browser only, so the screen can be reviewed end to end before the
-          connection is switched on.
-        </p>
-      </div>
-      <Button variant="outline" onClick={onReset} disabled={resetting} className="shrink-0">
-        <RotateCcw size={14} /> Reset
-      </Button>
-    </Card>
+    <p className="mb-4 text-xs text-gray-400">
+      The agent last reported at {new Date(last).toLocaleString()}. It picks changes up on its next
+      poll — about two minutes.
+    </p>
   )
 }
 
@@ -215,6 +206,8 @@ function SettingCard({
         {entry.editableBy === 'developer' && <StatusBadge tone="neutral">developer only</StatusBadge>}
       </div>
       {meta.hint && <p className="mb-3 text-sm text-gray-500">{meta.hint}</p>}
+      {/* `notes` ведёт агент — это его пояснение к ключу, показываем как есть. */}
+      {entry.notes && <p className="mb-3 text-sm text-gray-500">{entry.notes}</p>}
 
       <div className={locked ? 'pointer-events-none opacity-50' : undefined}>
         <ValueControl entry={entry} value={value} onChange={onChange} regions={regions} />
