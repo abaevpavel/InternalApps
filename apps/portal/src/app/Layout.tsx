@@ -5,23 +5,44 @@ import { useAuth } from '../auth/AuthProvider'
 import { currentAppForPath, visibleNavItems } from './appRegistry'
 import { useCurrentAppRole } from './AppRoleContext'
 
-/** Заголовок хедера по маршруту (как в оригинале: страница = свой титул). */
-const TITLES: [prefix: string, title: string][] = [
+/**
+ * Заголовок хедера — портальные страницы.
+ *
+ * Имена АПОК сюда больше не пишем: они берутся из реестра (`currentAppForPath`), иначе
+ * каждая новая апка молча получает в шапке «MY APPLICATIONS» — так и было с GMB Agent
+ * и Send Buildertrend Schedule, пока их забывали дописать в этот список (BAS-1410).
+ */
+const PORTAL_TITLES: [prefix: string, title: string][] = [
   ['/account', 'MY ACCOUNT'],
   ['/portal-settings', 'PORTAL SETTINGS'],
-  ['/production-checklist', '03-PRODUCTION-CHECKLIST'],
-  ['/checklist', '06-HR-CHECKLISTS'],
-  ['/gmail-auto-sender', '06-HR-GMAIL AUTO SENDER'],
-  ['/sales-email-sender', '02-SALES-SEND AN OFFER EMAIL'],
-  ['/hr-sync-airtable', '06-HR-SYNC AIRTABLE CONTACTS'],
-  ['/task-planner/my-tasks', 'DALY SCHEDULE — MY TASKS'],
-  ['/task-planner/approvals', 'DALY SCHEDULE — APPROVALS'],
-  ['/task-planner/create', 'DALY SCHEDULE — CREATE TASK'],
-  ['/task-planner/availability', 'DALY SCHEDULE — TEAMS AVAILABILITY'],
-  ['/task-planner/admin', 'DALY SCHEDULE — DIRECTORIES'],
-  ['/task-planner', 'DALY SCHEDULE — TASKS'],
-  ['/', 'MY APPLICATIONS'],
 ]
+
+/** Подпись экрана ВНУТРИ апки — то, что реестр знает как пункт её меню. */
+const APP_SCREEN_TITLES: [prefix: string, title: string][] = [
+  ['/task-planner/my-tasks', 'MY TASKS'],
+  ['/task-planner/approvals', 'APPROVALS'],
+  ['/task-planner/create', 'CREATE TASK'],
+  ['/task-planner/availability', 'TEAMS AVAILABILITY'],
+  ['/task-planner/admin', 'DIRECTORIES'],
+  ['/task-planner', 'TASKS'],
+]
+
+/**
+ * Что показать в шапке: «АПКА — ЭКРАН» внутри апки, свой титул на портальных страницах.
+ * Апку определяет реестр, поэтому дописывать сюда ничего не нужно — достаточно завести
+ * её в `appRegistry`.
+ */
+function headerTitle(pathname: string, app: { label: string; shortLabel?: string } | null): string {
+  if (pathname.startsWith('/settings/') && app) {
+    return `${app.shortLabel ?? app.label} — SETTINGS`.toUpperCase()
+  }
+  if (app) {
+    const screen = APP_SCREEN_TITLES.find(([p]) => pathname.startsWith(p))?.[1]
+    const name = (app.shortLabel ?? app.label).toUpperCase()
+    return screen ? `${name} — ${screen}` : name
+  }
+  return PORTAL_TITLES.find(([p]) => pathname.startsWith(p))?.[1] ?? 'MY APPLICATIONS'
+}
 
 export function Layout() {
   const { authUser, isAdmin, signOut } = useAuth()
@@ -33,10 +54,7 @@ export function Layout() {
   const appRole = useCurrentAppRole()
   // Апка контекста — включая её экран настроек (`/settings/:appCode`), см. currentAppForPath.
   const currentApp = currentAppForPath(pathname)
-  const onAppSettings = pathname.startsWith('/settings/')
-  const title = onAppSettings && currentApp
-    ? `${currentApp.shortLabel ?? currentApp.label} — SETTINGS`.toUpperCase()
-    : TITLES.find(([p]) => pathname.startsWith(p) && p !== '/')?.[1] ?? 'MY APPLICATIONS'
+  const title = headerTitle(pathname, currentApp)
 
   useEffect(() => {
     if (!open) return

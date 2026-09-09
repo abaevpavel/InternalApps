@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ChevronDown, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Input, Textarea, Field, Select, Tabs } from '../../components/task-planner-ui'
 import { cn, errMsg } from '../../lib/utils'
 import { fetchProjects, fetchSkills, fetchTeams, fetchTaskTypes, createTask } from '../../services/task-planner/data'
 import { useAuth } from '../../auth/AuthProvider'
-import type { TimeType } from '../../domain/task-planner/types'
+import type { Skill, TimeType } from '../../domain/task-planner/types'
 
 /** Следующий рабочий день (пропуская сб/вс) в формате YYYY-MM-DD, по локальному времени. */
 function nextWeekdayISO(): string {
@@ -41,7 +42,7 @@ export function CreateTaskPage() {
   const [durationH, setDurationH] = useState('')
   const [teamId, setTeamId] = useState('')
   const [priority, setPriority] = useState(5)
-  const [skillId, setSkillId] = useState('')
+  const [skillIds, setSkillIds] = useState<string[]>([])
   const [stopAddress, setStopAddress] = useState('')
   const [stopDuration, setStopDuration] = useState(30)
   const [error, setError] = useState<string | null>(null)
@@ -71,7 +72,7 @@ export function CreateTaskPage() {
         project_manager: proj?.project_manager,
         team_id: teamId || null,
         priority,
-        skill_requirements: skillId ? [skillId] : [],
+        skill_requirements: skillIds,
         additional_stop: stopAddress
           ? { when: stopWhen, address: stopAddress, duration_min: stopDuration }
           : null,
@@ -154,16 +155,24 @@ export function CreateTaskPage() {
           </Field>
           <Field label="Priority">
             <Select value={priority} onChange={(e) => setPriority(Number(e.target.value))}>
-              <option value={5}>5 - Normal</option><option value={1}>1 - Highest</option>
+              {PRIORITIES.map((p) => (
+                <option key={p.value} value={p.value}>{p.value} - {p.label}</option>
+              ))}
             </Select>
           </Field>
         </div>
 
-        <Field label="Required Skills (optional)">
-          <Select value={skillId} onChange={(e) => setSkillId(e.target.value)}>
-            <option value="">Add Required Skill</option>
-            {skills.data?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </Select>
+        <Field
+          label="Required Skills (optional)"
+          hint={skillIds.length ? undefined : 'A task can require several skills.'}
+        >
+          <SkillPicker
+            skills={skills.data ?? []}
+            selected={skillIds}
+            onToggle={(id) =>
+              setSkillIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+            }
+          />
         </Field>
 
         <div>
@@ -201,5 +210,137 @@ function SegBtn({ active, onClick, children }: { active: boolean; onClick: () =>
     >
       {children}
     </button>
+  )
+}
+
+/**
+ * Шкала приоритета. Раньше в форме было всего два пункта (5 и 1), хотя остальная апка
+ * живёт по 1–10: `priorityTone` в Tasks.tsx считает ≤3 высоким, ≥7 низким, между ними
+ * средний, а в редактировании задачи стоит свободный number-input. Подписаны только края
+ * и середина — промежуточные значения говорят сами за себя.
+ */
+const PRIORITY_LABELS: Record<number, string> = { 1: 'Highest', 3: 'High', 5: 'Normal', 7: 'Low', 10: 'Lowest' }
+const PRIORITIES = Array.from({ length: 10 }, (_, i) => i + 1).map((value) => ({
+  value,
+  label: PRIORITY_LABELS[value] ?? '',
+}))
+
+/**
+ * Выбор требуемых навыков: строка поиска с выпадающим списком, выбранные — чипами под ней.
+ *
+ * `skill_requirements` в БД — массив, а форма клала туда максимум один элемент; задача может
+ * требовать нескольких. Список в поповере, а не развёрнутый набор чекбоксов: навыков в
+ * справочнике десятки, и раскрытый список вытеснял бы остальную форму за экран.
+ * Уже выбранные из списка убираются — их видно чипами, дублировать незачем.
+ */
+function SkillPicker({
+  skills, selected, onToggle,
+}: { skills: Skill[]; selected: string[]; onToggle: (id: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  const byId = useMemo(() => new Map(skills.map((s) => [s.id, s])), [skills])
+
+  // Группируем по категории — так же, как Directories: плоский список из десятков позиций
+  // не читается. Фильтр по названию и по категории, чтобы «Plumbing» находил всю группу.
+  const groups = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    const out = new Map<string, Skill[]>()
+    for (const s of skills) {
+      if (selected.includes(s.id)) continue
+      const cat = s.category || 'Other'
+      if (needle && !s.name.toLowerCase().includes(needle) && !cat.toLowerCase().includes(needle)) continue
+      out.set(cat, [...(out.get(cat) ?? []), s])
+    }
+    return [...out.entries()]
+  }, [skills, selected, q])
+
+  function pick(id: string) {
+    onToggle(id)
+    setQ('')
+    setOpen(false)
+  }
+
+  return (
+    <div>
+      <div ref={ref} className="relative">
+        <Input
+          value={q}
+          onChange={(e) => {
+            setQ(e.target.value)
+            setOpen(true)
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder={skills.length ? 'Search and add a skill…' : 'No skills in the directory'}
+          disabled={!skills.length}
+          className="pr-9"
+        />
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-label="Show skills"
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-gray-700"
+        >
+          <ChevronDown size={16} className={cn('transition', open && 'rotate-180')} />
+        </button>
+
+        {open && (
+          <div className="absolute left-0 top-full z-40 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+            {groups.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-gray-400">
+                {q ? 'Nothing matches.' : 'Every skill is already added.'}
+              </p>
+            ) : (
+              groups.map(([cat, list]) => (
+                <div key={cat}>
+                  <div className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-gray-400">{cat}</div>
+                  {list.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => pick(s.id)}
+                      className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {selected.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {selected.map((id) => (
+            <span
+              key={id}
+              className="inline-flex items-center gap-1.5 rounded-md border border-accent-200 bg-accent-50 px-2.5 py-1 text-sm text-accent-700"
+            >
+              {byId.get(id)?.name ?? id}
+              <button
+                type="button"
+                onClick={() => onToggle(id)}
+                aria-label={`Remove ${byId.get(id)?.name ?? id}`}
+                className="text-accent-500 transition hover:text-accent-800"
+              >
+                <X size={13} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
