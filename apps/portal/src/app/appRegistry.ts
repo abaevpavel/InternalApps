@@ -293,6 +293,28 @@ export const APPS: AppConfig[] = [
       ],
     },
   },
+  {
+    // GMB-агент (BAS-1353). Настройки живут НЕ в портальной базе: схема `gmb` в проекте
+    // Forge (dpsmbarayebinqcaqhsd) — портал ходит туда edge-прокси. Пока прокси не подключён,
+    // экран работает в режиме preview (данные зашиты, правки в localStorage).
+    code: 'gmb-agent',
+    label: 'GMB Agent',
+    shortLabel: 'GMB Agent',
+    routePrefixes: ['/gmb-agent'],
+    webhooks: [],
+    resources: {
+      database: 'Supabase — dpsmbarayebinqcaqhsd (Forge), schema `gmb` — NOT the portal DB',
+      tables: [],
+      edgeFunctions: ['gmb-settings (proxy to the Forge project — not deployed yet)'],
+      external: [
+        { name: 'Forge Supabase — gmb."Setting"', detail: 'the 20 settings the agent reads; one row per key' },
+        { name: 'Forge Supabase — gmb."SettingKey"', detail: 'catalogue of valid keys; the form is built from it' },
+        { name: 'Forge Supabase — gmb."AgentStatus"', detail: 'written by the agent: applied / appliedError' },
+        { name: 'Forge Supabase — gmb."Region"', detail: 'closed vocabulary for post topic regions (DMV, PA)' },
+        { name: 'GMB agent (Mykyta)', detail: 'polls the settings every ~5 min; counterpart ticket BAS-1344' },
+      ],
+    },
+  },
 ]
 
 /**
