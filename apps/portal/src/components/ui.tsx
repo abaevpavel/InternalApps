@@ -4,7 +4,7 @@ import {
   type ReactNode, type Key,
   useEffect, useRef, useState,
 } from 'react'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, Eye, EyeOff } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 /* ---------------- Button ---------------- */
@@ -54,6 +54,37 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
 
 export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea className={cn(fieldBase, className)} {...props} />
+}
+
+/**
+ * Поле пароля с переключателем видимости. Нужен там, где человек ВВОДИТ пароль вслепую:
+ * без него единственный способ проверить опечатку — стереть и набрать заново.
+ *
+ * `type="button"` обязателен: внутри формы кнопка по умолчанию сабмитит её, и глаз
+ * отправлял бы форму вместо показа пароля.
+ */
+export function PasswordInput({
+  defaultVisible = false, className, ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> & { defaultVisible?: boolean }) {
+  const [visible, setVisible] = useState(defaultVisible)
+  return (
+    <div className="relative">
+      <input
+        {...props}
+        type={visible ? 'text' : 'password'}
+        className={cn(fieldBase, 'pr-10', className)}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        aria-label={visible ? 'Hide password' : 'Show password'}
+        title={visible ? 'Hide password' : 'Show password'}
+        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 transition hover:text-gray-700"
+      >
+        {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+      </button>
+    </div>
+  )
 }
 
 export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {

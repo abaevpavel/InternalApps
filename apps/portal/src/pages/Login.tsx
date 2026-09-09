@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { ShieldX } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
-import { Button, Card, Field, Input } from '../components/ui'
+import { Button, Card, Field, Input, PasswordInput } from '../components/ui'
 import { errMsg } from '../lib/utils'
 
 export function LoginPage() {
@@ -89,8 +89,7 @@ export function LoginPage() {
                   />
                 </Field>
                 <Field label="Password">
-                  <Input
-                    type="password"
+                  <PasswordInput
                     autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
