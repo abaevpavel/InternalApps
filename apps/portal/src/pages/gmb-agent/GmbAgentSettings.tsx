@@ -200,11 +200,11 @@ function SettingCard({
         <span className="font-medium text-gray-900">{meta.label}</span>
         <span className="font-mono text-xs text-gray-400">{entry.key}</span>
         {dirty && <StatusBadge tone="warning">unsaved</StatusBadge>}
-        {entry.editableBy === 'developer' && <StatusBadge tone="neutral">developer only</StatusBadge>}
       </div>
+      {/* `notes` из каталога НЕ показываем: там технические строки вида «plain text, <= 600
+          chars», которые повторяют валидацию — её и так делает форма, а счётчик символов
+          стоит под полем. Смысл поля объясняет `hint` из domain/gmb.ts. */}
       {meta.hint && <p className="mb-3 text-sm text-gray-500">{meta.hint}</p>}
-      {/* `notes` ведёт агент — это его пояснение к ключу, показываем как есть. */}
-      {entry.notes && <p className="mb-3 text-sm text-gray-500">{entry.notes}</p>}
 
       <div className={locked ? 'pointer-events-none opacity-50' : undefined}>
         <ValueControl entry={entry} value={value} onChange={onChange} regions={regions} />
