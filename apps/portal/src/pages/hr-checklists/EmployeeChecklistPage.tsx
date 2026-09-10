@@ -5,7 +5,6 @@ import { FileDown, Plus, SquarePen, UserRound } from 'lucide-react'
 import { Button, Card } from '../../components/ui'
 import { errMsg } from '../../lib/utils'
 import { AssignedChecklistSection } from './AssignedChecklistSection'
-import { generateEmployeeChecklistPdf } from './ChecklistPDF'
 import { PdfDialog } from './EmployeeChecklists'
 import { CreateEmployeeDialog } from './HrDialogs'
 import { SearchableCombobox } from './SearchableCombobox'
@@ -164,6 +163,7 @@ export function EmployeeChecklistPage() {
         <PdfDialog
           onClose={() => setShowPdf(false)}
           onGenerate={async (completedBy) => {
+            const { generateEmployeeChecklistPdf } = await import('./ChecklistPDF')
             await generateEmployeeChecklistPdf({
               employee,
               assignments,

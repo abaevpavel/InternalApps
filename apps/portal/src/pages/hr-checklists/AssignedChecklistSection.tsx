@@ -6,7 +6,6 @@ import {
   FileDown, Pencil, SquarePlus, Target, Trash2, Upload,
 } from 'lucide-react'
 import { Button, Card, Modal, Textarea } from '../../components/ui'
-import { generateEmployeeChecklistPdf } from './ChecklistPDF'
 import { PdfDialog } from './EmployeeChecklists'
 import { cn, errMsg } from '../../lib/utils'
 import { useUnsavedGuard } from '../../lib/useUnsavedGuard'
@@ -292,6 +291,7 @@ export function AssignedChecklistSection({
           <PdfDialog
             onClose={() => setShowPdf(false)}
             onGenerate={async (completedBy) => {
+              const { generateEmployeeChecklistPdf } = await import('./ChecklistPDF')
               await generateEmployeeChecklistPdf({
                 employee,
                 assignments: [{ checklist_id: assignment.checklist_id }],

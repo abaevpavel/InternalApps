@@ -7,7 +7,6 @@ import { errMsg } from '../../lib/utils'
 import { SearchableCombobox } from './SearchableCombobox'
 import { CreateEmployeeDialog, AddChecklistDialog } from './HrDialogs'
 import { AssignedChecklistSection } from './AssignedChecklistSection'
-import { generateEmployeeChecklistPdf } from './ChecklistPDF'
 import {
   listChecklists,
   listEmployeeChecklists,
@@ -169,6 +168,9 @@ export function EmployeeChecklistsPage() {
         <PdfDialog
           onClose={() => setShowPdf(false)}
           onGenerate={async (completedBy) => {
+            // @react-pdf весит больше мегабайта и нужен только здесь — грузим по требованию,
+            // иначе он лежит в чанке страницы и держит «Loading…» на каждом открытии.
+            const { generateEmployeeChecklistPdf } = await import('./ChecklistPDF')
             await generateEmployeeChecklistPdf({
               employee,
               assignments: assignmentsQ.data ?? [],
