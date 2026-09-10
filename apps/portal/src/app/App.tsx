@@ -96,7 +96,7 @@ function Shell() {
           <Route path="/hr-sync-airtable" element={<HRSyncAirtablePage />} />
           <Route path="/buildertrend-schedule" element={<SendBuildertrendSchedulePage />} />
           <Route path="/gmb-agent" element={<GmbAgentSettingsPage />} />
-          {/* Task Planner (Daly Schedule) — роуты портала, общая БД (таблицы tp_*) */}
+          {/* Task Planner — роуты портала, общая БД (таблицы tp_*) */}
           <Route path="/task-planner" element={<TaskPlannerLayout />}>
             {/* Корень апки: планировщику — список задач, бригадиру — его My Tasks
                 (карточка на «My Applications» ведёт сюда всех). */}

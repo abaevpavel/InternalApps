@@ -1,4 +1,4 @@
-/** Доменные типы Daly Schedule. */
+/** Доменные типы Task Planner. */
 
 export type AppRole = 'super_admin' | 'pm' | 'team_lead'
 

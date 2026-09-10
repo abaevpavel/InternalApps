@@ -28,10 +28,11 @@ export function codeForApplication(app: Application): string | null {
     const byPath = path ? appForPath(path) : null
     if (byPath) return byPath.code
   }
-  // 2) фолбэк по имени ↔ label реестра (напр. «01-Task Planner (Daly Schedule)»,
-  //    когда у внешней апки url без узнаваемого pathname).
+  // 2) фолбэк по имени ↔ label реестра (когда у внешней апки url без узнаваемого
+  //    pathname). Учитываем и прежние названия: строка в `applications` могла остаться
+  //    со старым именем, и без алиасов переименование отрезало бы людей от апки.
   if (app.name) {
-    const byName = APPS.find((a) => a.label === app.name)
+    const byName = APPS.find((a) => a.label === app.name || a.nameAliases?.includes(app.name))
     if (byName) return byName.code
   }
   return null

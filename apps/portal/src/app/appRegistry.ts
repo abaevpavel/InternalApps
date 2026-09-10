@@ -73,6 +73,11 @@ export interface AppConfig {
   nav?: AppNavItem[]
   /** Внутренние роли апки (вкладка Roles в App Settings). */
   appRoles?: AppRoleSlot[]
+  /**
+   * Прежние значения `applications.name`, под которыми апка уже заведена в базе.
+   * Нужны, чтобы переименование в коде и в базе можно было делать в любом порядке.
+   */
+  nameAliases?: string[]
 }
 
 const SUPABASE = 'Supabase — pilxwhtkhysanpukaliu (shared with the portal)'
@@ -232,8 +237,12 @@ export const APPS: AppConfig[] = [
   {
     // Встроен в портал роутами 2026-07-22 (был отдельным SPA). БД общая, таблицы tp_*.
     code: 'task-planner',
-    label: '01-Task Planner (Daly Schedule)',
-    shortLabel: 'Daly Schedule',
+    label: '01-Task Planner',
+    shortLabel: 'Task Planner',
+    // Прежние названия строки в `applications`. Доступ к апке сопоставляется по имени,
+    // когда url не разбирается в роут, — без алиасов переименование в коде отрезало бы
+    // людей от апки до тех пор, пока не поправят базу.
+    nameAliases: ['01-Task Planner (Daly Schedule)', '01-Task Planner (Daily Schedule)'],
     routePrefixes: ['/task-planner'],
     nav: [
       // Планировочные экраны — только вид Planner Admin: у бригадира свой рабочий экран,
