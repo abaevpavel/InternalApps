@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Send } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Send } from 'lucide-react'
 import { Button, Card, StatusBadge, Textarea } from '../../components/ui'
 import { cn, errMsg } from '../../lib/utils'
-import { useDebouncedCallback } from '../../lib/useDebouncedCallback'
+import { useUnsavedGuard } from '../../lib/useUnsavedGuard'
+import { useUnsavedRegistry } from '../../app/UnsavedChangesContext'
 import {
   getAssignedTemplateId,
   getProject,
@@ -88,45 +89,96 @@ export function ProjectChecklistPage() {
   const total = allLeaves.length
   const percent = total ? Math.round((answeredCount / total) * 100) : 0
 
-  const saveAnswer = useMutation({
-    mutationFn: ({ taskId, patch }: { taskId: string; patch: Partial<ProgressRow> }) =>
-      upsertProgress(projectId, taskId, patch),
+  /**
+   * Снимок того, что лежит в базе. Ответы больше НЕ уходят по клику: человек отвечает,
+   * потом сохраняет — иначе случайный тычок сразу становится фактом, а отменить его
+   * можно только вторым тычком, который тоже уже уехал.
+   */
+  const [saved, setSaved] = useState<Record<string, Answer>>({})
+  useEffect(() => {
+    if (!progressQ.data) return
+    const map: Record<string, Answer> = {}
+    for (const p of progressQ.data) {
+      map[p.task_id] = {
+        selected_answer: p.selected_answer,
+        is_not_applicable: !!p.is_not_applicable,
+        notes: p.notes,
+      }
+    }
+    setSaved(map)
+  }, [progressQ.data])
+
+  const sameAnswer = (a: Answer | undefined, b: Answer | undefined) =>
+    (a?.selected_answer ?? null) === (b?.selected_answer ?? null) &&
+    !!a?.is_not_applicable === !!b?.is_not_applicable &&
+    (a?.notes ?? '') === (b?.notes ?? '')
+
+  const changedTaskIds = useMemo(() => {
+    const ids = new Set([...Object.keys(answers), ...Object.keys(saved)])
+    return [...ids].filter((id) => !sameAnswer(answers[id], saved[id]))
+  }, [answers, saved])
+  const dirty = changedTaskIds.length > 0
+
+  const saveAll = useMutation({
+    mutationFn: async () => {
+      for (const taskId of changedTaskIds) {
+        const a = answers[taskId]
+        const answered = !!a?.selected_answer
+        await upsertProgress(projectId, taskId, {
+          selected_answer: a?.selected_answer ?? null,
+          is_not_applicable: !!a?.is_not_applicable,
+          notes: a?.notes ?? null,
+          completed: answered,
+          completed_at: answered ? new Date().toISOString() : null,
+        })
+      }
+    },
+    onSuccess: () => {
+      setSaved(answers)
+      qc.invalidateQueries({ queryKey: ['progress', projectId] })
+    },
   })
 
+  /** Клик по варианту: выбрать, а по уже выбранному — снять выбор. */
   function answer(q: ItemNode, option: string) {
     if (readOnly) return
-    const isNa = option.trim().toLowerCase() === 'n/a'
-    setAnswers((prev) => ({
-      ...prev,
-      [q.task_id]: { ...prev[q.task_id], selected_answer: option, is_not_applicable: isNa },
-    }))
-    saveAnswer.mutate({
-      taskId: q.task_id,
-      patch: {
-        selected_answer: option,
-        is_not_applicable: isNa,
-        completed: true,
-        completed_at: new Date().toISOString(),
-      },
+    setAnswers((prev) => {
+      const cur = prev[q.task_id]
+      if (cur?.selected_answer === option) {
+        return { ...prev, [q.task_id]: { ...cur, selected_answer: null, is_not_applicable: false } }
+      }
+      const isNa = option.trim().toLowerCase() === 'n/a'
+      return { ...prev, [q.task_id]: { ...cur, selected_answer: option, is_not_applicable: isNa } }
     })
   }
 
-  const debouncedNotes = useDebouncedCallback((taskId: string, notes: string) => {
-    saveAnswer.mutate({ taskId, patch: { notes } })
-  }, 600)
+  // Регистрируем несохранённое: кнопка «Back» в шапке спросит перед уходом.
+  const unsaved = useUnsavedRegistry()
+  useEffect(() => {
+    unsaved.register({
+      isDirty: () => dirty,
+      save: async () => {
+        await saveAll.mutateAsync()
+      },
+      discard: () => setAnswers(saved),
+    })
+    return () => unsaved.register(null)
+  }, [dirty, saved, answers, unsaved])
+
+  // F5 и закрытие вкладки: свой диалог там показать нельзя, только предупредить.
+  useUnsavedGuard(() => dirty)
 
   function setNotes(blockTaskId: string, notes: string) {
     if (readOnly) return
     setAnswers((prev) => ({ ...prev, [blockTaskId]: { ...prev[blockTaskId], notes } }))
-    debouncedNotes(blockTaskId, notes)
   }
 
   const sendM = useMutation({
     mutationFn: async () => {
       const project = projectQ.data!
-      // Заметку, набранную только что, дожимаем в БД до отправки: иначе она уедет
-      // в Make (payload берём из `answers`), но в базе не сохранится.
-      debouncedNotes.flush()
+      // Перед отправкой дописываем всё несохранённое: payload берём из `answers`,
+      // и расхождение между тем, что ушло в Make, и тем, что лежит в базе, недопустимо.
+      if (dirty) await saveAll.mutateAsync()
       await sendChecklistToMake({
         project,
         template: templateQ.data ?? null,
@@ -150,11 +202,7 @@ export function ProjectChecklistPage() {
   const project = projectQ.data
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <button onClick={() => nav('/production-checklist')} className="mb-6 inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800">
-        <ArrowLeft size={16} /> Back to projects
-      </button>
-
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-8 sm:px-6">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
         <StatusBadge tone={readOnly ? 'success' : 'pending'}>{project.status ?? 'In Progress'}</StatusBadge>
@@ -198,6 +246,25 @@ export function ProjectChecklistPage() {
             ))}
           </div>
 
+          {/* Липкая панель сохранения: появляется, когда есть несохранённые ответы. */}
+          {!readOnly && dirty && (
+            <div className="sticky bottom-0 z-30 -mx-4 mt-6 border-t border-gray-100 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-600">
+                  {changedTaskIds.length} unsaved {changedTaskIds.length === 1 ? 'answer' : 'answers'}
+                </span>
+                <div className="flex-1" />
+                <Button variant="ghost" disabled={saveAll.isPending} onClick={() => setAnswers(saved)}>
+                  Discard
+                </Button>
+                <Button variant="primary" disabled={saveAll.isPending} onClick={() => saveAll.mutate()}>
+                  {saveAll.isPending ? 'Saving…' : 'Save'}
+                </Button>
+              </div>
+              {saveAll.error && <p className="mt-1 text-sm text-red-600">{errMsg(saveAll.error)}</p>}
+            </div>
+          )}
+
           {/* Send */}
           {!readOnly && (
             <div className="mt-8 flex items-center justify-end gap-3">
@@ -206,7 +273,7 @@ export function ProjectChecklistPage() {
                 variant="green"
                 // isSuccess держит кнопку выключенной и в окне между ответом Make и
                 // перечитыванием проекта — иначе второй клик шлёт чеклист дважды (BUG-2).
-                disabled={percent < 100 || sendM.isPending || sendM.isSuccess}
+                disabled={percent < 100 || sendM.isPending || sendM.isSuccess || saveAll.isPending}
                 onClick={() => sendM.mutate()}
                 title={percent < 100 ? 'Complete the checklist first' : undefined}
               >
@@ -216,7 +283,7 @@ export function ProjectChecklistPage() {
           )}
           {readOnly && project.checklist_sent_at && (
             <div className="mt-8 flex items-center justify-end gap-2 text-sm text-green-700">
-              <Check size={16} /> Sent {new Date(project.checklist_sent_at).toLocaleString()}
+              <Check size={16} /> Sent {new Date(project.checklist_sent_at).toLocaleString('en-US')}
             </div>
           )}
           {sendM.error && <p className="mt-2 text-right text-sm text-red-600">{errMsg(sendM.error)}</p>}

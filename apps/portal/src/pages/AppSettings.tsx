@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft } from 'lucide-react'
 import { Button, Card, Field, Input, PageTitle, Tabs, Textarea } from '../components/ui'
 import { errMsg } from '../lib/utils'
 import { appByCode, appRoleSettingKey, type AppConfig, type AppRoleSlot, type WebhookField } from '../app/appRegistry'
@@ -20,20 +19,14 @@ export function AppSettingsPage() {
 
   if (!app) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-10 text-center text-gray-400">
+      <div className="mx-auto w-full max-w-[1200px] px-4 py-10 sm:px-6 text-center text-gray-400">
         Unknown app: <span className="font-mono">{appCode}</span>
       </div>
     )
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
-      <button
-        onClick={() => nav(app.routePrefixes[0] ?? '/')}
-        className="mb-6 inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800"
-      >
-        <ArrowLeft size={16} /> Back to app
-      </button>
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-10 sm:px-6">
       <PageTitle title={`${app.label} — Settings`} subtitle="App-scoped configuration. Changes apply to everyone (admin only)." />
       <Tabs
         className="mb-6 max-w-md"

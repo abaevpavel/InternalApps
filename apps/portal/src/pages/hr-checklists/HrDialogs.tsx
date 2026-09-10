@@ -2,33 +2,54 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { Button, Dropdown, Field, Input, Modal, Textarea } from '../../components/ui'
 import { errMsg } from '../../lib/utils'
-import { createChecklist, createEmployee } from '../../services/hr-checklists'
-import { EMPLOYEE_TYPES, type EmployeeType } from '../../domain/hr-checklists'
+import { createChecklist, createEmployee, updateEmployee } from '../../services/hr-checklists'
+import { EMPLOYEE_TYPES, type Employee, type EmployeeType } from '../../domain/hr-checklists'
 
 /* ---------------- Create employee ---------------- */
 
+/**
+ * Заведение и правка сотрудника — одна форма.
+ *
+ * Передан `employee` — режим редактирования (`updateEmployee`), нет — создание.
+ * `updateEmployee` лежал в сервисе с самого начала, но формы к нему не было, поэтому
+ * «Edit Employee» из исходной версии у нас не работал.
+ */
 export function CreateEmployeeDialog({
   onClose,
   onCreated,
+  employee,
 }: {
   onClose: () => void
   onCreated: (employeeId: string) => void
+  employee?: Employee
 }) {
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [type, setType] = useState<EmployeeType>('Office employee')
-  const [startDate, setStartDate] = useState('')
-  const [terminationDate, setTerminationDate] = useState('')
+  const editing = !!employee
+  const [firstName, setFirstName] = useState(employee?.first_name ?? '')
+  const [lastName, setLastName] = useState(employee?.last_name ?? '')
+  const [type, setType] = useState<EmployeeType>((employee?.employee_type as EmployeeType) ?? 'Office employee')
+  const [startDate, setStartDate] = useState(employee?.start_date ?? '')
+  const [terminationDate, setTerminationDate] = useState(employee?.termination_date ?? '')
 
   const createM = useMutation({
-    mutationFn: () =>
-      createEmployee({
+    mutationFn: async () => {
+      if (employee) {
+        await updateEmployee(employee.id, {
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          employee_type: type,
+          start_date: startDate || null,
+          termination_date: terminationDate || null,
+        })
+        return employee
+      }
+      return createEmployee({
         first_name: firstName,
         last_name: lastName,
         employee_type: type,
         start_date: startDate || undefined,
         termination_date: terminationDate || null,
-      }),
+      })
+    },
     onSuccess: (emp) => onCreated(emp.id),
   })
 
@@ -37,7 +58,7 @@ export function CreateEmployeeDialog({
   return (
     <Modal
       open
-      title="Create New Employee"
+      title={editing ? 'Edit Employee' : 'Create New Employee'}
       onClose={onClose}
       footer={
         <>
@@ -45,7 +66,7 @@ export function CreateEmployeeDialog({
             Cancel
           </Button>
           <Button variant="blue" disabled={!valid || createM.isPending} onClick={() => createM.mutate()}>
-            Create Employee
+            {createM.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Create Employee'}
           </Button>
         </>
       }

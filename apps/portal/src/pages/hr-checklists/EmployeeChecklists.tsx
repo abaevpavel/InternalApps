@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileDown, Plus } from 'lucide-react'
+import { FileDown, Maximize2, Plus } from 'lucide-react'
 import { Button, Card, Field, Input, Modal, PageTitle } from '../../components/ui'
 import { errMsg } from '../../lib/utils'
 import { SearchableCombobox } from './SearchableCombobox'
@@ -9,7 +9,6 @@ import { CreateEmployeeDialog, AddChecklistDialog } from './HrDialogs'
 import { AssignedChecklistSection } from './AssignedChecklistSection'
 import { generateEmployeeChecklistPdf } from './ChecklistPDF'
 import {
-  assignChecklist,
   listChecklists,
   listEmployeeChecklists,
   listEmployees,
@@ -45,13 +44,21 @@ export function EmployeeChecklistsPage() {
     [checklistsQ.data],
   )
 
-  const assignM = useMutation({
-    mutationFn: (checklistId: string) => assignChecklist(selectedEmployeeId!, checklistId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['hr-employee-checklists', selectedEmployeeId] }),
-  })
+  // Тот же порядок, что на странице сотрудника — по названию чек-листа.
+  const sortedAssignments = useMemo(
+    () =>
+      [...(assignmentsQ.data ?? [])].sort((a, b) =>
+        (checklistById.get(a.checklist_id)?.name ?? '').localeCompare(
+          checklistById.get(b.checklist_id)?.name ?? '',
+          undefined,
+          { numeric: true, sensitivity: 'base' },
+        ),
+      ),
+    [assignmentsQ.data, checklistById],
+  )
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-10 sm:px-6">
       <PageTitle title="HR Checklists" subtitle="Onboarding & offboarding checklists per employee" />
 
       {/* Employees */}
@@ -67,7 +74,10 @@ export function EmployeeChecklistsPage() {
           <SearchableCombobox
             className="max-w-md flex-1"
             value={selectedEmployeeId}
-            onChange={setSelectedEmployeeId}
+            onChange={(id) => {
+              setSelectedEmployeeId(id)
+              nav(`/checklists/${id}`)
+            }}
             placeholder="Select employee…"
             searchPlaceholder="Search employees…"
             options={(employeesQ.data ?? []).map((e) => ({ value: e.id, label: fullName(e), sub: e.employee_type }))}
@@ -88,16 +98,12 @@ export function EmployeeChecklistsPage() {
           <SearchableCombobox
             className="max-w-md flex-1"
             value={null}
-            onChange={(id) => (selectedEmployeeId ? assignM.mutate(id) : nav(`/checklist/${id}`))}
+            onChange={(id) => nav(`/checklist/${id}`)}
             placeholder="Select checklist…"
             searchPlaceholder="Search checklists…"
             options={(checklistsQ.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
           />
-          <span className="text-xs text-gray-400">
-            {selectedEmployeeId ? 'Assigns to selected employee' : 'Opens the checklist to edit'}
-          </span>
         </div>
-        {assignM.error && <p className="mt-2 text-sm text-red-600">{errMsg(assignM.error)}</p>}
       </Card>
 
       {/* Assigned checklists for the selected employee */}
@@ -105,11 +111,18 @@ export function EmployeeChecklistsPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-lg font-bold text-gray-900">{fullName(employee)} — assigned checklists</h2>
-            {(assignmentsQ.data ?? []).length > 0 && (
-              <Button variant="subtle" onClick={() => setShowPdf(true)}>
-                <FileDown size={16} /> Generate PDF
-              </Button>
-            )}
+            <div className="flex gap-2">
+              {(assignmentsQ.data ?? []).length > 0 && (
+                <>
+                  <Button variant="blue" onClick={() => nav(`/checklists/${selectedEmployeeId}`)}>
+                    <Maximize2 size={16} /> Open full view
+                  </Button>
+                  <Button variant="subtle" onClick={() => setShowPdf(true)}>
+                    <FileDown size={16} /> Generate PDF
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
           {assignmentsQ.isLoading ? (
             <div className="py-8 text-center text-gray-400">Loading…</div>
@@ -118,7 +131,7 @@ export function EmployeeChecklistsPage() {
               No checklists assigned. Pick one above to assign.
             </Card>
           ) : (
-            (assignmentsQ.data ?? []).map((a) => (
+            sortedAssignments.map((a) => (
               <AssignedChecklistSection
                 key={a.id}
                 employeeId={selectedEmployeeId}
@@ -162,7 +175,7 @@ export function EmployeeChecklistsPage() {
               checklistById,
               progress: progressQ.data ?? [],
               completedBy,
-              dateStr: new Date().toLocaleDateString(),
+              dateStr: new Date().toLocaleDateString('en-US'),
             })
             setShowPdf(false)
           }}
@@ -172,7 +185,7 @@ export function EmployeeChecklistsPage() {
   )
 }
 
-function PdfDialog({ onClose, onGenerate }: { onClose: () => void; onGenerate: (completedBy: string) => Promise<void> }) {
+export function PdfDialog({ onClose, onGenerate }: { onClose: () => void; onGenerate: (completedBy: string) => Promise<void> }) {
   const [completedBy, setCompletedBy] = useState('')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)

@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, FileText, Send, UploadCloud, X } from 'lucide-react'
-import { Button, Card, PageTitle } from '../../components/ui'
+import { useQuery } from '@tanstack/react-query'
+import { Button, Card, PageTitle, StatusBadge, Tabs } from '../../components/ui'
 import { SearchableCombobox, type ComboOption } from '../hr-checklists/SearchableCombobox'
 import { cn, errMsg } from '../../lib/utils'
 import {
   listProjects,
+  listSends,
   sendSchedule,
   uploadScheduleFile,
   type ScheduleProject,
+  type ScheduleSend,
   type UploadedFile,
 } from '../../services/buildertrend-schedule'
 
@@ -30,6 +33,7 @@ export function SendBuildertrendSchedulePage() {
   const [dragOver, setDragOver] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [status, setStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
+  const [tab, setTab] = useState<'send' | 'history'>('send')
   const inputRef = useRef<HTMLInputElement>(null)
   const picksRef = useRef<FilePick[]>([])
   picksRef.current = picks
@@ -101,9 +105,22 @@ export function SendBuildertrendSchedulePage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-10 sm:px-6">
       <PageTitle title="Send Buildertrend Schedule" subtitle="Pick a project, attach the schedule (PDF or photos), and submit." />
 
+      <Tabs<'send' | 'history'>
+        className="mb-6 max-w-xs"
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { key: 'send', label: 'Send' },
+          { key: 'history', label: 'History' },
+        ]}
+      />
+
+      {tab === 'history' && <HistoryTab />}
+
+      {tab === 'send' && (
       <Card className="p-6">
         {/* Шаг 1 — проект */}
         <label className="mb-1.5 block text-sm font-semibold text-gray-900">
@@ -214,6 +231,63 @@ export function SendBuildertrendSchedulePage() {
           </div>
         )}
       </Card>
+      )}
+    </div>
+  )
+}
+
+/**
+ * История отправок. Раньше от отправки не оставалось следа: в базу приложение не писало,
+ * а в бакете лежал файл под случайным uuid — без проекта, автора и отметки, что его
+ * отправили. Теперь каждая попытка пишется в `bts_sends`, включая неудачные.
+ */
+function HistoryTab() {
+  const q = useQuery({ queryKey: ['bts-sends'], queryFn: () => listSends(100) })
+
+  if (q.isLoading) return <Card className="px-6 py-12 text-center text-sm text-gray-400">Loading…</Card>
+  if (q.error) return <Card className="px-6 py-12 text-center text-sm text-red-600">{errMsg(q.error)}</Card>
+
+  const rows = q.data ?? []
+  if (rows.length === 0) {
+    return (
+      <Card className="px-6 py-12 text-center text-sm text-gray-400">
+        Nothing sent yet. History starts from the first submission after this update.
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {rows.map((r: ScheduleSend) => (
+        <Card key={r.id} className="p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-gray-900">{r.project_name}</span>
+                <StatusBadge tone={r.status === 'sent' ? 'success' : 'danger'}>
+                  {r.status === 'sent' ? 'Sent' : 'Failed'}
+                </StatusBadge>
+              </div>
+              <div className="mt-1 text-xs text-gray-500">{new Date(r.sent_at).toLocaleString('en-US')}</div>
+              {r.error && <div className="mt-1 text-xs text-red-600">{r.error}</div>}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(r.files ?? []).map((f, i) => (
+                <a
+                  key={i}
+                  href={f.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  <FileText size={13} className="text-gray-400" />
+                  {f.name}
+                </a>
+              ))}
+            </div>
+          </div>
+        </Card>
+      ))}
     </div>
   )
 }

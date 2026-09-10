@@ -6,7 +6,7 @@ import { errMsg } from '../../lib/utils'
 import { useAuth } from '../../auth/AuthProvider'
 import { loadBundle, saveChanges } from '../../services/gmb'
 import {
-  CTA_OPTIONS, GMB_TZ_LABEL, SECTION_ORDER, SECTION_TITLES, WEEKDAYS,
+  CTA_OPTIONS, GMB_TZ_LABEL, MIN_STARS_OPTIONS, SECTION_ORDER, SECTION_TITLES, WEEKDAYS,
   asRange, asString, asStringList, asTopics, buildCron, describeCron, fieldMeta, fieldRank, normalizeValue,
   parseCron, sameValue, validateValue,
   type GmbRegion, type GmbSection, type GmbSettingKey, type GmbTopic,
@@ -87,7 +87,7 @@ export function GmbAgentSettingsPage() {
   const sectionKeys = keys.filter((k) => k.section === tab).sort((a, b) => fieldRank(a.key) - fieldRank(b.key))
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10 pb-32">
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-10 pb-32 sm:px-6">
       <PageTitle
         title="GMB Agent — Settings"
         subtitle="What the Google Business Profile agent says and when it runs. Saved values are the values the agent runs with."
@@ -152,7 +152,7 @@ function AgentHeartbeat({
   if (!last) return null
   return (
     <p className="mb-4 text-xs text-gray-400">
-      The agent last reported at {new Date(last).toLocaleString()}. It picks changes up on its next
+      The agent last reported at {new Date(last).toLocaleString('en-US')}. It picks changes up on its next
       poll — about two minutes.
     </p>
   )
@@ -167,7 +167,7 @@ function AppliedStatus({ status }: { status: { appliedAt: string | null; applied
           {status.appliedError ? 'Not applied' : 'Applied'}
         </StatusBadge>
         <span className="text-gray-500">
-          {status.appliedAt ? `Agent last picked the settings up at ${new Date(status.appliedAt).toLocaleString()}` : 'The agent has not reported yet.'}
+          {status.appliedAt ? `Agent last picked the settings up at ${new Date(status.appliedAt).toLocaleString('en-US')}` : 'The agent has not reported yet.'}
         </span>
       </div>
       {status.appliedError && (
@@ -247,6 +247,18 @@ function ValueControl({
     case 'text_list':
       return <TextListControl value={asStringList(value)} onChange={onChange} maxChars={meta.maxChars} />
     case 'number':
+      // Пять фиксированных вариантов вместо свободного числа. Значение остаётся
+      // ЧИСЛОМ: Dropdown работает со строками, поэтому гоняем через String/Number.
+      if (entry.key === 'auto_reply_min_stars') {
+        return (
+          <Dropdown
+            className="max-w-xs"
+            value={String(value ?? 1)}
+            onChange={(v) => onChange(Number(v))}
+            options={MIN_STARS_OPTIONS.map((o) => ({ value: String(o.value), label: `${o.value} — ${o.label}` }))}
+          />
+        )
+      }
       return (
         <div className="flex items-center gap-2">
           <Input

@@ -20,6 +20,7 @@ const TemplateEditorPage = lazy(() => import('../pages/production-checklist/Prod
 const ProjectChecklistPage = lazy(() => import('../pages/production-checklist/ProjectChecklistPage').then((m) => ({ default: m.ProjectChecklistPage })))
 const EmployeeChecklistsPage = lazy(() => import('../pages/hr-checklists/EmployeeChecklists').then((m) => ({ default: m.EmployeeChecklistsPage })))
 const ChecklistDetailPage = lazy(() => import('../pages/hr-checklists/ChecklistDetail').then((m) => ({ default: m.ChecklistDetailPage })))
+const EmployeeChecklistPage = lazy(() => import('../pages/hr-checklists/EmployeeChecklistPage').then((m) => ({ default: m.EmployeeChecklistPage })))
 const GmailAutoSenderPage = lazy(() => import('../pages/gmail-sender/GmailAutoSender').then((m) => ({ default: m.GmailAutoSenderPage })))
 const SalesEmailSenderPage = lazy(() => import('../pages/sales/SalesEmailSender').then((m) => ({ default: m.SalesEmailSenderPage })))
 const HRSyncAirtablePage = lazy(() => import('../pages/hr-sync/HRSyncAirtable').then((m) => ({ default: m.HRSyncAirtablePage })))
@@ -88,6 +89,7 @@ function Shell() {
           <Route path="/production-checklist/project/:projectId" element={<ProjectChecklistPage />} />
           <Route path="/production-checklist/:id" element={<TemplateEditorPage />} />
           <Route path="/checklists" element={<EmployeeChecklistsPage />} />
+          <Route path="/checklists/:employeeId" element={<EmployeeChecklistPage />} />
           <Route path="/checklist/:id" element={<ChecklistDetailPage />} />
           <Route path="/gmail-auto-sender" element={<GmailAutoSenderPage />} />
           <Route path="/sales-email-sender" element={<SalesEmailSenderPage />} />

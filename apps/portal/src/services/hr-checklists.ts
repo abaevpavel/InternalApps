@@ -131,6 +131,18 @@ export async function deleteChecklist(id: string): Promise<void> {
 }
 
 /** Дублировать шаблон вместе с деревом. task_id РЕГЕНЕРИРУЕТСЯ (как в оригинале). */
+/**
+ * Копия чек-листа вместе с деревом пунктов.
+ *
+ * Раньше все пункты вставлялись плоско с `parent_id: null`, а вторым проходом им
+ * проставлялись родители — причём результат этого прохода не проверялся вовсе
+ * (`update` без `.select()` и без чтения `error`). Стоило ему не отработать, и копия
+ * оставалась плоским списком без уровней, молча.
+ *
+ * Теперь вставляем по уровням: сначала корни, потом их детей с уже известными
+ * `parent_id`, и так вглубь. Связи проставляются в момент вставки, второго прохода нет,
+ * а ошибка на любом уровне прерывает копирование с внятным текстом.
+ */
 export async function duplicateChecklist(id: string): Promise<Checklist> {
   const src = await getChecklist(id)
   if (!src) throw new Error('Checklist not found')
@@ -143,31 +155,43 @@ export async function duplicateChecklist(id: string): Promise<Checklist> {
   if (!items.length) return copy
 
   const sb = requireSupabase()
-  const idMap = new Map<string, string>()
+  const childrenOf = new Map<string | null, ChecklistItem[]>()
   for (const it of items) {
-    const { data, error } = await sb
-      .from('checklist_items')
-      .insert({
-        checklist_id: copy.id,
-        task_id: makeTaskId(),
-        label: it.label,
-        description: it.description,
-        links: it.links ?? [],
-        photos: it.photos ?? [],
-        answer_options: it.answer_options ?? [],
-        parent_id: null,
-        sort_order: it.sort_order,
-      })
-      .select('id')
-      .single()
-    if (error) throw error
-    idMap.set(it.id, (data as { id: string }).id)
+    const key = it.parent_id ?? null
+    childrenOf.set(key, [...(childrenOf.get(key) ?? []), it])
   }
-  for (const it of items) {
-    if (!it.parent_id) continue
-    const newId = idMap.get(it.id)!
-    const newParent = idMap.get(it.parent_id)
-    if (newParent) await sb.from('checklist_items').update({ parent_id: newParent }).eq('id', newId)
+
+  // Уровень за уровнем: на каждом шаге родители уже созданы и их новые id известны.
+  let level = childrenOf.get(null) ?? []
+  const idMap = new Map<string, string>()
+
+  while (level.length) {
+    const rows = level.map((it) => ({
+      checklist_id: copy.id,
+      task_id: makeTaskId(),
+      label: it.label,
+      description: it.description,
+      links: it.links ?? [],
+      photos: it.photos ?? [],
+      answer_options: it.answer_options ?? [],
+      parent_id: it.parent_id ? (idMap.get(it.parent_id) ?? null) : null,
+      sort_order: it.sort_order,
+    }))
+
+    const { data, error } = await sb.from('checklist_items').insert(rows).select('id')
+    if (error) throw new Error(`Copy failed while inserting items: ${error.message}`)
+    const created = (data ?? []) as { id: string }[]
+    if (created.length !== level.length) {
+      throw new Error(`Copy failed: expected ${level.length} items, database returned ${created.length}`)
+    }
+    // insert(...).select() отдаёт строки в порядке переданного массива.
+    level.forEach((it, i) => idMap.set(it.id, created[i].id))
+
+    level = level.flatMap((it) => childrenOf.get(it.id) ?? [])
+  }
+
+  if (idMap.size !== items.length) {
+    throw new Error(`Copy incomplete: ${idMap.size} of ${items.length} items were created`)
   }
   return copy
 }

@@ -82,6 +82,54 @@ export async function uploadScheduleFile(file: File): Promise<UploadedFile> {
  * POST JotForm-совместимой обёртки на Make-вебхук. Значимая часть — строка `rawRequest`
  * с полями `project` и `input119` (см. шапку файла).
  */
+export interface ScheduleSend {
+  id: string
+  project_name: string
+  files: UploadedFile[]
+  sent_by: string | null
+  sent_at: string
+  status: 'sent' | 'failed'
+  error: string | null
+}
+
+/** История отправок, свежие сверху. */
+export async function listSends(limit = 100): Promise<ScheduleSend[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb
+    .from('bts_sends')
+    .select('*')
+    .order('sent_at', { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return (data ?? []) as ScheduleSend[]
+}
+
+/**
+ * Записать попытку отправки. Пишем и неудачные: без этого ошибка вебхука видна только
+ * на экране и исчезает вместе с ним, а вопрос «уходило ли расписание» остаётся без ответа.
+ * Сбой записи истории не должен ронять саму отправку — она уже состоялась.
+ */
+async function logSend(
+  project: string,
+  files: UploadedFile[],
+  status: 'sent' | 'failed',
+  errorText?: string,
+): Promise<void> {
+  try {
+    const sb = requireSupabase()
+    const { data: auth } = await sb.auth.getSession()
+    await sb.from('bts_sends').insert({
+      project_name: project,
+      files,
+      sent_by: auth.session?.user?.id ?? null,
+      status,
+      error: errorText ?? null,
+    })
+  } catch {
+    // намеренно молча: история — вспомогательная, отправку она не отменяет
+  }
+}
+
 export async function sendSchedule(args: { project: ScheduleProject; files: UploadedFile[] }): Promise<void> {
   const webhook = await resolveString('buildertrend-schedule', 'schedule_webhook', MAKE_WEBHOOK)
   if (!webhook) throw new Error('Buildertrend schedule webhook is not configured (App Settings → Webhooks or .env)')
@@ -114,10 +162,23 @@ export async function sendSchedule(args: { project: ScheduleProject; files: Uplo
     sent_at: new Date().toISOString(),
   }
 
-  const res = await fetch(webhook, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  })
-  if (!res.ok) throw new Error(`Make webhook error: HTTP ${res.status}`)
+  let res: Response
+  try {
+    res = await fetch(webhook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  } catch (e) {
+    await logSend(args.project.name, args.files, 'failed', e instanceof Error ? e.message : String(e))
+    throw e
+  }
+
+  if (!res.ok) {
+    const msg = `Make webhook error: HTTP ${res.status}`
+    await logSend(args.project.name, args.files, 'failed', msg)
+    throw new Error(msg)
+  }
+
+  await logSend(args.project.name, args.files, 'sent')
 }

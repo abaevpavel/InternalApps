@@ -24,6 +24,8 @@ const styles = StyleSheet.create({
   mark: { width: 34, fontFamily: 'Helvetica-Bold' },
   label: { flex: 1 },
   group: { fontFamily: 'Helvetica-Bold' },
+  na: { color: '#9ca3af' },
+  progress: { fontSize: 9, color: '#6b7280', marginBottom: 6 },
   footer: { position: 'absolute', bottom: 24, left: 36, right: 36, fontSize: 8, color: '#9ca3af', textAlign: 'center' },
 })
 
@@ -37,6 +39,9 @@ interface Section {
   name: string
   tree: ItemNode[]
   statusByTask: Record<string, Status>
+  done: number
+  total: number
+  percent: number
 }
 
 function Nodes({ nodes, statusByTask, depth }: { nodes: ItemNode[]; statusByTask: Record<string, Status>; depth: number }) {
@@ -44,11 +49,22 @@ function Nodes({ nodes, statusByTask, depth }: { nodes: ItemNode[]; statusByTask
     <>
       {nodes.map((n) => {
         const isLeaf = n.children.length === 0
+        // Отметка нужна и родителю: у него есть собственная строка прогресса, и на
+        // экране он тоже с чекбоксом. Раньше в PDF родители шли без статуса вовсе.
+        const st = statusByTask[n.task_id] ?? 'unchecked'
         return (
-          <View key={n.id}>
+          <View key={n.id} wrap={false}>
             <View style={[styles.row, { marginLeft: depth * 14 }]}>
-              <Text style={styles.mark}>{isLeaf ? mark(statusByTask[n.task_id] ?? 'unchecked') : ''}</Text>
-              <Text style={[styles.label, ...(isLeaf ? [] : [styles.group])]}>{n.label}</Text>
+              <Text style={styles.mark}>{mark(st)}</Text>
+              <Text
+                style={[
+                  styles.label,
+                  ...(isLeaf ? [] : [styles.group]),
+                  ...(st === 'not_applicable' ? [styles.na] : []),
+                ]}
+              >
+                {n.label}
+              </Text>
             </View>
             {n.children.length > 0 && <Nodes nodes={n.children} statusByTask={statusByTask} depth={depth + 1} />}
           </View>
@@ -78,8 +94,11 @@ function ReportDoc({
         </Text>
         {sections.length === 0 && <Text>No checklists assigned.</Text>}
         {sections.map((s, i) => (
-          <View key={i} style={styles.section} wrap={false}>
+          <View key={i} style={styles.section} break={i > 0}>
             <Text style={styles.h2}>{s.name}</Text>
+            <Text style={styles.progress}>
+              {s.done} of {s.total} tasks · {s.percent}%
+            </Text>
             <Nodes nodes={s.tree} statusByTask={s.statusByTask} depth={0} />
           </View>
         ))}
@@ -107,7 +126,19 @@ export async function generateEmployeeChecklistPdf(args: {
       if (p.phase !== a.checklist_id) continue
       statusByTask[p.task_id] = p.is_not_applicable ? 'not_applicable' : p.completed ? 'checked' : 'unchecked'
     }
-    sections.push({ name: args.checklistById.get(a.checklist_id)?.name ?? 'Checklist', tree, statusByTask })
+    // Прогресс считаем так же, как на экране: все узлы, N/A вне знаменателя,
+    // выполненным считается только `checked`.
+    const all = items.map((it) => statusByTask[it.task_id] ?? 'unchecked')
+    const counted = all.filter((st) => st !== 'not_applicable')
+    const done = counted.filter((st) => st === 'checked').length
+    sections.push({
+      name: args.checklistById.get(a.checklist_id)?.name ?? 'Checklist',
+      tree,
+      statusByTask,
+      done,
+      total: counted.length,
+      percent: counted.length ? Math.round((done / counted.length) * 100) : 0,
+    })
   }
 
   const blob = await pdf(
@@ -118,6 +149,9 @@ export async function generateEmployeeChecklistPdf(args: {
   const link = document.createElement('a')
   link.href = url
   link.download = `${fullName(args.employee).replace(/\s+/g, '_')}_checklists.pdf`
+  document.body.appendChild(link)
   link.click()
-  URL.revokeObjectURL(url)
+  link.remove()
+  // Отзываем не сразу: часть браузеров не успевает начать скачивание.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }

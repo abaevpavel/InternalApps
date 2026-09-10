@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { ArrowLeft, Eye, GripVertical, ImagePlus, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Eye, GripVertical, ImagePlus, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button, Card, Modal } from '../../components/ui'
 import { cn, errMsg } from '../../lib/utils'
 import { ItemEditDialog, type ItemPatch } from './ItemEditDialog'
@@ -116,11 +116,7 @@ export function TemplateEditorPage() {
   if (templateQ.isLoading || itemsQ.isLoading) return <div className="p-10 text-gray-400">Loading…</div>
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <button onClick={() => nav('/production-checklist')} className="mb-6 inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800">
-        <ArrowLeft size={16} /> Back
-      </button>
-
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-8 sm:px-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{templateQ.data?.name ?? 'Template'}</h1>

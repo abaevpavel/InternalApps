@@ -18,7 +18,7 @@ export function MyApplicationsPage() {
   })
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-10">
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-10 sm:px-6">
       <div className="mb-10 text-center">
         <h2 className="text-4xl font-bold tracking-tight text-gray-900">My Applications</h2>
         <p className="mt-2 text-gray-500">Access your workplace applications and tools</p>

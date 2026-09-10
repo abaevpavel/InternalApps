@@ -15,7 +15,7 @@ export function PortalSettingsPage() {
   const [tab, setTab] = useState<Tab>('users')
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-8 sm:px-6">
       <Tabs<Tab>
         className="mb-8 w-fit"
         value={tab}

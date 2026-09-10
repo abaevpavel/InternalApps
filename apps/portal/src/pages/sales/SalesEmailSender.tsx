@@ -216,7 +216,7 @@ export function SalesEmailSenderPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-8 sm:px-6">
       <Card className="p-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900">
@@ -282,7 +282,7 @@ export function SalesEmailSenderPage() {
         {sentAt && (
           <div className="mt-4 flex items-center justify-end gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
             <CheckCircle2 size={15} className="shrink-0" />
-            Sent to the make.com webhook at {sentAt.toLocaleTimeString()}. It delivers the email to the
+            Sent to the make.com webhook at {sentAt.toLocaleTimeString('en-US')}. It delivers the email to the
             recipient list from Airtable.
           </div>
         )}

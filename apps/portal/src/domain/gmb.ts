@@ -72,6 +72,20 @@ export const SECTION_TITLES: Record<GmbSection, string> = {
 
 export const SECTION_ORDER: GmbSection[] = ['reviews', 'posts', 'listings', 'general']
 
+/**
+ * «Reply only to reviews rated» — минимальная оценка, на которую агент отвечает.
+ * Пять целых значений: свободное число позволяло сохранить то, что агент отвергнет
+ * (3.5 или строку), а отвергнутое значение тянет за собой и остальные правки того же
+ * сохранения.
+ */
+export const MIN_STARS_OPTIONS = [
+  { value: 1, label: 'Reply to every review' },
+  { value: 2, label: '2 stars and up' },
+  { value: 3, label: '3 stars and up' },
+  { value: 4, label: '4 stars and up' },
+  { value: 5, label: '5-star reviews only' },
+] as const
+
 export const CTA_OPTIONS = [
   { value: 'LEARN_MORE', label: 'Learn more' },
   { value: 'BOOK', label: 'Book' },
@@ -106,6 +120,12 @@ export const FIELDS: Record<string, GmbFieldMeta> = {
     hint: 'Who is speaking. Plain text — replies are published to Google, which does not render markdown.',
     rows: 5,
     maxChars: 600,
+  },
+  auto_reply_min_stars: {
+    label: 'Reply only to reviews rated',
+    hint: 'Whole stars, 1–5. Applies from the next review run.',
+    min: 1,
+    max: 5,
   },
   tone_positive: { label: 'Tone — positive review', hint: 'Warm and specific, 1–3 sentences, no upsell.', rows: 3, maxChars: 400 },
   tone_neutral: { label: 'Tone — neutral review', hint: 'Acknowledge honestly, invite them to get in touch. 2–4 sentences.', rows: 3, maxChars: 400 },
@@ -182,7 +202,7 @@ export const FIELDS: Record<string, GmbFieldMeta> = {
  * Ключ, которого здесь нет (появился в каталоге позже кода), уходит в конец своей секции.
  */
 const FIELD_ORDER: string[] = [
-  'reviews_voice', 'tone_positive', 'tone_neutral', 'tone_negative', 'reviews_signature',
+  'reviews_voice', 'auto_reply_min_stars', 'tone_positive', 'tone_neutral', 'tone_negative', 'reviews_signature',
   'reviews_forbidden', 'reviews_max_chars', 'reviews_cron', 'employee_names',
   'posts_topic_guidance', 'posts_voice', 'posts_length_words', 'posts_max_chars',
   'posts_cta_default', 'posts_forbidden', 'posts_examples', 'posts_cron', 'post_topics',
@@ -382,6 +402,7 @@ export function validateValue(
     case 'number': {
       const n = Number(value)
       if (!Number.isFinite(n)) return 'Must be a number.'
+      if (key === 'auto_reply_min_stars' && !Number.isInteger(n)) return 'Whole stars only.'
       if (meta.min !== undefined && n < meta.min) return `Must be at least ${meta.min}.`
       if (meta.max !== undefined && n > meta.max) return `Must be at most ${meta.max}.`
       return null

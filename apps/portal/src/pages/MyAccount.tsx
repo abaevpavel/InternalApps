@@ -41,7 +41,7 @@ export function MyAccountPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-10 sm:px-6">
       <Card className="flex items-center gap-8 p-8">
         <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-purple-100 text-2xl font-semibold text-purple-700">
           {initials(name, profile.email)}

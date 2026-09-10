@@ -145,7 +145,7 @@ export const APPS: AppConfig[] = [
     ],
     resources: {
       database: SUPABASE,
-      tables: ['— no own tables; project list comes live from Airtable via edge function'],
+      tables: ['bts_sends (send history)'],
       storageBuckets: ['buildertrend-schedule-photos'],
       edgeFunctions: ['list-schedule-projects (Airtable "General Project Info" proxy → project dropdown)'],
       external: [

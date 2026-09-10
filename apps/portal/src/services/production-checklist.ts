@@ -37,6 +37,20 @@ export async function getProject(id: string): Promise<Project | null> {
 
 /* ================= Templates (production_checklists) ================= */
 
+/**
+ * Удалить проект. Только для админа — гейт стоит и в UI, и в RLS
+ * (`projects` пишет админ либо тот, кому выдана апка).
+ *
+ * Связанные строки (`project_checklists`, `project_checklist_progress`) уходят каскадом
+ * по внешним ключам; если каскада в схеме нет, удаление упадёт с ошибкой FK, и это
+ * лучше, чем оставить осиротевший прогресс.
+ */
+export async function deleteProject(id: string): Promise<void> {
+  const sb = requireSupabase()
+  const { error } = await sb.from('projects').delete().eq('id', id)
+  if (error) throw error
+}
+
 export async function listTemplates(): Promise<ChecklistTemplate[]> {
   const sb = requireSupabase()
   const { data, error } = await sb.from('production_checklists').select('*').order('created_at')
@@ -207,7 +221,13 @@ export async function reorderItems(updates: { id: string; parent_id: string | nu
 
 export async function listProjectLinks(projectId: string): Promise<ProjectChecklistLink[]> {
   const sb = requireSupabase()
-  const { data, error } = await sb.from('project_checklists').select('*').eq('project_id', projectId)
+  // Свежие первыми: если у проекта почему-то осталось несколько связей, актуальной
+  // считается последняя назначенная, а не та, которую Postgres вернул первой.
+  const { data, error } = await sb
+    .from('project_checklists')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('assigned_at', { ascending: false, nullsFirst: false })
   if (error) throw error
   return (data ?? []) as ProjectChecklistLink[]
 }
@@ -215,12 +235,15 @@ export async function listProjectLinks(projectId: string): Promise<ProjectCheckl
 /** Все назначения (для списка проектов: показать назначенный шаблон в дропдауне). */
 export async function listAllProjectLinks(): Promise<ProjectChecklistLink[]> {
   const sb = requireSupabase()
-  const { data, error } = await sb.from('project_checklists').select('*')
+  const { data, error } = await sb
+    .from('project_checklists')
+    .select('*')
+    .order('assigned_at', { ascending: false, nullsFirst: false })
   if (error) throw error
   return (data ?? []) as ProjectChecklistLink[]
 }
 
-/** Назначенный проекту шаблон (первый из линков). */
+/** Назначенный проекту шаблон — последний назначенный. */
 export async function getAssignedTemplateId(projectId: string): Promise<string | null> {
   const links = await listProjectLinks(projectId)
   return links[0]?.checklist_id ?? null
@@ -229,7 +252,11 @@ export async function getAssignedTemplateId(projectId: string): Promise<string |
 /** Назначить проекту шаблон (заменяет существующие линки). */
 export async function assignTemplate(projectId: string, checklistId: string, assignedBy?: string): Promise<void> {
   const sb = requireSupabase()
-  await sb.from('project_checklists').delete().eq('project_id', projectId)
+  // Результат удаления раньше не проверялся: если строку снести не удавалось, старая
+  // связь оставалась, новая добавлялась рядом, и проект оказывался с двумя шаблонами —
+  // а показывался и открывался тот, который Postgres вернул первым.
+  const { error: delErr } = await sb.from('project_checklists').delete().eq('project_id', projectId)
+  if (delErr) throw delErr
   const { error } = await sb.from('project_checklists').insert({
     project_id: projectId,
     checklist_id: checklistId,

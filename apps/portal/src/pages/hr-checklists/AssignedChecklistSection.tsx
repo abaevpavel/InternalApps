@@ -1,12 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, MessageSquare, Pencil, Trash2, Upload } from 'lucide-react'
+import {
+  ChevronDown, ChevronRight, ExternalLink, Eye, FileText, Image as ImageIcon,
+  FileDown, Pencil, SquarePlus, Target, Trash2, Upload,
+} from 'lucide-react'
 import { Button, Card, Modal, Textarea } from '../../components/ui'
+import { generateEmployeeChecklistPdf } from './ChecklistPDF'
+import { PdfDialog } from './EmployeeChecklists'
 import { cn, errMsg } from '../../lib/utils'
+import { useUnsavedGuard } from '../../lib/useUnsavedGuard'
 import { ThreeStateCheckbox } from './ThreeStateCheckbox'
 import {
+  addChecklistPhoto,
+  assignmentPhotoUrl,
+  deleteChecklistPhoto,
   itemPhotoUrl,
+  listChecklistPhotos,
   listItems,
   setManyTaskStates,
   unassignChecklist,
@@ -17,8 +27,10 @@ import {
 import {
   buildTree,
   collectLeaves,
+  flatten,
   nextTriState,
   type Checklist,
+  type Employee,
   type EmployeeChecklist,
   type ItemNode,
   type ProgressRow,
@@ -41,6 +53,8 @@ export function AssignedChecklistSection({
   allProgress,
   onProgressChanged,
   onUnassigned,
+  standalone = false,
+  employee,
 }: {
   employeeId: string
   assignment: EmployeeChecklist
@@ -48,6 +62,14 @@ export function AssignedChecklistSection({
   allProgress: ProgressRow[]
   onProgressChanged: () => void
   onUnassigned: () => void
+  /**
+   * Развёрнутый вид на собственной странице: крупная шапка с прогрессом и тумблерами
+   * вместо строки-аккордеона. В списке назначенных чек-листов секция остаётся свёрнутой —
+   * там их несколько, и разворачивать все сразу нечитаемо.
+   */
+  standalone?: boolean
+  /** Нужен для PDF по этому чек-листу (кнопка в шапке standalone-вида). */
+  employee?: Employee
 }) {
   const nav = useNavigate()
   const phase = assignment.checklist_id // для динамических чек-листов phase = checklistId
@@ -91,8 +113,27 @@ export function AssignedChecklistSection({
     return 'unchecked'
   }
 
-  const doneCount = leaves.filter((l) => triOf(l.task_id) !== 'unchecked').length
-  const percent = leaves.length ? Math.round((doneCount / leaves.length) * 100) : 0
+  /**
+   * Прогресс — как в исходной версии, сверено по данным (34 узла → «17 of 32 · 53%»):
+   *
+   *  1. считаем ВСЕ узлы дерева, а не только листья: родительский пункт — такая же
+   *     строка, у него есть собственная запись прогресса;
+   *  2. статус берём из СВОЕЙ строки узла (`triOf`), а не производный от детей
+   *     (`displayState`) — иначе отмеченный вручную родитель не попадёт в числитель;
+   *  3. N/A убираем из знаменателя: «неприменимо» — это не задача, которую можно
+   *     выполнить. Отсюда 32 вместо 34;
+   *  4. выполненным считается только `completed`, N/A выполнением не является.
+   */
+  const allNodes = useMemo(() => tree.flatMap(flatten), [tree])
+  const countedNodes = allNodes.filter((n) => triOf(n.task_id) !== 'not_applicable')
+  const doneCount = countedNodes.filter((n) => triOf(n.task_id) === 'checked').length
+  const percent = countedNodes.length ? Math.round((doneCount / countedNodes.length) * 100) : 0
+
+  // «Hide N/A Items» — убрать с глаз пункты, помеченные как неприменимые: в длинном
+  // чек-листе они шумят, но остаются в прогрессе (N/A считается пройденным).
+  const [hideNA, setHideNA] = useState(false)
+  // «Hide Checklist» — свернуть список, оставив только прогресс.
+  const [hideList, setHideList] = useState(false)
 
   // авто-сворачивание при 100% (одноразово)
   const [open, setOpen] = useState(true)
@@ -106,6 +147,7 @@ export function AssignedChecklistSection({
 
   const [err, setErr] = useState<string | null>(null)
   const [notesTask, setNotesTask] = useState<ItemNode | null>(null)
+  const [showPdf, setShowPdf] = useState(false)
 
   // каскад: клик по узлу → состояние всех листьев поддерева
   async function toggle(node: ItemNode) {
@@ -152,6 +194,120 @@ export function AssignedChecklistSection({
     }
   }
 
+  const body = (
+    <>
+      {itemsQ.isLoading ? (
+        <div className="py-4 text-center text-sm text-gray-400">Loading…</div>
+      ) : tree.length === 0 ? (
+        <div className="py-4 text-center text-sm text-gray-400">This checklist has no items.</div>
+      ) : (
+        <div>
+          {tree.map((n) => (
+            <TaskRow
+              key={n.id}
+              node={n}
+              depth={0}
+              displayState={displayState}
+              triOf={triOf}
+              states={states}
+              onToggle={toggle}
+              onAnswer={setAnswer}
+              onNotes={setNotesTask}
+              hideNA={hideNA}
+            />
+          ))}
+        </div>
+      )}
+
+      {!standalone && (
+        <div className="mt-4 border-t border-gray-100 pt-3">
+          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Checklist notes
+          </label>
+          <AssignmentNotes assignmentId={assignment.id} initial={assignment.notes ?? ''} />
+        </div>
+      )}
+
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+    </>
+  )
+
+  if (standalone) {
+    return (
+      <>
+        <Card className="mb-4 p-6">
+          <div className="mb-1 flex flex-wrap items-start justify-between gap-4">
+            <h1 className="text-2xl font-bold text-gray-900">{checklist?.name ?? 'Checklist'}</h1>
+            <div className="flex items-center gap-5">
+              <Toggle label="Hide N/A Items" icon value={hideNA} onChange={setHideNA} />
+              <Toggle label="Hide Checklist" value={hideList} onChange={setHideList} />
+              {employee && (
+                <Button variant="subtle" onClick={() => setShowPdf(true)} title="PDF for this checklist only">
+                  <FileDown size={15} /> PDF
+                </Button>
+              )}
+            </div>
+          </div>
+          {checklist?.description && <p className="mb-5 text-sm text-gray-500">{checklist.description}</p>}
+
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <Target size={16} className="text-brand-blue" /> Checklist Progress
+            </span>
+            <span className="text-sm text-gray-500">
+              {doneCount} of {countedNodes.length} tasks{' '}
+              <span className="ml-1 text-base font-bold text-brand-blue">{percent}%</span>
+            </span>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+            <div
+              className={cn('h-full rounded-full transition-all', percent === 100 ? 'bg-green-500' : 'bg-brand-blue')}
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        </Card>
+
+        {!hideList && (
+          <Card className="overflow-hidden">
+            <div className="px-5 py-4">{body}</div>
+            <NotesAndPhotos assignmentId={assignment.id} initialNotes={assignment.notes ?? ''} />
+          </Card>
+        )}
+
+        {notesTask && (
+          <TaskNotesDialog
+            node={notesTask}
+            state={states[notesTask.task_id]}
+            onClose={() => setNotesTask(null)}
+            onSave={(notes, photos) => {
+              saveTaskNotes(notesTask.task_id, notes, photos)
+              setNotesTask(null)
+            }}
+          />
+        )}
+
+        {/* PDF по ОДНОМУ чек-листу: общий отчёт по сотруднику остаётся в PDF-кнопке
+            на списке, а здесь выгружается только этот. */}
+        {showPdf && employee && checklist && (
+          <PdfDialog
+            onClose={() => setShowPdf(false)}
+            onGenerate={async (completedBy) => {
+              await generateEmployeeChecklistPdf({
+                employee,
+                assignments: [{ checklist_id: assignment.checklist_id }],
+                checklistById: new Map([[checklist.id, checklist]]),
+                progress: allProgress,
+                completedBy,
+                dateStr: new Date().toLocaleDateString('en-US'),
+              })
+              setShowPdf(false)
+            }}
+          />
+        )}
+      </>
+    )
+  }
+
   return (
     <Card className={cn('overflow-hidden', percent === 100 && 'border-green-200')}>
       <div className={cn('flex items-center gap-3 px-5 py-3', percent === 100 ? 'bg-green-50/60' : 'bg-gray-50')}>
@@ -161,7 +317,7 @@ export function AssignedChecklistSection({
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-gray-900">{checklist?.name ?? 'Checklist'}</div>
           <div className="text-xs text-gray-500">
-            {doneCount}/{leaves.length} · {percent}%
+            {doneCount}/{countedNodes.length} · {percent}%
           </div>
         </div>
         <div className="h-1.5 w-28 overflow-hidden rounded-full bg-gray-200">
@@ -259,6 +415,7 @@ function TaskRow({
   onToggle,
   onAnswer,
   onNotes,
+  hideNA = false,
 }: {
   node: ItemNode
   depth: number
@@ -268,9 +425,19 @@ function TaskRow({
   onToggle: (n: ItemNode) => void
   onAnswer: (n: ItemNode, a: string) => void
   onNotes: (n: ItemNode) => void
+  hideNA?: boolean
 }) {
+  // Скрываем целиком узел, помеченный N/A: для родителя displayState = not_applicable
+  // только когда ВСЕ его листья неприменимы, так что ветка с живыми пунктами не пропадёт.
+  // N/A — это `is_not_applicable` в собственной строке прогресса пункта: тот же признак,
+  // по которому он отображается серым и вычитается из знаменателя. Прячем по нему же,
+  // а не по производному состоянию, иначе ветка со «своими» живыми пунктами исчезала бы
+  // целиком только потому, что все её дети неприменимы.
+  if (hideNA && triOf(node.task_id) === 'not_applicable') return null
   const isLeaf = node.children.length === 0
   const st = states[node.task_id]
+  const state = displayState(node)
+  const ownState = triOf(node.task_id)
   const hasNote = !!(st?.notes || (st?.photos?.length ?? 0) > 0)
   const options = isLeaf ? node.answer_options ?? [] : []
 
@@ -278,10 +445,59 @@ function TaskRow({
     <div>
       <div className="flex items-start gap-2 py-1.5" style={{ paddingLeft: depth * 20 }}>
         <div className="mt-0.5">
-          <ThreeStateCheckbox state={displayState(node)} onClick={() => onToggle(node)} />
+          <ThreeStateCheckbox state={state} onClick={() => onToggle(node)} />
         </div>
         <div className="min-w-0 flex-1">
-          <div className={cn('text-sm', isLeaf ? 'text-gray-800' : 'font-semibold text-gray-900')}>{node.label}</div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span
+              className={cn(
+                'text-sm',
+                isLeaf ? 'text-gray-800' : 'font-semibold text-gray-900',
+                // выполненное и неприменимое зачёркиваем — так же, как в исходной версии
+                state !== 'unchecked' && 'text-gray-400 line-through',
+                ownState === 'not_applicable' && 'text-gray-400',
+              )}
+            >
+              {node.label}
+            </span>
+
+            {/* Кнопка заметок стоит сразу за текстом, а не у правого края: в исходной
+                версии она часть строки, и глаз не бегает через всю ширину. */}
+            {isLeaf && (
+              <button
+                onClick={() => onNotes(node)}
+                className={cn(
+                  'shrink-0 rounded transition',
+                  hasNote ? 'text-accent-600' : 'text-gray-300 hover:text-gray-500',
+                )}
+                title="Notes & photos"
+              >
+                <SquarePlus size={16} />
+              </button>
+            )}
+
+            {/* Индикаторы: у пункта есть заметка или фото. */}
+            {isLeaf && (st?.notes || (st?.photos?.length ?? 0) > 0) && (
+              <span className="flex shrink-0 items-center gap-1.5">
+                {st?.notes && <FileText size={14} className="text-red-500" />}
+                {(st?.photos?.length ?? 0) > 0 && <ImageIcon size={14} className="text-red-500" />}
+              </span>
+            )}
+
+            {/* Ссылки пункта (`links` в модели) — были в данных, но на экран не выводились. */}
+            {(node.links ?? []).map((l, i) => (
+              <a
+                key={i}
+                href={l.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex shrink-0 items-center gap-1 text-sm font-medium uppercase text-red-500 hover:text-red-700 hover:underline"
+              >
+                {l.label}
+                <ExternalLink size={13} />
+              </a>
+            ))}
+          </div>
           {node.description && <div className="text-xs text-gray-500">{node.description}</div>}
           {options.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1.5">
@@ -308,25 +524,7 @@ function TaskRow({
               })}
             </div>
           )}
-          {node.links && node.links.length > 0 && (
-            <div className="mt-1 flex flex-wrap gap-3">
-              {node.links.map((l, i) => (
-                <a key={i} href={l.url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">
-                  {l.label || l.url}
-                </a>
-              ))}
-            </div>
-          )}
         </div>
-        {isLeaf && (
-          <button
-            onClick={() => onNotes(node)}
-            className={cn('shrink-0 rounded p-1 hover:bg-gray-100', hasNote ? 'text-accent-600' : 'text-gray-300 hover:text-gray-500')}
-            title="Notes & photos"
-          >
-            <MessageSquare size={15} />
-          </button>
-        )}
       </div>
       {node.children.map((c) => (
         <TaskRow
@@ -339,6 +537,7 @@ function TaskRow({
           onToggle={onToggle}
           onAnswer={onAnswer}
           onNotes={onNotes}
+          hideNA={hideNA}
         />
       ))}
     </div>
@@ -347,9 +546,37 @@ function TaskRow({
 
 /* ---------------- assignment-level notes ---------------- */
 
+/**
+ * Заметки по назначению. Сохраняются по `onBlur` — но если человек печатает и сразу
+ * закрывает вкладку или жмёт F5, blur не случается и текст пропадает. Поэтому: следим
+ * за несохранённым, при уходе со страницы дописываем сами, при перезагрузке спрашиваем.
+ */
 function AssignmentNotes({ assignmentId, initial }: { assignmentId: string; initial: string }) {
   const [notes, setNotes] = useState(initial)
   const [saving, setSaving] = useState(false)
+  const savedRef = useRef(initial)
+  const notesRef = useRef(initial)
+  notesRef.current = notes
+
+  const save = async () => {
+    if (notesRef.current === savedRef.current) return
+    setSaving(true)
+    try {
+      await updateAssignmentNotes(assignmentId, notesRef.current)
+      savedRef.current = notesRef.current
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  useUnsavedGuard(
+    () => notesRef.current !== savedRef.current,
+    () => void save(),
+  )
+
+  // Уход со страницы — дописываем молча, спрашивать не о чем.
+  useEffect(() => () => void save(), [])
+
   return (
     <Textarea
       rows={2}
@@ -357,15 +584,7 @@ function AssignmentNotes({ assignmentId, initial }: { assignmentId: string; init
       onChange={(e) => setNotes(e.target.value)}
       disabled={saving}
       placeholder="General notes for this checklist…"
-      onBlur={async () => {
-        if (notes === initial) return
-        setSaving(true)
-        try {
-          await updateAssignmentNotes(assignmentId, notes)
-        } finally {
-          setSaving(false)
-        }
-      }}
+      onBlur={() => void save()}
     />
   )
 }
@@ -444,5 +663,129 @@ function TaskNotesDialog({
         {err && <p className="text-sm text-red-600">{err}</p>}
       </div>
     </Modal>
+  )
+}
+
+/** Переключатель как в оригинале: подпись слева, тумблер справа. */
+function Toggle({
+  label, value, onChange, icon,
+}: { label: string; value: boolean; onChange: (v: boolean) => void; icon?: boolean }) {
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-gray-600">
+      {icon && <Eye size={15} className="text-gray-400" />}
+      {label}
+      <button
+        type="button"
+        role="switch"
+        aria-checked={value}
+        onClick={() => onChange(!value)}
+        className={cn(
+          'relative inline-flex h-5 w-9 items-center rounded-full transition',
+          value ? 'bg-brand-blue' : 'bg-gray-200',
+        )}
+      >
+        <span className={cn('inline-block h-3.5 w-3.5 rounded-full bg-white transition', value ? 'translate-x-5' : 'translate-x-1')} />
+      </button>
+    </label>
+  )
+}
+
+/**
+ * Блок «Notes & Photos» под чек-листом: общие заметки по назначению и фото.
+ *
+ * Данные для этого были в сервисе с самого начала (`checklist_photos` + бакет
+ * `checklist-photos`), но на экран не выводились — виден был только текст заметок.
+ */
+function NotesAndPhotos({ assignmentId, initialNotes }: { assignmentId: string; initialNotes: string }) {
+  const [hidden, setHidden] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const photosQ = useQuery({
+    queryKey: ['hr-assignment-photos', assignmentId],
+    queryFn: () => listChecklistPhotos(assignmentId),
+  })
+
+  async function upload(file: File) {
+    setBusy(true)
+    setErr(null)
+    try {
+      await addChecklistPhoto(assignmentId, file)
+      await photosQ.refetch()
+    } catch (e) {
+      setErr(errMsg(e))
+    } finally {
+      setBusy(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  const photos = photosQ.data ?? []
+
+  return (
+    <div className="border-t border-gray-100 bg-gray-50/60 px-5 py-4">
+      <div className="flex items-center justify-between gap-4">
+        <h3 className="font-semibold text-gray-900">Notes &amp; Photos</h3>
+        <Toggle label="Hide Notes & Photos" icon value={hidden} onChange={setHidden} />
+      </div>
+
+      {!hidden && (
+        <>
+          <div className="mt-3">
+            <AssignmentNotes assignmentId={assignmentId} initial={initialNotes} />
+          </div>
+
+          <div className="mt-4 flex items-center justify-between gap-3 border-t border-gray-200 pt-3">
+            <span className="flex items-center gap-2 text-sm font-medium text-gray-700">
+              <ImageIcon size={15} className="text-gray-400" /> Photos ({photos.length})
+            </span>
+            <Button variant="outline" disabled={busy} onClick={() => fileRef.current?.click()}>
+              <Upload size={15} /> {busy ? 'Uploading…' : 'Upload Photo'}
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) upload(f)
+              }}
+            />
+          </div>
+
+          {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+
+          {photos.length === 0 ? (
+            <p className="py-4 text-center text-sm text-gray-400">No photos uploaded yet</p>
+          ) : (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {photos.map((ph) => (
+                <div key={ph.id} className="group relative">
+                  <a href={assignmentPhotoUrl(ph.file_path)} target="_blank" rel="noreferrer">
+                    <img
+                      src={assignmentPhotoUrl(ph.file_path)}
+                      alt={ph.file_name}
+                      className="h-20 w-20 rounded-md border border-gray-200 object-cover"
+                    />
+                  </a>
+                  <button
+                    type="button"
+                    aria-label="Delete photo"
+                    onClick={async () => {
+                      await deleteChecklistPhoto(ph.id, ph.file_path)
+                      photosQ.refetch()
+                    }}
+                    className="absolute -right-1.5 -top-1.5 hidden rounded-full bg-red-500 p-0.5 text-white group-hover:block"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
   )
 }

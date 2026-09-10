@@ -4,6 +4,7 @@ import {
   type ReactNode, type Key,
   useEffect, useRef, useState,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, ChevronDown, Eye, EyeOff } from 'lucide-react'
 import { cn } from '../lib/utils'
 
@@ -111,12 +112,31 @@ export function Dropdown<T extends string>({
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  // Позиция меню в координатах окна: список рендерится порталом в body, иначе внутри
+  // модалки (у неё `overflow-y-auto`) он обрезался и вместо выпадения появлялся скролл.
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  const place = () => {
+    const el = ref.current?.getBoundingClientRect()
+    if (el) setRect({ top: el.bottom + 4, left: el.left, width: el.width })
+  }
+
   useEffect(() => {
     if (!open) return
+    place()
     const onDown = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    // Меню висит вне потока, поэтому при скролле/ресайзе его надо переставлять.
+    const onMove = () => place()
     document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
+    window.addEventListener('scroll', onMove, true)
+    window.addEventListener('resize', onMove)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('scroll', onMove, true)
+      window.removeEventListener('resize', onMove)
+    }
   }, [open])
+
   const current = options.find((o) => o.value === value)
   return (
     <div ref={ref} className={cn('relative', className)}>
@@ -129,8 +149,11 @@ export function Dropdown<T extends string>({
         <span className={cn('truncate', !current && 'text-gray-400')}>{current?.label ?? placeholder ?? 'Select…'}</span>
         <ChevronDown size={15} className={cn('shrink-0 text-gray-400 transition', open && 'rotate-180')} />
       </button>
-      {open && (
-        <div className="absolute left-0 top-full z-40 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+      {open && rect && createPortal(
+        <div
+          style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width }}
+          className="z-[60] max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+        >
           {options.map((o) => {
             const selected = o.value === value
             return (
@@ -145,7 +168,8 @@ export function Dropdown<T extends string>({
               </button>
             )
           })}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

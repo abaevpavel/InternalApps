@@ -12,7 +12,6 @@ import {
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  ArrowLeft,
   ChevronsLeft,
   ChevronsRight,
   Copy,
@@ -97,9 +96,27 @@ export function ChecklistDetailPage() {
   })
 
   const allChecklistsQ = useQuery({ queryKey: ['hr-checklists'], queryFn: listChecklists })
-  const dupM = useMutation({ mutationFn: () => duplicateChecklist(id), onSuccess: (copy) => nav(`/checklist/${copy.id}`) })
-  const delM = useMutation({ mutationFn: () => deleteChecklist(id), onSuccess: () => nav('/checklists') })
+  // Список чек-листов кэширован под ключом ['hr-checklists'] и кормит дропдауны на
+  // /checklists и на странице сотрудника. Без инвалидации удалённый шаблон оставался
+  // в выпадающем списке до перезагрузки страницы, а новая копия в нём не появлялась.
+  const dupM = useMutation({
+    mutationFn: () => duplicateChecklist(id),
+    onSuccess: (copy) => {
+      qc.invalidateQueries({ queryKey: ['hr-checklists'] })
+      nav(`/checklist/${copy.id}`)
+    },
+  })
+  const delM = useMutation({
+    mutationFn: () => deleteChecklist(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['hr-checklists'] })
+      // Назначения удалённого шаблона исчезают вместе с ним — сбрасываем и их.
+      qc.invalidateQueries({ queryKey: ['hr-employee-checklists'] })
+      nav('/checklists')
+    },
+  })
   const [confirmDel, setConfirmDel] = useState(false)
+  const [confirmDup, setConfirmDup] = useState(false)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
@@ -136,11 +153,8 @@ export function ChecklistDetailPage() {
   if (checklistQ.isLoading || itemsQ.isLoading) return <div className="p-10 text-gray-400">Loading…</div>
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-8 sm:px-6">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <button onClick={() => nav('/checklists')} className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800">
-          <ArrowLeft size={16} /> Back to Checklists
-        </button>
         <Dropdown
           className="w-72"
           value={id}
@@ -158,7 +172,7 @@ export function ChecklistDetailPage() {
             <p className="mt-2 text-sm text-gray-400">{items.length} items</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="subtle" onClick={() => dupM.mutate()} disabled={dupM.isPending}>
+            <Button variant="subtle" onClick={() => setConfirmDup(true)} disabled={dupM.isPending}>
               <Copy size={16} /> Duplicate
             </Button>
             <Button variant="danger" onClick={() => setConfirmDel(true)}>
@@ -201,6 +215,37 @@ export function ChecklistDetailPage() {
       {importing && (
         <ImportDialog checklistId={id} onClose={() => setImporting(false)} onImported={invalidate} />
       )}
+
+      {/* Дублирование раньше срабатывало сразу по клику и молча уводило в копию —
+          по экрану было не понять, открылся оригинал или новый чек-лист. Теперь
+          показываем имя будущей копии до создания. */}
+      <Modal
+        open={confirmDup}
+        title="Duplicate checklist?"
+        subtitle={checklistQ.data?.name}
+        onClose={() => setConfirmDup(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmDup(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="blue"
+              disabled={dupM.isPending}
+              onClick={() => {
+                setConfirmDup(false)
+                dupM.mutate()
+              }}
+            >
+              {dupM.isPending ? 'Duplicating…' : 'Duplicate & open'}
+            </Button>
+          </>
+        }
+      >
+        A copy named <span className="font-semibold text-gray-900">{checklistQ.data?.name} (copy)</span> will be
+        created with all its items, and opened for editing. The original stays untouched.
+        {dupM.error && <p className="mt-2 text-sm text-red-600">{errMsg(dupM.error)}</p>}
+      </Modal>
 
       <Modal
         open={confirmDel}

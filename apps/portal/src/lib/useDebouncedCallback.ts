@@ -9,6 +9,8 @@ export interface DebouncedCallback<A extends unknown[]> {
   (...args: A): void
   /** Выполнить отложенный вызов прямо сейчас (если он есть). */
   flush: () => void
+  /** Есть ли невыполненный отложенный вызов — то есть несохранённая правка. */
+  hasPending: () => boolean
 }
 
 export function useDebouncedCallback<A extends unknown[]>(
@@ -38,9 +40,22 @@ export function useDebouncedCallback<A extends unknown[]>(
       pending.current = null
       if (args) fnRef.current(...args)
     }
+    run.hasPending = () => timer.current !== null
     return run as DebouncedCallback<A>
   }, [delay])
 
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
+  // При размонтировании выполняем отложенный вызов, а не выбрасываем его: человек ушёл
+  // со страницы через 200 мс после ввода — правка должна доехать, а не исчезнуть.
+  useEffect(
+    () => () => {
+      if (!timer.current) return
+      clearTimeout(timer.current)
+      timer.current = null
+      const args = pending.current
+      pending.current = null
+      if (args) fnRef.current(...args)
+    },
+    [],
+  )
   return debounced
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronDown, Copy, Filter, Mail, MapPin, Pencil, Phone, Plus, Trash2, User, X } from 'lucide-react'
+import { Check, ChevronDown, Copy, Mail, MapPin, Pencil, Phone, Plus, Search, Trash2, User, X } from 'lucide-react'
 import {
   Badge,
   Button,
@@ -14,6 +14,7 @@ import {
   Tabs,
   Textarea,
 } from '../../components/ui'
+import { useAuth } from '../../auth/AuthProvider'
 import { cn, errMsg } from '../../lib/utils'
 import {
   assignTemplate,
@@ -22,6 +23,7 @@ import {
   duplicateTemplate,
   listAllProjectLinks,
   listProjects,
+  deleteProject,
   listTemplates,
   updateTemplate,
 } from '../../services/production-checklist'
@@ -31,13 +33,36 @@ type Tab = 'projects' | 'templates'
 
 export function ProductionChecklistsPage() {
   const [tab, setTab] = useState<Tab>('projects')
+  const projectsQ = useQuery({ queryKey: ['projects'], queryFn: listProjects })
+
+  // Счётчик у заголовка: завершённые из общего числа. Статус берём из того же
+  // `isCompletedStatus`, что красит бейдж на карточке — иначе цифра в заголовке
+  // и бейджи внизу могли бы расходиться.
+  const projects = projectsQ.data ?? []
+  const done = projects.filter((p) => isCompletedStatus(p.status)).length
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-10">
-      <PageTitle
-        title="Production Checklist"
-        subtitle="Manage production checklist templates and project assignments"
-      />
+    <div className="mx-auto w-full max-w-[1200px] px-4 py-10 sm:px-6">
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight text-gray-900">
+            Production Checklist
+            {projects.length > 0 && (
+              <span
+                title={`${done} completed of ${projects.length} projects · ${projects.length - done} still in progress`}
+                className="cursor-default rounded-full bg-gray-100 px-3 py-1 text-base font-semibold text-gray-500"
+              >
+                (<span className="text-green-600">{done}</span>
+                <span className="mx-0.5 text-gray-400">/</span>
+                {projects.length})
+              </span>
+            )}
+          </h1>
+          <p className="mt-1.5 text-sm leading-relaxed text-gray-500">
+            Manage production checklist templates and project assignments
+          </p>
+        </div>
+      </div>
       <Tabs
         className="mb-6 max-w-sm"
         tabs={[
@@ -56,14 +81,14 @@ export function ProductionChecklistsPage() {
 
 type SortKey = 'newest' | 'oldest'
 type FilterType = 'name' | 'status'
-interface ActiveFilter {
-  type: FilterType
-  value: string
-}
-
 function ProjectsTab() {
+  const qc = useQueryClient()
+  const { isAdmin } = useAuth()
   const [sort, setSort] = useState<SortKey>('newest')
-  const [filters, setFilters] = useState<ActiveFilter[]>([])
+  // Два простых фильтра вместо конструктора условий: статус и поиск по названию.
+  // Меню «добавить фильтр» требовало трёх кликов там, где нужен один.
+  const [status, setStatus] = useState<'all' | 'in_progress' | 'completed'>('all')
+  const [nameQuery, setNameQuery] = useState('')
 
   const projectsQ = useQuery({ queryKey: ['projects'], queryFn: listProjects })
   const templatesQ = useQuery({ queryKey: ['templates'], queryFn: listTemplates })
@@ -81,23 +106,48 @@ function ProjectsTab() {
 
   const rows = useMemo(() => {
     let list = [...(projectsQ.data ?? [])]
-    for (const f of filters) {
-      if (f.type === 'name' && f.value.trim()) {
-        const q = f.value.trim().toLowerCase()
-        list = list.filter((p) => p.name.toLowerCase().includes(q))
-      }
-      if (f.type === 'status' && f.value) {
-        list = list.filter((p) =>
-          f.value === 'Completed' ? isCompletedStatus(p.status) : !isCompletedStatus(p.status),
-        )
-      }
+    const q = nameQuery.trim().toLowerCase()
+    if (q) list = list.filter((p) => p.name.toLowerCase().includes(q))
+    if (status !== 'all') {
+      list = list.filter((p) => (status === 'completed' ? isCompletedStatus(p.status) : !isCompletedStatus(p.status)))
     }
     list.sort((a, b) => {
       const d = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       return sort === 'newest' ? -d : d
     })
     return list
-  }, [projectsQ.data, filters, sort])
+  }, [projectsQ.data, nameQuery, status, sort])
+
+  // Отложенное удаление: строка сразу исчезает со списка, а сам DELETE уходит через
+  // 10 секунд. Пока таймер идёт, внизу висит плашка с «Undo» — отмена просто снимает
+  // таймер, ничего не восстанавливая, потому что удалить ещё не успели.
+  const [pendingDelete, setPendingDelete] = useState<{ project: Project; timer: number } | null>(null)
+  // Спрашиваем до того, как запустить отсчёт: десять секунд на отмену — подстраховка,
+  // а не замена подтверждения. Промах по корзине не должен ничего запускать.
+  const [confirmDelete, setConfirmDelete] = useState<Project | null>(null)
+
+  function scheduleDelete(project: Project) {
+    if (pendingDelete) window.clearTimeout(pendingDelete.timer)
+    const timer = window.setTimeout(async () => {
+      try {
+        await deleteProject(project.id)
+      } finally {
+        setPendingDelete(null)
+        qc.invalidateQueries({ queryKey: ['projects'] })
+        qc.invalidateQueries({ queryKey: ['project-links'] })
+      }
+    }, 10_000)
+    setPendingDelete({ project, timer })
+  }
+
+  function undoDelete() {
+    if (!pendingDelete) return
+    window.clearTimeout(pendingDelete.timer)
+    setPendingDelete(null)
+  }
+
+  // Проект, ожидающий удаления, скрываем сразу — иначе кнопка выглядит нерабочей.
+  const visibleRows = rows.filter((p) => p.id !== pendingDelete?.project.id)
 
   if (projectsQ.isLoading) return <Loading />
   if (projectsQ.error) return <ErrBox e={projectsQ.error} />
@@ -105,9 +155,23 @@ function ProjectsTab() {
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <FiltersButton filters={filters} setFilters={setFilters} />
         <Dropdown
-          className="w-40"
+          className="w-full sm:w-48"
+          value={status}
+          onChange={setStatus}
+          options={[
+            { value: 'all', label: 'All statuses' },
+            { value: 'in_progress', label: 'In progress' },
+            { value: 'completed', label: 'Completed' },
+          ]}
+        />
+        <ProjectSearch
+          projects={projectsQ.data ?? []}
+          value={nameQuery}
+          onChange={setNameQuery}
+        />
+        <Dropdown
+          className="w-full sm:w-40"
           value={sort}
           onChange={setSort}
           options={[
@@ -115,13 +179,16 @@ function ProjectsTab() {
             { value: 'oldest', label: 'Oldest first' },
           ]}
         />
+        <span className="text-xs text-gray-400">
+          {rows.length} of {(projectsQ.data ?? []).length}
+        </span>
       </div>
 
-      {rows.length === 0 ? (
+      {visibleRows.length === 0 ? (
         <Card className="px-6 py-12 text-center text-sm text-gray-400">No projects yet.</Card>
       ) : (
         <div className="space-y-3">
-          {rows.map((p) => (
+          {visibleRows.map((p) => (
             <ProjectCard
               key={p.id}
               project={p}
@@ -129,10 +196,66 @@ function ProjectsTab() {
               assignedTemplate={
                 templateIdByProject.get(p.id) ? templateById.get(templateIdByProject.get(p.id)!) ?? null : null
               }
+              canDelete={isAdmin}
+              onDelete={() => setConfirmDelete(p)}
             />
           ))}
         </div>
       )}
+
+      <Modal
+        open={!!confirmDelete}
+        title="Delete project?"
+        subtitle={confirmDelete?.name}
+        onClose={() => setConfirmDelete(null)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmDelete(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (confirmDelete) scheduleDelete(confirmDelete)
+                setConfirmDelete(null)
+              }}
+            >
+              Delete
+            </Button>
+          </>
+        }
+      >
+        The project and its checklist progress will be removed. You will have 10 seconds to undo.
+      </Modal>
+
+      {/* Окно отмены. Пока висит — проект ещё в базе. */}
+      {pendingDelete && (
+        <UndoBar
+          name={pendingDelete.project.name}
+          onUndo={undoDelete}
+        />
+      )}
+    </div>
+  )
+}
+
+/** Плашка с обратным отсчётом и кнопкой отмены. */
+function UndoBar({ name, onUndo }: { name: string; onUndo: () => void }) {
+  const [left, setLeft] = useState(10)
+  useEffect(() => {
+    const t = window.setInterval(() => setLeft((v) => (v > 0 ? v - 1 : 0)), 1000)
+    return () => window.clearInterval(t)
+  }, [])
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-5">
+      <div className="flex items-center gap-4 rounded-lg bg-gray-900 px-5 py-3 text-sm text-white shadow-lg">
+        <span>
+          Project <span className="font-semibold">{name}</span> will be deleted in {left}s
+        </span>
+        <button onClick={onUndo} className="font-semibold text-blue-300 underline-offset-2 hover:underline">
+          Undo
+        </button>
+      </div>
     </div>
   )
 }
@@ -141,10 +264,15 @@ function ProjectCard({
   project,
   templates,
   assignedTemplate,
+  canDelete,
+  onDelete,
 }: {
   project: Project
   templates: ChecklistTemplate[]
   assignedTemplate: ChecklistTemplate | null
+  /** Удаление проекта — только админ портала. */
+  canDelete: boolean
+  onDelete: () => void
 }) {
   const nav = useNavigate()
   const qc = useQueryClient()
@@ -162,7 +290,7 @@ function ProjectCard({
   return (
     <Card className="p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-full sm:basis-0">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-lg font-bold text-gray-900">{project.name}</h3>
             <StatusBadge tone={completed ? 'success' : 'pending'}>{project.status ?? 'In Progress'}</StatusBadge>
@@ -172,7 +300,7 @@ function ProjectCard({
           </div>
           <div className="mt-1 font-mono text-xs text-gray-400">ID: {project.id}</div>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
-            <span>Created: {new Date(project.created_at).toLocaleDateString()}</span>
+            <span>Created: {new Date(project.created_at).toLocaleDateString('en-US')}</span>
             {addr && (
               <span className="inline-flex items-center gap-1">
                 <MapPin size={12} /> {addr}
@@ -196,18 +324,32 @@ function ProjectCard({
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto">
           <Dropdown
-            className="w-52"
+            className="w-full sm:w-52"
             value={assignedTemplate?.id ?? null}
             placeholder="Select template…"
             disabled={assignM.isPending}
             onChange={(id) => assignM.mutate(id)}
             options={templates.map((t) => ({ value: t.id, label: t.name }))}
           />
-          <Button variant="subtle" onClick={() => nav(`/production-checklist/project/${project.id}`)}>
+          <Button
+            variant="subtle"
+            className="flex-1 sm:flex-none"
+            onClick={() => nav(`/production-checklist/project/${project.id}`)}
+          >
             Open
           </Button>
+          {canDelete && (
+            <Button
+              variant="ghost"
+              className="text-gray-400 hover:text-red-600"
+              title="Delete project"
+              onClick={onDelete}
+            >
+              <Trash2 size={16} />
+            </Button>
+          )}
         </div>
       </div>
       {assignM.error && <p className="mt-2 text-xs text-red-600">{errMsg(assignM.error)}</p>}
@@ -356,132 +498,6 @@ function TemplateDialog({ template, onClose }: { template: ChecklistTemplate | n
 /* ======================= misc ======================= */
 
 /** Панель фильтров как в оригинале: кнопка Filters → поповер с «Add filter» (Name / Status). */
-function FiltersButton({
-  filters,
-  setFilters,
-}: {
-  filters: ActiveFilter[]
-  setFilters: React.Dispatch<React.SetStateAction<ActiveFilter[]>>
-}) {
-  const [open, setOpen] = useState(false)
-  const [addOpen, setAddOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) {
-        setOpen(false)
-        setAddOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [open])
-
-  const usedTypes = new Set(filters.map((f) => f.type))
-  const addable = (['name', 'status'] as FilterType[]).filter((t) => !usedTypes.has(t))
-
-  function addFilter(type: FilterType) {
-    setFilters((f) => [...f, { type, value: type === 'status' ? 'In Progress' : '' }])
-    setAddOpen(false)
-  }
-  function updateFilter(i: number, value: string) {
-    setFilters((f) => f.map((x, j) => (j === i ? { ...x, value } : x)))
-  }
-  function removeFilter(i: number) {
-    setFilters((f) => f.filter((_, j) => j !== i))
-  }
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          'inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50',
-          open && 'border-accent-500 ring-1 ring-accent-500',
-        )}
-      >
-        <Filter size={15} className="text-gray-400" />
-        Filters
-        {filters.length > 0 && (
-          <span className="ml-0.5 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-accent-600 px-1.5 text-xs font-semibold text-white">
-            {filters.length}
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <div className="absolute left-0 top-full z-40 mt-2 w-80 rounded-xl border border-gray-200 bg-white p-4 shadow-lg">
-          {filters.length === 0 ? (
-            <p className="text-sm text-gray-500">No filters applied. Add one to narrow down projects.</p>
-          ) : (
-            <div className="space-y-2">
-              {filters.map((f, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="w-14 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400">
-                    {f.type}
-                  </span>
-                  {f.type === 'name' ? (
-                    <Input
-                      className="flex-1"
-                      autoFocus
-                      placeholder="Name contains…"
-                      value={f.value}
-                      onChange={(e) => updateFilter(i, e.target.value)}
-                    />
-                  ) : (
-                    <Dropdown
-                      className="flex-1"
-                      value={f.value}
-                      onChange={(v) => updateFilter(i, v)}
-                      options={[
-                        { value: 'In Progress', label: 'In Progress' },
-                        { value: 'Completed', label: 'Completed' },
-                      ]}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => removeFilter(i)}
-                    className="shrink-0 rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                    title="Remove filter"
-                  >
-                    <X size={15} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="my-3 border-t border-gray-100" />
-
-          <div className="relative">
-            <Button variant="subtle" disabled={addable.length === 0} onClick={() => setAddOpen((v) => !v)}>
-              <Plus size={14} /> Add filter
-            </Button>
-            {addOpen && addable.length > 0 && (
-              <div className="absolute left-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                {addable.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => addFilter(t)}
-                    className="flex w-full items-center px-3 py-2 text-left text-sm capitalize text-gray-700 hover:bg-gray-50"
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 /** Кастомный дропдаун в стиле приложения (нативный <select> нельзя стилизовать в раскрытом виде). */
 function Dropdown<T extends string>({
   value,
@@ -562,4 +578,68 @@ function Loading() {
 }
 function ErrBox({ e }: { e: unknown }) {
   return <Card className="px-6 py-10 text-center text-sm text-red-600">{errMsg(e)}</Card>
+}
+
+/**
+ * Поиск проекта по названию: инпут плюс выпадающий список совпадений.
+ *
+ * Список подсказок нужен, потому что имена длинные и однотипные
+ * («20-12-11 Allred-Takoma Park, MD») — набрав пару символов, проще выбрать из
+ * совпадений, чем дописывать вручную. Выбор подставляет имя целиком, то есть
+ * фильтрует ровно по одному проекту.
+ */
+function ProjectSearch({
+  projects, value, onChange,
+}: { projects: Project[]; value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open])
+
+  const q = value.trim().toLowerCase()
+  const matches = q
+    ? projects.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 8)
+    : []
+
+  return (
+    <div ref={ref} className="relative w-full sm:w-72">
+      <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+      <Input
+        className="pl-9 pr-8"
+        placeholder="Search by project name…"
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+      />
+      {value && (
+        <button
+          type="button"
+          aria-label="Clear"
+          onClick={() => { onChange(''); setOpen(false) }}
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-gray-700"
+        >
+          <X size={14} />
+        </button>
+      )}
+      {open && matches.length > 0 && (
+        <div className="absolute left-0 top-full z-40 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+          {matches.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => { onChange(p.name); setOpen(false) }}
+              className="block w-full truncate px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }

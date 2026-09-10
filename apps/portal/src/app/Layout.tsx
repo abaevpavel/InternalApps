@@ -1,9 +1,11 @@
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { LogOut, Menu, Settings, SlidersHorizontal, UserRound } from 'lucide-react'
+import { ArrowLeft, LogOut, Menu, Settings, SlidersHorizontal, UserRound } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
 import { currentAppForPath, visibleNavItems } from './appRegistry'
 import { useCurrentAppRole } from './AppRoleContext'
+import { useUnsavedRegistry } from './UnsavedChangesContext'
+import { Button, Modal } from '../components/ui'
 
 /**
  * Заголовок хедера — портальные страницы.
@@ -54,6 +56,20 @@ export function Layout() {
   const appRole = useCurrentAppRole()
   // Апка контекста — включая её экран настроек (`/settings/:appCode`), см. currentAppForPath.
   const currentApp = currentAppForPath(pathname)
+  // Экран может копить несохранённые правки (чек-лист проекта) — спрашиваем перед уходом.
+  const unsaved = useUnsavedRegistry()
+  const [askLeave, setAskLeave] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const goBack = () => (window.history.length > 1 ? nav(-1) : nav('/'))
+
+  function handleBack() {
+    if (unsaved.current()?.isDirty()) {
+      setAskLeave(true)
+      return
+    }
+    goBack()
+  }
   const title = headerTitle(pathname, currentApp)
 
   useEffect(() => {
@@ -136,6 +152,64 @@ export function Layout() {
           )}
         </div>
       </header>
+
+      {/* Возврат к списку приложений — отдельной строкой под шапкой, а не внутри неё.
+          Виден только внутри апки: на самой «My Applications» возвращаться некуда.
+          Внутренние «Back» на экранах апок это не заменяет — те ведут на шаг назад,
+          а этот выходит из апки целиком. */}
+      {currentApp && (
+        <div className="px-6 pt-4">
+          <button
+            onClick={handleBack}
+            className="inline-flex items-center gap-1.5 text-sm text-gray-500 transition hover:text-gray-900"
+          >
+            <ArrowLeft size={16} /> Back
+          </button>
+        </div>
+      )}
+
+      <Modal
+        open={askLeave}
+        title="Save changes before leaving?"
+        subtitle="You have answers that are not saved yet."
+        onClose={() => setAskLeave(false)}
+        footer={
+          <>
+            <Button variant="ghost" disabled={saving} onClick={() => setAskLeave(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="outline"
+              disabled={saving}
+              onClick={() => {
+                unsaved.current()?.discard()
+                setAskLeave(false)
+                goBack()
+              }}
+            >
+              Discard
+            </Button>
+            <Button
+              variant="primary"
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true)
+                try {
+                  await unsaved.current()?.save()
+                  setAskLeave(false)
+                  goBack()
+                } finally {
+                  setSaving(false)
+                }
+              }}
+            >
+              {saving ? 'Saving…' : 'Save & leave'}
+            </Button>
+          </>
+        }
+      >
+        Leaving now will lose them.
+      </Modal>
 
       <main className="flex-1">
         {/* Suspense вокруг Outlet: при подгрузке lazy-чанка апки хедер/меню
