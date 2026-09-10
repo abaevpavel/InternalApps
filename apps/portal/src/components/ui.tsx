@@ -112,6 +112,10 @@ export function Dropdown<T extends string>({
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  // Меню живёт в портале, то есть ВНЕ `ref`. Без отдельной ссылки на него клик по пункту
+  // считался кликом снаружи: `mousedown` закрывал меню раньше, чем срабатывал `click`,
+  // и выбрать было ничего нельзя.
+  const menuRef = useRef<HTMLDivElement>(null)
   // Позиция меню в координатах окна: список рендерится порталом в body, иначе внутри
   // модалки (у неё `overflow-y-auto`) он обрезался и вместо выпадения появлялся скролл.
   const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null)
@@ -124,7 +128,11 @@ export function Dropdown<T extends string>({
   useEffect(() => {
     if (!open) return
     place()
-    const onDown = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (ref.current?.contains(t) || menuRef.current?.contains(t)) return
+      setOpen(false)
+    }
     // Меню висит вне потока, поэтому при скролле/ресайзе его надо переставлять.
     const onMove = () => place()
     document.addEventListener('mousedown', onDown)
@@ -151,6 +159,7 @@ export function Dropdown<T extends string>({
       </button>
       {open && rect && createPortal(
         <div
+          ref={menuRef}
           style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width }}
           className="z-[60] max-h-64 overflow-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
         >
