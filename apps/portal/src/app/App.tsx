@@ -8,6 +8,7 @@ import { AccessDenied } from '../components/AccessDenied'
 // Ядро (первый экран) — eager: логин, список апок, аккаунт.
 import { LoginPage } from '../pages/Login'
 import { MyApplicationsPage } from '../pages/MyApplications'
+import { MyLinksPage } from '../pages/MyLinks'
 import { MyAccountPage } from '../pages/MyAccount'
 
 // Страницы апок — lazy: каждая апка в своём чанке, грузится только при переходе
@@ -78,6 +79,7 @@ function Shell() {
       >
         {/* Портальные страницы — вне per-app гейта (свои гейты: Protected/AdminOnly). */}
         <Route path="/" element={<MyApplicationsPage />} />
+        <Route path="/links" element={<MyLinksPage />} />
         <Route path="/account" element={<MyAccountPage />} />
         {/* Настройки портала (Users/Roles и далее). `/users` — старый путь, редирект. */}
         <Route path="/portal-settings" element={<AdminOnly><PortalSettingsPage /></AdminOnly>} />

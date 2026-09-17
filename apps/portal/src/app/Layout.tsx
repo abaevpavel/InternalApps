@@ -15,6 +15,7 @@ import { Button, Modal } from '../components/ui'
  * и Send Buildertrend Schedule, пока их забывали дописать в этот список (BAS-1410).
  */
 const PORTAL_TITLES: [prefix: string, title: string][] = [
+  ['/links', 'MY LINKS'],
   ['/account', 'MY ACCOUNT'],
   ['/portal-settings', 'PORTAL SETTINGS'],
 ]
