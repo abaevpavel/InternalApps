@@ -4,6 +4,7 @@ import { ImportTab } from './ReceiptImport'
 import { NotificationsTab } from './NotificationsTab'
 import { PromptsTab } from './PromptsTab'
 import { CardsTab } from './CardsTab'
+import { HistoryPanel } from '../../components/HistoryPanel'
 
 /**
  * 07 Finances — Receipts Matcher: оболочка апки на `/receipt-import`.
@@ -18,6 +19,7 @@ const TABS = [
   { key: 'notifications', label: 'Notifications' },
   { key: 'cards', label: 'Employees & cards' },
   { key: 'prompts', label: 'AI prompts' },
+  { key: 'history', label: 'History' },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
@@ -31,7 +33,7 @@ export function ReceiptsMatcherPage() {
     <div className="mx-auto w-full max-w-[1100px] px-4 py-10 pb-32 sm:px-6">
       <PageTitle title="Receipts Matcher" />
       <Tabs
-        className="mb-6 max-w-2xl"
+        className="mb-6 max-w-3xl"
         tabs={TABS.map((t) => ({ key: t.key, label: t.label }))}
         value={tab}
         onChange={(k) => setParams(k === 'import' ? {} : { tab: k }, { replace: true })}
@@ -40,6 +42,7 @@ export function ReceiptsMatcherPage() {
       {tab === 'notifications' && <NotificationsTab />}
       {tab === 'cards' && <CardsTab />}
       {tab === 'prompts' && <PromptsTab />}
+      {tab === 'history' && <HistoryPanel appUrl="/receipt-import" />}
     </div>
   )
 }

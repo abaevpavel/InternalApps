@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Info, Plus, Trash2 } from 'lucide-react'
 import { Button, Card, Dropdown, Field, Input, PageTitle, StatusBadge, Tabs, Textarea } from '../../components/ui'
 import { SaveBar } from '../../components/SaveBar'
+import { HistoryPanel } from '../../components/HistoryPanel'
+import { usePendingActions } from '../../app/PendingActions'
 import { errMsg } from '../../lib/utils'
 import { useAuth } from '../../auth/AuthProvider'
 import { loadBundle, loadListings, saveChanges, saveListings } from '../../services/gmb'
@@ -30,7 +32,8 @@ import {
 export function GmbAgentSettingsPage() {
   const qc = useQueryClient()
   const { isAdmin } = useAuth()
-  const [tab, setTab] = useState<GmbSection>('reviews')
+  // 'history' — не секция каталога, а история изменений (portal_audit_log).
+  const [tab, setTab] = useState<GmbSection | 'history'>('reviews')
   const [edits, setEdits] = useState<Record<string, unknown>>({})
 
   const q = useQuery({ queryKey: ['gmb-settings'], queryFn: loadBundle })
@@ -94,14 +97,24 @@ export function GmbAgentSettingsPage() {
     [listings, lq.data],
   )
 
+  const { confirmAndSchedule, busy } = usePendingActions()
   const saveM = useMutation({
-    mutationFn: async () => {
-      if (changed.length) await saveChanges(changed)
-      if (changedListings.length) await saveListings(changedListings)
+    mutationFn: async (v: { settings: typeof changed; listings: typeof changedListings; edits: typeof edits; listingEdits: typeof listingEdits }) => {
+      if (v.settings.length) await saveChanges(v.settings)
+      if (v.listings.length) await saveListings(v.listings)
     },
-    onSuccess: async () => {
-      setEdits({})
-      setListingEdits({})
+    // Снимаем только правки, которые ушли в базу и не менялись за 10 секунд ожидания.
+    onSuccess: async (_r, v) => {
+      setEdits((prev) => {
+        const next = { ...prev }
+        for (const k of Object.keys(v.edits)) if (prev[k] === v.edits[k]) delete next[k]
+        return next
+      })
+      setListingEdits((prev) => {
+        const next = { ...prev }
+        for (const k of Object.keys(v.listingEdits)) if (prev[k] === v.listingEdits[k]) delete next[k]
+        return next
+      })
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['gmb-settings'] }),
         qc.invalidateQueries({ queryKey: ['gmb-listings'] }),
@@ -126,10 +139,13 @@ export function GmbAgentSettingsPage() {
 
       <Tabs
         className="mb-6"
-        tabs={SECTION_ORDER.filter((s) => keys.some((k) => k.section === s)).map((s) => ({
-          key: s,
-          label: SECTION_TITLES[s],
-        }))}
+        tabs={[
+          ...SECTION_ORDER.filter((s) => keys.some((k) => k.section === s)).map((s): { key: GmbSection | 'history'; label: string } => ({
+            key: s,
+            label: SECTION_TITLES[s],
+          })),
+          { key: 'history', label: 'History' },
+        ]}
         value={tab}
         onChange={setTab}
       />
@@ -149,6 +165,8 @@ export function GmbAgentSettingsPage() {
         ))}
       </div>
 
+      {tab === 'history' && <HistoryPanel appUrl="/gmb-agent" />}
+
       {tab === 'listings' && (
         <ListingNames
           listings={listings}
@@ -167,10 +185,28 @@ export function GmbAgentSettingsPage() {
       <SaveBar
         count={changed.length + changedListings.length}
         blocking={blocking.length}
-        saving={saveM.isPending}
+        saving={saveM.isPending || busy}
         saved={saveM.isSuccess && changed.length + changedListings.length === 0}
-        error={saveM.error ? errMsg(saveM.error) : null}
-        onSave={() => saveM.mutate()}
+        error={null}
+        onSave={() => {
+          const parts = [
+            ...changed.map((c) => fieldMeta(c.key).label),
+            ...changedListings.map((l) => `listing ${l.storeCode ?? l.liveTitle ?? l.locationId}`),
+          ]
+          const v = { settings: changed, listings: changedListings, edits, listingEdits }
+          void confirmAndSchedule(
+            {
+              title: `Save ${parts.length} ${parts.length === 1 ? 'change' : 'changes'}?`,
+              body: (
+                <>
+                  <b>{parts.join(', ')}</b>. The agent picks settings up on its next poll; listing names apply at the next weekly check.
+                </>
+              ),
+              cta: 'Save',
+            },
+            { label: `Saving ${parts.length} ${parts.length === 1 ? 'change' : 'changes'}`, run: () => saveM.mutateAsync(v) },
+          )
+        }}
         onDiscard={() => {
           setEdits({})
           setListingEdits({})
