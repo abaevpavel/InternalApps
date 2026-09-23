@@ -325,6 +325,28 @@ export const APPS: AppConfig[] = [
       ],
     },
   },
+  {
+    // Receipts Matcher (BAS-1450, дальше в эту же апку — настройки BAS-1472/1473/1474).
+    // Таблицы и edge-функцию завёл Никита (BAS-1449). Прав своих апка не заводит: RLS и
+    // сервер проверяют `user_has_application_access(auth.uid(), '/receipt-import')` или админа,
+    // поэтому роут должен остаться именно `/receipt-import`.
+    code: 'receipt-import',
+    label: '07 Finances — Receipts Matcher',
+    shortLabel: 'Receipts Matcher',
+    routePrefixes: ['/receipt-import'],
+    webhooks: [],
+    resources: {
+      database: SUPABASE,
+      tables: ['receipt_import_accounts', 'receipt_import_runs'],
+      edgeFunctions: ['receipt-import'],
+      external: [
+        {
+          name: 'Receipts automation (Mykyta)',
+          detail: 'the receipt-import function queues the file and the automation writes it into the TRANSACTIONS bookkeeping table; results come back into receipt_import_runs. Counterpart ticket BAS-1449',
+        },
+      ],
+    },
+  },
 ]
 
 /**
