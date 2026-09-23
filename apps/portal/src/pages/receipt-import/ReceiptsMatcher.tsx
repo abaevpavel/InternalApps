@@ -2,18 +2,20 @@ import { useSearchParams } from 'react-router-dom'
 import { PageTitle, Tabs } from '../../components/ui'
 import { ImportTab } from './ReceiptImport'
 import { NotificationsTab } from './NotificationsTab'
+import { PromptsTab } from './PromptsTab'
 
 /**
  * 07 Finances — Receipts Matcher: оболочка апки на `/receipt-import`.
  *
  * Все экраны — вкладками одной апки, потому что у них одно правило доступа
  * (`user_has_application_access(auth.uid(), '/receipt-import')`): импорт (BAS-1450),
- * получатели уведомлений (BAS-1474); сюда же лягут промпты (BAS-1473) и карты (BAS-1472).
+ * получатели уведомлений (BAS-1474), промпты AI (BAS-1473); сюда же лягут карты (BAS-1472).
  * Активная вкладка — в `?tab=`, чтобы ссылка открывала нужную.
  */
 const TABS = [
   { key: 'import', label: 'Import transactions' },
   { key: 'notifications', label: 'Notifications' },
+  { key: 'prompts', label: 'AI prompts' },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
@@ -34,6 +36,7 @@ export function ReceiptsMatcherPage() {
       />
       {tab === 'import' && <ImportTab />}
       {tab === 'notifications' && <NotificationsTab />}
+      {tab === 'prompts' && <PromptsTab />}
     </div>
   )
 }

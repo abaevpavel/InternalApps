@@ -337,7 +337,7 @@ export const APPS: AppConfig[] = [
     webhooks: [],
     resources: {
       database: SUPABASE,
-      tables: ['receipt_import_accounts', 'receipt_import_runs', 'receipt_matcher_settings'],
+      tables: ['receipt_import_accounts', 'receipt_import_runs', 'receipt_matcher_settings', 'receipt_matcher_prompts', 'receipt_matcher_prompt_keys'],
       edgeFunctions: ['receipt-import', 'receipts-settings (read by the automation, server-to-server)'],
       external: [
         {
