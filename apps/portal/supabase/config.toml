@@ -43,3 +43,9 @@ verify_jwt = true
 
 [functions.gmail-auth]
 verify_jwt = true
+
+# BAS-1472: синк сотрудников Receipts Matcher из Airtable. JWT на шлюзе не проверяем:
+# pg_cron приходит с секретом `x-sync-secret`, а человека («Sync now») функция опознаёт
+# сама по токену и праву читать receipt_matcher_employees (см. index.ts).
+[functions.sync-receipt-employees]
+verify_jwt = false

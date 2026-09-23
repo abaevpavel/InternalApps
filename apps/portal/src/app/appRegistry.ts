@@ -337,8 +337,12 @@ export const APPS: AppConfig[] = [
     webhooks: [],
     resources: {
       database: SUPABASE,
-      tables: ['receipt_import_accounts', 'receipt_import_runs', 'receipt_matcher_settings', 'receipt_matcher_prompts', 'receipt_matcher_prompt_keys'],
-      edgeFunctions: ['receipt-import', 'receipts-settings (read by the automation, server-to-server)'],
+      tables: ['receipt_import_accounts', 'receipt_import_runs', 'receipt_matcher_settings', 'receipt_matcher_prompts', 'receipt_matcher_prompt_keys', 'receipt_matcher_employees', 'receipt_matcher_card_numbers'],
+      edgeFunctions: [
+        'receipt-import',
+        'receipts-settings (read by the automation, server-to-server)',
+        'sync-receipt-employees (Airtable All employees → receipt_matcher_employees; pg_cron daily + Sync now)',
+      ],
       external: [
         {
           name: 'Receipts automation (Mykyta)',
