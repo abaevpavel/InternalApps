@@ -7,7 +7,7 @@ import {
   listRoles, setUserPassword, setUserRoles, updateProfileName,
 } from '../../services/data'
 import { Badge, Button, Card, DataTable, Field, Input, Modal, Select, type Column } from '../../components/ui'
-import { errMsg, initials } from '../../lib/utils'
+import { cn, errMsg, initials } from '../../lib/utils'
 import { fullName, type Invitation, type Profile, type Role } from '../../domain/types'
 import { useAuth } from '../../auth/AuthProvider'
 
@@ -256,11 +256,11 @@ function AddUserModal({
 }: { invitedBy: string; onClose: () => void; onSaved: () => void }) {
   const { data: roles = [] } = useQuery({ queryKey: ['roles'], queryFn: listRoles })
   const [email, setEmail] = useState('')
-  const [roleId, setRoleId] = useState('')
+  const [roleIds, setRoleIds] = useState<string[]>([])
 
   const mut = useMutation({
     mutationFn: () =>
-      createInvitation({ email, role_ids: roleId ? [roleId] : [], invited_by: invitedBy }),
+      createInvitation({ email, role_ids: roleIds, invited_by: invitedBy }),
     onSuccess: () => {
       onSaved()
       onClose()
@@ -288,13 +288,8 @@ function AddUserModal({
         <Field label="Email" required>
           <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@achgroupllc.com" />
         </Field>
-        <Field label="Role">
-          <Select value={roleId} onChange={(e) => setRoleId(e.target.value)}>
-            <option value="">No role</option>
-            {roles.map((r) => (
-              <option key={r.id} value={r.id}>{r.name}</option>
-            ))}
-          </Select>
+        <Field label="Roles" hint="A user can have several roles — they get every app any of them grants.">
+          <RoleChecklist roles={roles} value={roleIds} onChange={setRoleIds} />
         </Field>
         {mut.isError && <p className="text-sm text-red-600">{errMsg(mut.error)}</p>}
       </div>
@@ -302,7 +297,36 @@ function AddUserModal({
   )
 }
 
-/* ---------------- Edit User (name + role) ---------------- */
+/**
+ * Несколько ролей у одного человека. Схема это всегда позволяла (`user_roles` — связь многие ко
+ * многим), а доступ везде считается объединением: апка видна, если её даёт ХОТЯ БЫ одна роль
+ * (`listUserApplications`, `user_has_application_access`, роли внутри апок через `some`).
+ */
+function RoleChecklist({
+  roles, value, onChange, disabled,
+}: { roles: Role[]; value: string[]; onChange: (ids: string[]) => void; disabled?: boolean }) {
+  return (
+    <div className={cn('max-h-56 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-2', disabled && 'opacity-50')}>
+      {roles.map((r) => {
+        const on = value.includes(r.id)
+        return (
+          <label key={r.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-gray-50">
+            <input
+              type="checkbox"
+              checked={on}
+              disabled={disabled}
+              onChange={() => onChange(on ? value.filter((id) => id !== r.id) : [...value, r.id])}
+            />
+            <span className="text-gray-800">{r.name}</span>
+          </label>
+        )
+      })}
+      {roles.length === 0 && <p className="px-2 py-1 text-sm text-gray-400">No roles yet.</p>}
+    </div>
+  )
+}
+
+/* ---------------- Edit User (name + roles) ---------------- */
 
 function EditUserModal({
   user, onClose, onSaved,
@@ -310,17 +334,18 @@ function EditUserModal({
   const { data: roles = [] } = useQuery({ queryKey: ['roles'], queryFn: listRoles })
   const [first, setFirst] = useState(user.first_name ?? '')
   const [last, setLast] = useState(user.last_name ?? '')
-  const [roleId, setRoleId] = useState(user.roles[0]?.id ?? '')
-
-  const currentRoleId = user.roles[0]?.id ?? ''
+  const currentRoleIds = user.roles.map((r) => r.id)
+  const [roleIds, setRoleIds] = useState<string[]>(currentRoleIds)
+  const rolesChanged =
+    roleIds.length !== currentRoleIds.length || roleIds.some((id) => !currentRoleIds.includes(id))
 
   const mut = useMutation({
     mutationFn: async () => {
       await updateProfileName(user.id, first.trim() || null, last.trim() || null)
-      // Роль трогаем только если реально изменилась — иначе лишний destructive
-      // DELETE+INSERT в user_roles (и лишний повод упереться в RLS).
-      if (user.user_id && roleId !== currentRoleId) {
-        await setUserRoles(user.user_id, roleId ? [roleId] : [])
+      // Роли трогаем только если набор реально изменился. setUserRoles сам считает разницу:
+      // добавляет недостающие и снимает лишние, не пересоздавая остальные.
+      if (user.user_id && rolesChanged) {
+        await setUserRoles(user.user_id, roleIds)
       }
     },
     onSuccess: () => {
@@ -355,13 +380,11 @@ function EditUserModal({
         <Field label="Email">
           <Input value={user.email} disabled />
         </Field>
-        <Field label="Role" hint={user.user_id ? undefined : 'Role can be set after the user first signs in.'}>
-          <Select value={roleId} onChange={(e) => setRoleId(e.target.value)} disabled={!user.user_id}>
-            <option value="">No role</option>
-            {roles.map((r) => (
-              <option key={r.id} value={r.id}>{r.name}</option>
-            ))}
-          </Select>
+        <Field
+          label="Roles"
+          hint={user.user_id ? 'A user can have several roles — they get every app any of them grants.' : 'Roles can be set after the user first signs in.'}
+        >
+          <RoleChecklist roles={roles} value={roleIds} onChange={setRoleIds} disabled={!user.user_id} />
         </Field>
         {mut.isError && <p className="text-sm text-red-600">{errMsg(mut.error)}</p>}
       </div>
