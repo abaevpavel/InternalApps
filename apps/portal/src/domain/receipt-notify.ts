@@ -73,8 +73,10 @@ export function normalizeRecipients(list: Recipient[]): { name: string; email: s
   return list.map((r) => ({ name: r.name.trim(), email: r.email.trim(), phone: r.phone.trim() || null }))
 }
 
-const EMAIL_RE = /^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$/
-const E164_RE = /^\+[1-9]\d{1,14}$/
+// Ровно правила читателя `receipts-settings` (core.ts, Никита): он отклоняет ВЕСЬ список из-за
+// одной строки, поэтому экран не может быть мягче его.
+const EMAIL_RE = /^[^\s@,;]+@[^\s@,;.]+(\.[^\s@,;.]+)+$/
+const E164_RE = /^\+[1-9]\d{6,14}$/
 
 export interface RecipientErrors {
   name?: string
@@ -93,6 +95,7 @@ export function validateRecipient(r: Recipient): RecipientErrors {
 
   if (!email) out.email = 'Add an email address.'
   else if (/[,;\s]/.test(email)) out.email = 'One address per row — add another row for the second one.'
+  else if (email.length > 254) out.email = 'At most 254 characters.'
   else if (!EMAIL_RE.test(email)) out.email = 'This does not look like an email address.'
 
   if (phone && !E164_RE.test(phone)) out.phone = 'Use the international format: +13015550123.'

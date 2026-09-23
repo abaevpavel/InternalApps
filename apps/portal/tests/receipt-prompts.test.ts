@@ -43,7 +43,7 @@ describe('receipt-prompts', () => {
     expect(errs[0]).not.toContain('""')
   })
 
-  it('counts characters like Postgres char_length', () => {
-    expect(charLength('a😀b')).toBe(3)
+  it('counts length like the receipts-prompts reader (UTF-16 units)', () => {
+    expect(charLength('a😀b')).toBe(4)
   })
 })

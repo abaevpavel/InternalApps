@@ -46,11 +46,11 @@ export function missingTokens(text: string, tokens: string[]): string[] {
 }
 
 /**
- * Длина как у Postgres `char_length` — в символах (code points), а не в UTF-16 единицах JS:
- * иначе эмодзи в тексте сдвигали бы границы min/max относительно базы.
+ * Длина — как считает читатель `receipts-prompts` (core.ts, Никита): `value.length`, то есть в
+ * UTF-16 единицах JS. Он и решает, примет ли автоматизация текст, поэтому экран считает так же.
  */
 export function charLength(text: string): number {
-  return [...text].length
+  return text.length
 }
 
 /** Токен для сообщения: в каталоге enum-значения хранятся уже в кавычках (`"we_paid"`) — не задваиваем. */

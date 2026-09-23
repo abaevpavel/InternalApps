@@ -21,11 +21,15 @@ describe('receipt-notify validation', () => {
     expect(validateRecipient(r('A', 'a@b.co;c@d.co')).email).toMatch(/One address per row/)
     expect(validateRecipient(r('A', 'a@b.co c@d.co')).email).toMatch(/One address per row/)
     expect(validateRecipient(r('A', 'not-an-email')).email).toBeDefined()
+    expect(validateRecipient(r('A', 'a'.repeat(250) + '@b.co')).email).toBe('At most 254 characters.')
   })
 
   it('phone must be E.164', () => {
     expect(validateRecipient(r('A', 'a@b.co', '(301) 555-0123')).phone).toBeDefined()
     expect(validateRecipient(r('A', 'a@b.co', '13015550123')).phone).toBeDefined()
+    // Читатель требует минимум 7 цифр после кода страны — короткий номер отклонил бы весь список.
+    expect(validateRecipient(r('A', 'a@b.co', '+123')).phone).toBeDefined()
+    expect(validateRecipient(r('A', 'a@b.co', '+1301555')).phone).toBeUndefined()
   })
 
   it('an empty list is valid; more than 20 is not', () => {
