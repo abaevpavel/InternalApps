@@ -1,4 +1,2725 @@
 {
-  "generatedAt": null,
-  "scenarios": []
+ "generatedAt": "2026-09-23T16:42:17+00:00",
+ "scenarios": [
+  {
+   "id": 4781330,
+   "name": "SALE - Forge - Clients scope",
+   "stage": "proposal",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/4781330/edit",
+   "webhook": {
+    "name": null,
+    "fields": []
+   },
+   "emails": [
+    {
+     "moduleId": 298,
+     "label": "Email to CLIENT and PC",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "«Send To Client for Review»: {{1.estimateResult.estimatesInfo[].status}} = sentToClient",
+     "from": "{{55.`Full Name`}} <{{55.Email}}>",
+     "to": [
+      "{{237.Email}}",
+      "{{55.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Proposal {{1.estimateResult.estimatesInfo[].estimate}} from Basementremodeling.com for your review",
+     "bodyHtml": "Dear {{300.Salutation}}, <br><br>\nChange order {{1.estimateResult.estimatesInfo[].estimate}} from Basementremodeling.com for your review. <br><br>\nThank you,<br>\n{{55.`Full Name`}} <br><br>\n",
+     "attachments": []
+    },
+    {
+     "moduleId": 304,
+     "label": "Email to CLIENT and PC",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "«Send To Client for Review»: {{1.estimateResult.estimatesInfo[].status}} = sentToClient",
+     "from": "{{55.`Full Name`}} <{{55.`BR Email`}}>",
+     "to": [
+      "{{237.Email}}",
+      "{{55.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Proposal {{1.estimateResult.estimatesInfo[].estimate}} from Basementremodeling.com for your review",
+     "bodyHtml": "Dear {{300.Salutation}}, <br><br>\nChange order {{1.estimateResult.estimatesInfo[].estimate}} from Basementremodeling.com for your review. <br><br>\nThank you,<br>\n{{55.`Full Name`}} <br><br>\n",
+     "attachments": []
+    }
+   ]
+  },
+  {
+   "id": 25674,
+   "name": "Painting Proposal Created V 2",
+   "stage": "proposal",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/25674/edit",
+   "webhook": {
+    "name": "Paint Proposal Created (v2)",
+    "fields": [
+     {
+      "path": "formID",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "submissionID",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "webhookURL",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "ip",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "formTitle",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "pretty",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "username",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "rawRequest",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 2,
+        "where": "json:ParseJSON · json"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "type",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     }
+    ]
+   },
+   "emails": []
+  },
+  {
+   "id": 4301622,
+   "name": "SALE - Send Internal Scope Estimation Tool",
+   "stage": "internal_scope",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/4301622/edit",
+   "webhook": {
+    "name": null,
+    "fields": []
+   },
+   "emails": [
+    {
+     "moduleId": 261,
+     "label": "Email PC",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": null,
+     "from": "Proposal Generator <notifications@basementremodeling.com>",
+     "to": [
+      "{{55.`BR Email`}}"
+     ],
+     "cc": [
+      "pavel.a@achgroupllc.com",
+      "todor.3d@basementremodeling.com"
+     ],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Internal scope for {{237.`Full Name`}}",
+     "bodyHtml": "Hello {{55.F_Name}},\n<br><br>\nProposal for {{237.`Full Name`}} has been generated.\n<br><br>\nThank you,<br>\nACH Group LLC\n<br><br>",
+     "attachments": []
+    }
+   ]
+  },
+  {
+   "id": 4781497,
+   "name": "SALE - Forge -  Change order ",
+   "stage": "change_order",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/4781497/edit",
+   "webhook": {
+    "name": null,
+    "fields": []
+   },
+   "emails": [
+    {
+     "moduleId": 343,
+     "label": "Email to CLIENT",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "{{1.estimateResult}} exists; «SEND EMAIL ( POSITIVE CO )»: {{1.estimateResult.estimatesInfo[].totalCost}} does not contain -",
+     "from": "{{281.`Full Name`}} <{{281.Email}}>",
+     "to": [
+      "{{279.Client_Email}}",
+      "{{279.Client_Secondary_Email}}"
+     ],
+     "cc": [
+      "billing@achgroupllc.com"
+     ],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Change order {{1.estimateResult.estimatesInfo[].estimate}} from Basementremodeling.com",
+     "bodyHtml": "Dear {{279.Salutation}},\n<br><br>\nAttached is your Contract Addendum for Change Order {{1.estimateResult.estimatesInfo[].estimate}}. No Signature is required.\n<br><br>\nYou will receive the corresponding invoice for payment shortly.\n<br><br>\nPlease let us know if you have any questions.\n<br><br>\nThank you,<br>\n{{281.`Full Name`}}\n<br><br>",
+     "attachments": []
+    },
+    {
+     "moduleId": 380,
+     "label": "email to PM if requester isnt PM",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "{{1.estimateResult}} exists; «email to PM if requester isnt PM»: {{375.PM.Email}} ≠ {{281.Email}}",
+     "from": "{{281.`Full Name`}} <{{281.Email}}>",
+     "to": [
+      "{{375.PM.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "{{281.`Full Name`}} sent {{1.estimateResult.estimatesInfo[].estimate}} for {{328.`Project Name`}} for payment",
+     "bodyHtml": "Hello <strong> {{375.PM.`Full Name`}}</strong>,<br><br>\nChange order {{1.estimateResult.estimatesInfo[].estimate}} for {{1.estimateResult.clientInfo[].clientFirst}} {{1.estimateResult.clientInfo[].clientLast}} has been sent for payment.\n<br><br>\nThank you,<br>\n{{281.`Full Name`}}\n<br><br>",
+     "attachments": []
+    },
+    {
+     "moduleId": 368,
+     "label": "email to CEO",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "{{1.estimateResult}} exists; «PM execution exception( ALL CO )»: {{1.estimateResult.estimatesInfo[].workAlreadyStarted}} = true",
+     "from": "{{281.`Full Name`}} <{{281.Email}}>",
+     "to": [
+      "{{375.CEO.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "{{1.estimateResult.estimatesInfo[].estimate}} EXECUTION ALERT for {{328.`Project Name`}}",
+     "bodyHtml": "Please note that I have sent the change order for payment for the work that has already been started or completed.\n<br><br>\nAttached is the Change order.\n<br><br>",
+     "attachments": []
+    },
+    {
+     "moduleId": 379,
+     "label": "email to PM if requester isnt PM",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "{{1.estimateResult}} exists; «email to PM if requester isnt PM»: {{375.PM.Email}} ≠ {{281.Email}}",
+     "from": "{{281.`Full Name`}} <{{281.Email}}>",
+     "to": [
+      "{{375.PM.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Change order Generator",
+     "bodyHtml": "Please note that I have sent the change order for payment for the work that has already been started or completed.\n<br><br>\nAttached is the Change order.\n<br><br>",
+     "attachments": []
+    },
+    {
+     "moduleId": 399,
+     "label": "Email to CLIENT",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "{{1.estimateResult}} exists; «NEGATIVE CO»: {{1.estimateResult.estimatesInfo[].totalCost}} contains -",
+     "from": "{{281.`Full Name`}} <{{281.Email}}>",
+     "to": [
+      "{{279.Client_Email}}",
+      "{{279.Client_Secondary_Email}}",
+      "{{375.PM.Email}}"
+     ],
+     "cc": [
+      "billing@achgroupllc.com"
+     ],
+     "bcc": [
+      "{{375.CEO.Email}}"
+     ],
+     "replyTo": null,
+     "subject": "Credit Change order {{1.estimateResult.estimatesInfo[].estimate}} from Basementremodeling.com has been recorded. ",
+     "bodyHtml": "Dear {{279.Salutation}},\n<br><br>\nAttached is Contract Addendum for Credit Change Order {{1.estimateResult.estimatesInfo[].estimate}}. The credit has been recorded in your billing statement. You can access billing statement at any time via the link: {{279.`Billing Statement Shared`}}\n<br><br>\nPlease note that, pursuant to Section XI(B) of the original Contract, credits resulting from Change Orders are applied toward the final project payment and are not applied toward scheduled progress payments. Additionally, pursuant to Section II(D) of the original Contract, if the original Contract included pricing incentives, any credited items from the original Contract are calculated using the same proportional incentive structure reflected in the original agreement.\n<br><br>\nPlease let us know if you have any questions.\n<br><br>\nThank you,<br>\n{{281.`Full Name`}}\n<br><br>",
+     "attachments": []
+    },
+    {
+     "moduleId": 401,
+     "label": "email to PM if requester isnt PM",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "{{1.estimateResult}} exists; «email to PM if requester isnt PM»: {{375.PM.Email}} ≠ {{281.Email}}",
+     "from": "{{281.`Full Name`}} <{{281.Email}}>",
+     "to": [
+      "{{375.PM.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "{{281.`Full Name`}} sent {{1.estimateResult.estimatesInfo[].estimate}} for {{328.`Project Name`}} for payment",
+     "bodyHtml": "Hello <strong> {{375.PM.`Full Name`}}</strong>,<br><br>\nCredit Change order {{1.estimateResult.estimatesInfo[].estimate}} for {{1.estimateResult.clientInfo[].clientFirst}} {{1.estimateResult.clientInfo[].clientLast}}  has been recorded.\n<br><br>\nThank you,<br>\n{{281.`Full Name`}}\n<br><br>",
+     "attachments": []
+    },
+    {
+     "moduleId": 430,
+     "label": null,
+     "module": "google-email:sendAnEmail",
+     "condition": "{{1.estimateResult}} exists",
+     "from": "Gmail connection 4582501",
+     "to": [
+      "pavel.a@achgroupllc.com",
+      "todor.3d@basementremodeling.com",
+      "{{325.requester_email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Change Order {{1.estimateResult.estimatesInfo[].estimate}} for {{328.`Project Name`}} sent to client for payment or recorded (if credit). ",
+     "bodyHtml": "Hello,\n<br><br>\nThe Change Order for {{1.estimateResult.clientInfo[].clientFirst}} {{1.estimateResult.clientInfo[].clientLast}} has been sent to the client for payment or recorded as a credit, if applicable.\n<br><br>\nAttached is the Internal Change Order form. You can also check your Sent folder to find the Change Order Contract Addendum that was emailed to the client.\n<br><br>\nThank you,<br>BasementRemodeling.com\n\n",
+     "attachments": [
+      "{{429.fileName}}"
+     ]
+    },
+    {
+     "moduleId": 292,
+     "label": "Email CLIENT",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "{{1.estimateResult}} exists; «Sent to client for review»: {{1.action}} = sentToClient",
+     "from": "{{281.`Full Name`}} <{{281.Email}}>",
+     "to": [
+      "{{279.Client_Email}}",
+      "{{279.Client_Secondary_Email}}",
+      "{{375.PM.Email}}"
+     ],
+     "cc": [
+      "todor.3d@basementremodeling.com"
+     ],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Change order {{1.estimateResult.estimatesInfo[].estimate}} from Basementremodeling.com for your review",
+     "bodyHtml": "Dear {{279.Salutation}},\n<br><br>\nChange order {{1.estimateResult.estimatesInfo[].estimate}} from Basementremodeling.com for your review.\n<br><br>\nThank you,<br>\n{{281.`Full Name`}}\n<br><br>",
+     "attachments": []
+    },
+    {
+     "moduleId": 377,
+     "label": "email to PM if requester isnt PM",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "{{1.estimateResult}} exists; «email to PM if requester isnt PM»: {{375.PM.Email}} ≠ {{281.Email}}",
+     "from": "{{281.`Full Name`}} <{{281.Email}}>",
+     "to": [
+      "{{375.PM.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "{{281.`Full Name`}} generated {{1.estimateResult.estimatesInfo[].estimate}} for {{328.`Project Name`}} and sent to client to review",
+     "bodyHtml": "Hello <strong> {{375.PM.`Full Name`}}</strong>,\n<br><br>\nChange order for {{1.estimateResult.clientInfo[].clientFirst}} {{1.estimateResult.clientInfo[].clientLast}} has been sent to Client for review.\n<br><br>\nThank you,<br>\n{{281.`Full Name`}}\n<br><br>",
+     "attachments": []
+    }
+   ]
+  },
+  {
+   "id": 183574,
+   "name": "Billing - Send Invoice",
+   "stage": "invoice",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/183574/edit",
+   "webhook": {
+    "name": null,
+    "fields": [
+     {
+      "path": "id",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 2,
+        "where": "Client Billing · id"
+       }
+      ],
+      "unused": false
+     }
+    ]
+   },
+   "emails": [
+    {
+     "moduleId": 5,
+     "label": "send invoice",
+     "module": "quickbooks:SendInvoice",
+     "condition": "«Not 5Th»: {{2.`Invoice Number`}} ≠ 5TH",
+     "from": "QuickBooks (company invoice email)",
+     "to": [
+      "{{6.PrimaryEmailAddr.Address}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "(QuickBooks invoice email template)",
+     "bodyHtml": "<p><i>QuickBooks sends invoice <b>{{21.body.Invoice.Id}}</b> with its own email template.</i></p>",
+     "attachments": [
+      "invoice PDF (QuickBooks)"
+     ]
+    },
+    {
+     "moduleId": 31,
+     "label": "email to billing and Pavel",
+     "module": "google-email:sendAnEmail",
+     "condition": null,
+     "from": "Gmail connection 4582501",
+     "to": [
+      "billing@basementremodeling.com",
+      "pavel.a@achgroupllc.com"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "{{if(2.`Invoice Number` != \"N/A\"; 2.`Invoice Number`; \"Extra\")}} invoice for {{13.`Project Name`}} has been sent",
+     "bodyHtml": "Hi--,\n<br><br>\nThis is an automated message to let everyone know that {{2.`Invoice Number`}} invoice for {{13.`Project Name`}} for <b>${{8.Amount}}</b> has been sent out with the due date of {{formatDate(8.`Due Date`; \"MM/DD/YY\")}}.\n<br><br>\nBest,<br>\nACH Group Helper",
+     "attachments": []
+    },
+    {
+     "moduleId": 33,
+     "label": "email to billing and Pavel",
+     "module": "google-email:sendAnEmail",
+     "condition": null,
+     "from": "Gmail connection 4582501",
+     "to": [
+      "billing@basementremodeling.com",
+      "pavel.a@achgroupllc.com"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Final invoice for {{13.`Project Name`}} has been generated",
+     "bodyHtml": "Hi--,\n<br><br>\nThis is an automated notification that final invoice for {{13.`Project Name`}} for the amount of  <b>${{8.Amount}}</b> has been pre-generated for you in quickbooks. You may edit the amount and send it out as needed.\n<br><br>\nBest,<br>\nACH Group Helper",
+     "attachments": []
+    },
+    {
+     "moduleId": 32,
+     "label": "email to marketing",
+     "module": "google-email:sendAnEmail",
+     "condition": null,
+     "from": "Gmail connection 4582501",
+     "to": [
+      "marketing@basementremodeling.com"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Final invoice for {{13.`Project Name`}} has been requested. Please check with project team if PHOTOSHOT WORTHY!",
+     "bodyHtml": "Hi--,\n<br><br>\nThis is an automated notification that final invoice for {{13.`Project Name`}} has been requested. Please check with project team if PHOTOSHOT WORTHY! If yes, work on scheduling.  <br><br>\nBest,<br>\nACH Group Helper",
+     "attachments": []
+    }
+   ]
+  },
+  {
+   "id": 25745,
+   "name": "Billing - Invoice Deposited",
+   "stage": "invoice",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/25745/edit",
+   "webhook": {
+    "name": "PM - Invoice Deposited",
+    "fields": [
+     {
+      "path": "value",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 3,
+        "where": "app#jsrunner-ygu6nz:parseJson · json"
+       }
+      ],
+      "unused": false
+     }
+    ]
+   },
+   "emails": [
+    {
+     "moduleId": 37,
+     "label": "Email to PM",
+     "module": "google-email:sendAnEmail",
+     "condition": null,
+     "from": "Gmail connection 4582501",
+     "to": [
+      "{{18.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "{{17.`Project Name`}} final invoice has been deposited. Please close the project.",
+     "bodyHtml": "THE FINAL INVOICE HAS BEEN PAID and DEPOSITED INTO THE ACCOUNT. \nPlease, close the project using your todos table.",
+     "attachments": []
+    },
+    {
+     "moduleId": 36,
+     "label": "Email to billing@achgroupllc",
+     "module": "google-email:sendAnEmail",
+     "condition": null,
+     "from": "Gmail connection 4582501",
+     "to": [
+      "billing@achgroupllc.com"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "{{17.`Project Name`}} final invoice has been deposited. Please close the project.",
+     "bodyHtml": "THE FINAL INVOICE HAS BEEN PAID and DEPOSITED INTO THE ACCOUNT. \nPlease, enter QBO total paid amount AND discount to Return on Projects table.",
+     "attachments": []
+    }
+   ]
+  },
+  {
+   "id": 173561,
+   "name": "Billing - Quickbooks Webhook (Invoice paid)",
+   "stage": "invoice",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/173561/edit",
+   "webhook": {
+    "name": null,
+    "fields": [
+     {
+      "path": "CustomerRef",
+      "type": "collection",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 31,
+        "where": "Find Project · formula"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "CustomerRef.value",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 31,
+        "where": "Find Project · formula"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "CustomerRef.name",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 31,
+        "where": "via CustomerRef — Find Project · formula"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "DepositToAccountRef",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "DepositToAccountRef.value",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "PaymentMethodRef",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "PaymentMethodRef.value",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "CreditCardPayment",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "CreditCardPayment.CreditChargeInfo",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "CreditCardPayment.CreditChargeInfo.NameOnAcct",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "CreditCardPayment.CreditChargeInfo.Amount",
+      "type": "number",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "CreditCardPayment.CreditChargeInfo.ProcessPayment",
+      "type": "boolean",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "CreditCardPayment.CreditChargeResponse",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "CreditCardPayment.CreditChargeResponse.CCTransId",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "CreditCardPayment.CreditChargeResponse.Status",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "CreditCardPayment.CreditChargeResponse.CardSecurityCodeMatch",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "CreditCardPayment.CreditChargeResponse.AvsStreet",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "CreditCardPayment.CreditChargeResponse.AvsZip",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "TotalAmt",
+      "type": "number",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 62,
+        "where": "slack:CreateMessage · text"
+       },
+       {
+        "moduleId": 91,
+        "where": "email to requester · content"
+       },
+       {
+        "moduleId": 61,
+        "where": "slack:CreateMessage · text"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "UnappliedAmt",
+      "type": "number",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "ProcessPayment",
+      "type": "boolean",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "domain",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "sparse",
+      "type": "boolean",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "Id",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 3,
+        "where": "Find invoice by quickbooks id · formula"
+       },
+       {
+        "moduleId": 4,
+        "where": "Status is paid · filter.a"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "SyncToken",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "MetaData",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "MetaData.CreateTime",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "MetaData.LastUpdatedTime",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "TxnDate",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "CurrencyRef",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "CurrencyRef.value",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "CurrencyRef.name",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "PrivateNote",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "Line",
+      "type": "array",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].Amount",
+      "type": "number",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].LinkedTxn",
+      "type": "array",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].LinkedTxn[].TxnId",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].LinkedTxn[].TxnType",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].LineEx",
+      "type": "collection",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].LineEx.any",
+      "type": "array",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].LineEx.any[].name",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].LineEx.any[].declaredType",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].LineEx.any[].scope",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].LineEx.any[].value",
+      "type": "collection",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].LineEx.any[].value.Name",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].LineEx.any[].value.Value",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].LineEx.any[].nil",
+      "type": "boolean",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].LineEx.any[].globalScope",
+      "type": "boolean",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "Line[].LineEx.any[].typeSubstituted",
+      "type": "boolean",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 13,
+        "where": "via Line — quickbooks:GetInvoice · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "TxnSource",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.AllowIPNPayment",
+      "type": "boolean",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.AllowOnlinePayment",
+      "type": "boolean",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.AllowOnlineCreditCardPayment",
+      "type": "boolean",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.AllowOnlineACHPayment",
+      "type": "boolean",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.EInvoiceStatus",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.InvoiceLink",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.domain",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.sparse",
+      "type": "boolean",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Id",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.SyncToken",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.MetaData",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.MetaData.CreateTime",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.MetaData.LastModifiedByRef",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.MetaData.LastModifiedByRef.value",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.MetaData.LastUpdatedTime",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.CustomField",
+      "type": "array",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.CustomField[].DefinitionId",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.CustomField[].Name",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.CustomField[].Type",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.CustomField[].StringValue",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.DocNumber",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.TxnDate",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.CurrencyRef",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.CurrencyRef.value",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.CurrencyRef.name",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.LinkedTxn",
+      "type": "array",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.LinkedTxn[].TxnId",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.LinkedTxn[].TxnType",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line",
+      "type": "array",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].Id",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].LineNum",
+      "type": "number",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].Description",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].Amount",
+      "type": "number",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].DetailType",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].SalesItemLineDetail",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].SalesItemLineDetail.ItemRef",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].SalesItemLineDetail.ItemRef.value",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].SalesItemLineDetail.ItemRef.name",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].SalesItemLineDetail.UnitPrice",
+      "type": "number",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].SalesItemLineDetail.Qty",
+      "type": "number",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].SalesItemLineDetail.ItemAccountRef",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].SalesItemLineDetail.ItemAccountRef.value",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].SalesItemLineDetail.ItemAccountRef.name",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].SalesItemLineDetail.TaxCodeRef",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Line[].SalesItemLineDetail.TaxCodeRef.value",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.CustomerRef",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.CustomerRef.value",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.CustomerRef.name",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.BillAddr",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.BillAddr.Id",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.BillAddr.Line1",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.ShipAddr",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.ShipAddr.Id",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.ShipAddr.Line1",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.FreeFormAddress",
+      "type": "boolean",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.SalesTermRef",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.SalesTermRef.value",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.SalesTermRef.name",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.DueDate",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.TotalAmt",
+      "type": "number",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.ApplyTaxAfterDiscount",
+      "type": "boolean",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.PrintStatus",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.EmailStatus",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.BillEmail",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.BillEmail.Address",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.Balance",
+      "type": "number",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.DeliveryInfo",
+      "type": "collection",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.DeliveryInfo.DeliveryType",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "linkedInvoice.DeliveryInfo.DeliveryTime",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     }
+    ]
+   },
+   "emails": [
+    {
+     "moduleId": 91,
+     "label": "email to requester",
+     "module": "google-email:sendAnEmail",
+     "condition": null,
+     "from": "Gmail connection 4582501",
+     "to": [
+      "{{54.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "{{51.`Billing Record ID`}} has been paid.",
+     "bodyHtml": "Hello, {{54.`Full Name`}}.\n<br><br>\nChange Order invoice {{3.`Billing Record ID`}} for {{63.`Project Name`}} is {{if(11.Balance = 0; \"PAID\"; \"PART PAID\")}},<br>\nPaid - ${{formatNumber(11.TotalAmt - 11.Balance; 2; \".\"; \",\")}} of ${{formatNumber(11.TotalAmt; 2; \".\"; \",\")}}. Balance - ${{formatNumber(11.Balance; 2; \".\"; \",\")}}.\n<br><br>\nCOMMISSION RATE:  {{round(51.`Commission per CO` * 10000) / 100}} %<br>\nCOMMISSION AMOUNT: ${{formatNumber(51.`Total Commission adjusted`; 2; \".\"; \",\")}}",
+     "attachments": []
+    },
+    {
+     "moduleId": 24,
+     "label": "Email VPSALE",
+     "module": "google-email:ActionSendEmail",
+     "condition": null,
+     "from": "\"B-R.com Sales - Deposit - {{27.Client_First_Name}} {{27.Client_Last_Name}}\" notifications@basementremodeling.com",
+     "to": [
+      "{{28.CEO.Email}}"
+     ],
+     "cc": [
+      "{{28.PC.Email}}"
+     ],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "NEW DEPOSIT: {{27.Client_First_Name}} {{27.Client_Last_Name}}",
+     "bodyHtml": "NEW DEPOSIT HAS BEEN RECEIVED!!!\n<br><br>\nNAME:  {{27.Client_First_Name}} {{27.Client_Last_Name}}<br>\nADDRESS: {{27.`Full address`}}<br>\nBOOKING DATE: {{formatDate(29.`Booking Date`; \"MM/DD/YYYY\")}}<br>\nPROJECT CONSULTANT:  {{29.`PC name`[]}}",
+     "attachments": []
+    }
+   ]
+  },
+  {
+   "id": 25758,
+   "name": "NEW PM - Update Final Client Invoice",
+   "stage": "invoice",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/25758/edit",
+   "webhook": {
+    "name": "PM - Update Custom Invoices",
+    "fields": [
+     {
+      "path": "formID",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "submissionID",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "webhookURL",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "ip",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "formTitle",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "pretty",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "username",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "rawRequest",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "type",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     }
+    ]
+   },
+   "emails": [
+    {
+     "moduleId": 38,
+     "label": null,
+     "module": "google-email:ActionSendEmail",
+     "condition": "«Notify»: {{1.isCleanerNotified}} = Yes",
+     "from": "Gmail account 14149",
+     "to": [
+      "{{29.OTHER.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Cleaning requested for project {{19.`Project Name`}}",
+     "bodyHtml": "Hi {{29.OTHER.F_Name}} {{29.OTHER.L_Name}},\n<br><br>\nThis is an automated message from BasementRemodeling.com. Cleaning for project {{19.`Project Name`}} located at {{19.`Street Address`}}, {{19.City}}, {{19.State}} scheduled for {{1.confirmedDate}}.\n<br>\nIf you have any questions, contact {{29.PM.F_Name}} {{29.PM.L_Name}} at {{29.PM.Phone}} or via {{29.PM.Email}}.\n<br><br>\nThank you.",
+     "attachments": []
+    },
+    {
+     "moduleId": 49,
+     "label": null,
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": null,
+     "from": "{{29.CEO.`Full Name`}} <{{29.CEO.Email}}>",
+     "to": [
+      "helida.a@achgroupllc.com",
+      "beatris.f@achgroupllc.com"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Photoshoot for : {{19.`Proj Name`[]}}",
+     "bodyHtml": "<p>Hi Bea and Helida,</p>\n\n<p>Please work on the photoshoot for : {{19.`Proj Name`[]}}. Coordinate with the project manager to schedule. This is both of your responsibilities, so you are both equally in charge. You can split the work between the two of you, but as far as I am concerned, it is both of your responsibilities.</p>\n\n<p><strong>Very important:</strong> if the photo shoot has been scheduled and, when you arrive on site, the project is not ready for it, report that to me immediately. If the photo shoot turns out poorly because the project was not ready and you did not inform me, that becomes your responsibility.</p>\n\n<p>Best regards,<br>\nPavel</p>",
+     "attachments": []
+    }
+   ]
+  },
+  {
+   "id": 285832,
+   "name": "PM - Billing Update notifications",
+   "stage": "invoice",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/285832/edit",
+   "webhook": {
+    "name": null,
+    "fields": [
+     {
+      "path": "record_id",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 93,
+        "where": "airtable:ActionGetRecord · id"
+       },
+       {
+        "moduleId": 36,
+        "where": "Update billing records · id"
+       },
+       {
+        "moduleId": 27,
+        "where": "Update billing record · id"
+       },
+       {
+        "moduleId": 101,
+        "where": "Add invoice approval into the attachments · id"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "adjustment",
+      "type": "number",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 91,
+        "where": "http:ActionSendData · data"
+       },
+       {
+        "moduleId": 95,
+        "where": "email:ActionSendEmail · html"
+       },
+       {
+        "moduleId": 82,
+        "where": "app#my-pdf-co-dyycxh:addTextToPdf · fields.fieldName"
+       },
+       {
+        "moduleId": 123,
+        "where": "http:ActionSendData · data"
+       },
+       {
+        "moduleId": 72,
+        "where": "Update costs record · record.fld3A89f5vr7XskLR"
+       },
+       {
+        "moduleId": 71,
+        "where": "email:ActionSendEmail · html"
+       },
+       {
+        "moduleId": 130,
+        "where": "http:MakeRequest · jsonStringBodyContent"
+       },
+       {
+        "moduleId": 104,
+        "where": "Email sub · html"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "adjustment_comment",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 114,
+        "where": "Adjustment comment · value"
+       },
+       {
+        "moduleId": 91,
+        "where": "http:ActionSendData · data"
+       },
+       {
+        "moduleId": 123,
+        "where": "http:ActionSendData · data"
+       },
+       {
+        "moduleId": 72,
+        "where": "Update costs record · record.fldP8zQdGiv62iYEE"
+       },
+       {
+        "moduleId": 109,
+        "where": "email:ActionSendEmail · html"
+       },
+       {
+        "moduleId": 68,
+        "where": "email:ActionSendEmail · html"
+       },
+       {
+        "moduleId": 110,
+        "where": "app#my-pdf-co-dyycxh:addTextToPdf · fields.text"
+       },
+       {
+        "moduleId": 112,
+        "where": "email:ActionSendEmail · html"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "status",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "approved_amount",
+      "type": "number",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 91,
+        "where": "http:ActionSendData · data"
+       },
+       {
+        "moduleId": 95,
+        "where": "email:ActionSendEmail · html"
+       },
+       {
+        "moduleId": 82,
+        "where": "app#my-pdf-co-dyycxh:addTextToPdf · fields.text"
+       },
+       {
+        "moduleId": 123,
+        "where": "http:ActionSendData · data"
+       },
+       {
+        "moduleId": 71,
+        "where": "email:ActionSendEmail · html"
+       },
+       {
+        "moduleId": 104,
+        "where": "Email sub · html"
+       },
+       {
+        "moduleId": 110,
+        "where": "app#my-pdf-co-dyycxh:addTextToPdf · fields.text"
+       },
+       {
+        "moduleId": 112,
+        "where": "email:ActionSendEmail · html"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "authorizer_name",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 42,
+        "where": "Find Contacts · PM"
+       },
+       {
+        "moduleId": 91,
+        "where": "http:ActionSendData · data"
+       },
+       {
+        "moduleId": 123,
+        "where": "http:ActionSendData · data"
+       },
+       {
+        "moduleId": 109,
+        "where": "email:ActionSendEmail · html"
+       },
+       {
+        "moduleId": 68,
+        "where": "email:ActionSendEmail · html"
+       },
+       {
+        "moduleId": 110,
+        "where": "app#my-pdf-co-dyycxh:addTextToPdf · fields.text"
+       },
+       {
+        "moduleId": 112,
+        "where": "email:ActionSendEmail · html"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "authorizer_email",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 109,
+        "where": "email:ActionSendEmail · replyTo"
+       },
+       {
+        "moduleId": 68,
+        "where": "email:ActionSendEmail · replyTo"
+       },
+       {
+        "moduleId": 104,
+        "where": "Email sub · replyTo"
+       },
+       {
+        "moduleId": 112,
+        "where": "email:ActionSendEmail · replyTo"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "sub_name",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 95,
+        "where": "email:ActionSendEmail · html"
+       },
+       {
+        "moduleId": 71,
+        "where": "email:ActionSendEmail · html"
+       },
+       {
+        "moduleId": 104,
+        "where": "Email sub · html"
+       },
+       {
+        "moduleId": 110,
+        "where": "app#my-pdf-co-dyycxh:addTextToPdf · fields.text"
+       },
+       {
+        "moduleId": 112,
+        "where": "email:ActionSendEmail · html"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "sub_email",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 95,
+        "where": "email:ActionSendEmail · to"
+       },
+       {
+        "moduleId": 71,
+        "where": "email:ActionSendEmail · to"
+       },
+       {
+        "moduleId": 109,
+        "where": "email:ActionSendEmail · to"
+       },
+       {
+        "moduleId": 104,
+        "where": "Email sub · to"
+       },
+       {
+        "moduleId": 112,
+        "where": "email:ActionSendEmail · to"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "assigned_pm",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 42,
+        "where": "Find Contacts · OTHER"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "sub_invoice_authorizer",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 42,
+        "where": "Find Contacts · OTHER"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "pm_report_to_name",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 40,
+        "where": "SPM · value"
+       }
+      ],
+      "unused": false
+     }
+    ]
+   },
+   "emails": [
+    {
+     "moduleId": 95,
+     "label": null,
+     "module": "email:ActionSendEmail",
+     "condition": "«Proposal Approve»: {{1.action}} = proposal_approve",
+     "from": "SMTP account 14149",
+     "to": [
+      "{{split(1.sub_email; \",\")}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": "{{42.OTHER.Email}}",
+     "subject": "Your proposal for {{1.project_name}} has been approved {{if(1.adjustment != 0; \"WITH ADJUSTMENT\"; )}}!",
+     "bodyHtml": "Dear {{1.sub_name}},\n<br><br>\nThis is an automated notification to inform you that your proposal for project {{1.project_name}} has been approved by {{42.OTHER.F_Name}} {{42.OTHER.L_Name}}{{if(1.adjustment != 0; \" WITH ADJUSTMENTS.<br><br>\nAdjustment: \" + 1.adjustment + \"$ <br>\nFinal approved amount: \" + 1.approved_amount + \"$.<br>\nComments regarding adjustment: \" + 114.adjustmentComment + \".\n \"; \".<br><br>Final approved amount: \" + 1.approved_amount)}}\n<br><br>\nAttached, please find the approval notification. <br>\nBest,<br>\nACH Group",
+     "attachments": [
+      "{{59.fileName}}"
+     ]
+    },
+    {
+     "moduleId": 71,
+     "label": null,
+     "module": "email:ActionSendEmail",
+     "condition": "«Proposal Approve»: {{1.action}} = proposal_approve",
+     "from": "SMTP account 14149",
+     "to": [
+      "{{split(1.sub_email; \",\")}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": "{{42.OTHER.Email}}",
+     "subject": "Your proposal for {{1.project_name}} has been approved {{if(1.adjustment != 0; \"WITH ADJUSTMENT\"; )}}!",
+     "bodyHtml": "Dear {{1.sub_name}},\n<br><br>\nThis is an automated notification to inform you that your proposal for project {{1.project_name}} has been approved by {{42.OTHER.F_Name}} {{42.OTHER.L_Name}}{{if(1.adjustment != 0; \" WITH ADJUSTMENTS.<br><br>\nAdjustment: \" + 1.adjustment + \"$ <br>\nFinal approved amount: \" + 1.approved_amount + \"$.<br>\nComments regarding adjustment: \" + 114.adjustmentComment + \".\n \"; \".<br><br>Final approved amount: \" + 1.approved_amount)}}\n<br><br>\nAttached, please find the approval notification. <br>\nBest,<br>\nACH Group",
+     "attachments": [
+      "{{9.fileName}}"
+     ]
+    },
+    {
+     "moduleId": 109,
+     "label": null,
+     "module": "email:ActionSendEmail",
+     "condition": "«Invoice Not Approved»: {{1.action}} = invoice_not_approved",
+     "from": "SMTP account 14149",
+     "to": [
+      "{{split(1.sub_email; \",\")}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": "{{1.authorizer_email}}",
+     "subject": "Your invoice for {{1.project_name}} has NOT been approved by {{1.authorizer_name}}",
+     "bodyHtml": "Hi --,\n<br><br>\nYour invoice {{ifempty(93.`Id in Sub's format`; emptystring)}} has NOT been approved by {{1.authorizer_name}} with the following comment: {{1.adjustment_comment}}.<br><br>\n\nPlease, get in touch with the invoice authorizer for details.<br><br>\n\nBest,<br>\nACH Group",
+     "attachments": []
+    },
+    {
+     "moduleId": 68,
+     "label": null,
+     "module": "email:ActionSendEmail",
+     "condition": "«Proposal not approved»: {{1.action}} = proposal_not_approved",
+     "from": "SMTP account 14149",
+     "to": [
+      "{{split(35.Email; \",\")}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": "{{1.authorizer_email}}",
+     "subject": "Your proposal for {{93.`Project Name`[]}} has NOT been approved!",
+     "bodyHtml": "Dear {{35.`Full Name`}},\n<br><br>\nThis is an automated notification to inform you that your proposal {{93.`Id in Sub's format`}} for project {{93.`Project Name`[]}} for ${{93.`Requested amount`}} has NOT been approved by .<br>\nReason (by {{1.authorizer_name}}): {{1.adjustment_comment}} \n<br><br>\nPlease, contact the authorizer for details. <br>\nBest,<br>\nACH Group",
+     "attachments": []
+    },
+    {
+     "moduleId": 104,
+     "label": "Email sub",
+     "module": "email:ActionSendEmail",
+     "condition": null,
+     "from": "SMTP account 14149",
+     "to": [
+      "{{split(1.sub_email; \",\")}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": "{{1.authorizer_email}}",
+     "subject": "Your invoice for {{101.`Project Name`[]}} has been approved  {{if(1.adjustment != 0; \"WITH ADJUSTMENT\"; )}}!",
+     "bodyHtml": "Dear {{1.sub_name}},\n<br><br>\nThis is an automated notification to inform you that your invoice for project {{1.project_name}} has been approved by {{42.OTHER.F_Name}} {{42.OTHER.L_Name}}{{if(1.adjustment != 0; \" WITH ADJUSTMENTS.<br><br>\nAdjustment: \" + 1.adjustment + \"$ <br>\nFinal approved amount: \" + 1.approved_amount + \"$.<br>\nComments regarding adjustment: \" + 114.adjustmentComment + \".\n \"; \".<br><br>Final approved amount: \" + 1.approved_amount)}}\n<br><br>\nYou can expect payment within 5 business days.<br>\nBest,<br>\nACH Group",
+     "attachments": [
+      "{{103.fileName}}"
+     ]
+    },
+    {
+     "moduleId": 112,
+     "label": null,
+     "module": "email:ActionSendEmail",
+     "condition": null,
+     "from": "SMTP account 14149",
+     "to": [
+      "{{split(1.sub_email; \",\")}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": "{{1.authorizer_email}}",
+     "subject": "{{1.authorizer_name}} has issued a back charge for project {{1.project_name}}.",
+     "bodyHtml": "Dear {{1.sub_name}},\n<br><br>\nThis is an automated notification to inform you that {{1.authorizer_name}} has issued a back charge to your name for project {{1.project_name}}.<br>\nBack charge amount: ${{1.approved_amount}}.<br>\nComment from {{1.authorizer_name}}: {{1.adjustment_comment}}.\n<br><br>\nBest,<br>\nACH Group",
+     "attachments": [
+      "{{111.fileName}}"
+     ]
+    }
+   ]
+  },
+  {
+   "id": 25691,
+   "name": "PM - Outstanding Invoices",
+   "stage": "invoice",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/25691/edit",
+   "webhook": null,
+   "emails": [
+    {
+     "moduleId": 13,
+     "label": null,
+     "module": "google-email:ActionSendEmail",
+     "condition": "{{19.`__IMTLENGTH__`}} > 0",
+     "from": "\"Invoices Tracker\" notifications@basementremodeling.com",
+     "to": [
+      "{{19.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Invoices summary: {{17.count}} invoices require your approval",
+     "bodyHtml": "Hi, {{19.F_Name}},<br>\n<br>\nYou have {{17.count}} invoices/proposals that require your approval.\n<br><br>\nBest,<br>\nInvoices Buddy\n",
+     "attachments": []
+    },
+    {
+     "moduleId": 29,
+     "label": null,
+     "module": "google-email:ActionSendEmail",
+     "condition": null,
+     "from": "\"Invoices Tracker\" notifications@basementremodeling.com",
+     "to": [
+      "billing@basementmasters.com"
+     ],
+     "cc": [],
+     "bcc": [
+      "bogdan.a@achgroupllc.com"
+     ],
+     "replyTo": null,
+     "subject": "Invoices summary: {{28.toBePaid}} invoices are ready to be paid",
+     "bodyHtml": "Hi,<br>\n<br>\nYou have {{28.toBePaid}} invoices that are approved and ready to be paid.\n<br><br>\nPlease, go to retool to pay them.\n<br><br>\nBest,<br>\nInvoices Buddy\n<br><br>",
+     "attachments": []
+    }
+   ]
+  },
+  {
+   "id": 177004,
+   "name": "Sales - Send Deposit (upd MongoDB)",
+   "stage": "deposit",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/177004/edit",
+   "webhook": {
+    "name": null,
+    "fields": []
+   },
+   "emails": []
+  },
+  {
+   "id": 4827831,
+   "name": "SALE - Forge - Generate/Void Contract ",
+   "stage": "contract",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/4827831/edit",
+   "webhook": {
+    "name": null,
+    "fields": []
+   },
+   "emails": [
+    {
+     "moduleId": 42,
+     "label": null,
+     "module": "google-email:ActionSendEmail",
+     "condition": null,
+     "from": "Gmail account 14149",
+     "to": [
+      "pavel.a@achgroupllc.com",
+      "{{37.`BR Email`}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Contract for {{33.`Full Name`}} generated",
+     "bodyHtml": "Hi--,\n<br><br>\nContract for {{33.`Full Name`}} has been sent with the attached proposal.\n<br><br>\nBest,<br><br>\nACH Group Helper",
+     "attachments": [
+      "{{43.fileName}}"
+     ]
+    }
+   ]
+  },
+  {
+   "id": 4913638,
+   "name": "SALES - Forge Contract Signed",
+   "stage": "contract",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/4913638/edit",
+   "webhook": {
+    "name": null,
+    "fields": []
+   },
+   "emails": []
+  },
+  {
+   "id": 4505021,
+   "name": "SALE - Change order-void",
+   "stage": "void",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/4505021/edit",
+   "webhook": {
+    "name": null,
+    "fields": []
+   },
+   "emails": [
+    {
+     "moduleId": 357,
+     "label": "Email CLIENT",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": null,
+     "from": "{{346.`Full Name`}} <{{346.Email}}>",
+     "to": [
+      "{{344.Client_Email}}",
+      "{{344.Client_Secondary_Email}}"
+     ],
+     "cc": [
+      "{{347.CEO.Email}}"
+     ],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Change order {{1.estimateResult.estimatesInfo[].estimate}} from Basementremodeling.com has been voided",
+     "bodyHtml": "Dear {{344.Salutation}},\n<br><br>\nChange order {{1.estimateResult.estimatesInfo[].estimate}} from Basementremodeling.com has been voided.\n<br><br>\nThank you,<br>\n{{346.Email}}\n<br><br>",
+     "attachments": []
+    },
+    {
+     "moduleId": 358,
+     "label": "Email REQUESTER",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": null,
+     "from": "Change order Generator <notifications@basementremodeling.com>",
+     "to": [
+      "{{346.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "{{1.estimateResult.estimatesInfo[].estimate}} for {{345.`Project Name`}} has been voided",
+     "bodyHtml": "Hello <strong> {{346.F_Name}} {{346.L_Name}}</strong>,<br><br>\nChange order for {{1.estimateResult.clientInfo[].clientFirst}} {{1.estimateResult.clientInfo[].clientLast}} has been voided.\n<br><br>\nThank you,<br>\nChange order Generator\n<br><br>",
+     "attachments": []
+    },
+    {
+     "moduleId": 359,
+     "label": "email to PM if requester isnt PM",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "«email to PM if requester isnt PM»: {{347.PM.Email}} ≠ {{346.Email}}",
+     "from": "{{346.`Full Name`}} <{{346.Email}}>",
+     "to": [
+      "{{347.PM.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "{{1.estimateResult.estimatesInfo[].estimate}} for {{345.`Project Name`}} has been voided",
+     "bodyHtml": "Hello <strong> {{347.PM.`Full Name`}} </strong>,<br><br>\n{{346.`Full Name`}} voided change order for {{1.estimateResult.clientInfo[].clientFirst}}  {{1.estimateResult.clientInfo[].clientLast}}.\n<br><br>\nThank you,<br>\n{{346.`Full Name`}}\n<br><br>",
+     "attachments": []
+    },
+    {
+     "moduleId": 322,
+     "label": "Email CLIENT",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": null,
+     "from": "{{324.`Full Name`}} <{{324.Email}}>",
+     "to": [
+      "{{323.Client_Email}}",
+      "{{323.Client_Secondary_Email}}"
+     ],
+     "cc": [
+      "{{316.CEO.Email}}"
+     ],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Change order {{1.estimateResult.estimatesInfo[].estimate}} from Basementremodeling.com has been voided",
+     "bodyHtml": "Dear {{323.Salutation}},\n<br><br>\nChange order {{1.estimateResult.estimatesInfo[].estimate}} from Basementremodeling.com has been voided.\n<br><br>\nThank you,<br>\n{{324.Email}}\n<br><br>",
+     "attachments": []
+    },
+    {
+     "moduleId": 320,
+     "label": "Email REQUESTER",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": null,
+     "from": "Change order Generator <notifications@basementremodeling.com>",
+     "to": [
+      "{{324.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "{{1.estimateResult.estimatesInfo[].estimate}} for {{326.`Project Name`}} has been voided",
+     "bodyHtml": "Hello <strong> {{324.F_Name}} {{324.L_Name}}</strong>,<br><br>\nChange order for {{1.estimateResult.clientInfo[].clientFirst}} {{1.estimateResult.clientInfo[].clientLast}} has been voided.\n<br><br>\nThank you,<br>\nChange order Generator\n<br><br>",
+     "attachments": []
+    },
+    {
+     "moduleId": 321,
+     "label": "email to PM if requester isnt PM",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "«email to PM if requester isnt PM»: {{316.PM.Email}} ≠ {{324.Email}}",
+     "from": "{{324.`Full Name`}} <{{324.Email}}>",
+     "to": [
+      "{{316.PM.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "{{1.estimateResult.estimatesInfo[].estimate}} for {{326.`Project Name`}} has been voided",
+     "bodyHtml": "Hello <strong> {{316.PM.`Full Name`}} </strong>,<br><br>\n{{324.`Full Name`}} voided change order for {{1.estimateResult.clientInfo[].clientFirst}}  {{1.estimateResult.clientInfo[].clientLast}}.\n<br><br>\nThank you,<br>\n{{324.`Full Name`}}\n<br><br>",
+     "attachments": []
+    }
+   ]
+  },
+  {
+   "id": 343887,
+   "name": "SALES - Deposit void ",
+   "stage": "void",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/343887/edit",
+   "webhook": {
+    "name": null,
+    "fields": []
+   },
+   "emails": []
+  },
+  {
+   "id": 4829745,
+   "name": "Forge - NEW Submit a sale",
+   "stage": "submit_sale",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/4829745/edit",
+   "webhook": {
+    "name": "Sale Submitted",
+    "fields": [
+     {
+      "path": "formID",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "submissionID",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "webhookURL",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "ip",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "formTitle",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "pretty",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "username",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "rawRequest",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "type",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     }
+    ]
+   },
+   "emails": [
+    {
+     "moduleId": 116,
+     "label": "Hand off email",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "«Email not skipped»: {{1.skipEmail}} ≠ (any case) YES and {{77.PC.`Full Name`}} ≠ (any case) pavel abaev",
+     "from": "{{77.PC.`Full Name`}} <{{77.PC.Email}}>",
+     "to": [
+      "{{277.Email}}"
+     ],
+     "cc": [
+      "{{77.COO.Email}}"
+     ],
+     "bcc": [
+      "{{77.CEO.Email}}"
+     ],
+     "replyTo": null,
+     "subject": "Next Steps",
+     "bodyHtml": "{{1.emailSalutation}},<br><br>\nIt's {{77.PC.`Full Name`}}, and now is the time to hand you over to the best part of our company, the production team. The first and most important step: shortly, you will receive an introduction email from our Director of Operations, {{77.COO.`Full Name`}}. She will ask you to <b>go through the \"Project Preparation Overview\" form and confirm the start date</b>. Please complete this as soon as possible, since only that will move your project into the <b>next stage</b>.\n<br><br>\nHere is what happens after that:\n<ul>\n<li>You will receive an email from an assigned project manager no later than 4 weeks before the project starts. If your start date is less than 4 weeks away, you will hear from your project manager shortly after you confirm your start date with {{77.COO.F_Name}}. The project manager will be your primary point of contact throughout the entire project.</li>\n<li>Your project manager will give you an overview of the next steps (through online forms), introduce you to your interior designer and provide you with more details on the process.</li>\n<li>You will also receive an email from your interior designer with a general overview of the process for selecting your finishes.</li>\n<li>A few days before your start date, your project manager will send you a list of the items you will need to select throughout the project. This is not something you need to start working on immediately. You may begin after the pre-construction meeting.</li>\n</ul>\nLastly, thank you for putting your faith in me and our company. You are in great hands! Please feel free to contact me with any questions in the meantime.\n<br><br>\nBest,<br>\n{{77.PC.`Full Name`}}",
+     "attachments": []
+    }
+   ]
+  },
+  {
+   "id": 70425,
+   "name": "VP-00 Process Sale",
+   "stage": "submit_sale",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/70425/edit",
+   "webhook": {
+    "name": null,
+    "fields": [
+     {
+      "path": "formID",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "submissionID",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "webhookURL",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "ip",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "formTitle",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "pretty",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "username",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "rawRequest",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 3,
+        "where": "app#jsrunner-ygu6nz:parseJson · json"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "type",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     }
+    ]
+   },
+   "emails": [
+    {
+     "moduleId": 66,
+     "label": null,
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "«VP Action»: {{3.tag}} = request; «ISSUES»: {{3.issues}} = YES; «No emails yes»: {{6.`Processing Info`}} does not exist",
+     "from": "Sale Issue <notifications@basementremodeling.com>",
+     "to": [
+      "{{7.PC.Email}}"
+     ],
+     "cc": [
+      "{{7.COO.Email}}"
+     ],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Your sale to {{4.Client_First_Name}} {{4.Client_Last_Name}}",
+     "bodyHtml": "Hi {{7.PC.F_Name}},\n<br><br>\nElena Lupan has questions/concerns about the following sale:\n<br><br>\nClient Full Name: <b>{{4.Client_First_Name}} {{4.Client_Last_Name}}</b><br>\nClient Address: <b>{{4.`Full address`}}</b>\n<br><br>\nComments:\nDiscount: {{6.Discount}}\n<br><br>\n{{replace(3.text; newline; \"<br>\")}}\n<br><br>\nPlease, reply to these questions by following <a href=\"https://form.jotform.com/basement_remodeling_com/vp-00-response-from-pc?id={{4.id}}\">this link</a>.<br><br>\n<b>USE THE FORM ABOVE TO RESPOND TO THESE QUESTIONS. DO NOT REPLY TO THIS EMAIL - IT WILL BE IGNORED.</b><br><br>\nBest,<br>\nACH Group Helper",
+     "attachments": []
+    },
+    {
+     "moduleId": 65,
+     "label": null,
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "«VP Action»: {{3.tag}} = request; «ISSUES»: {{3.issues}} = YES",
+     "from": "Sale Issue <notifications@basementremodeling.com>",
+     "to": [
+      "{{7.PC.Email}}"
+     ],
+     "cc": [
+      "{{7.COO.Email}}"
+     ],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Update to your sale to {{4.Client_First_Name}} {{4.Client_Last_Name}}",
+     "bodyHtml": "Hi {{7.PC.F_Name}},\n<br><br>\nMore comments from Elena Lupan:\nDiscount: {{6.Discount}}\n<br><br>\n{{replace(3.text; newline; \"<br>\")}}\n<br><br>\nSale in question: {{4.Client_First_Name}} {{4.Client_Last_Name}} at {{4.`Full address`}} <br><br>\nPlease, reply to these questions by following <a href=\"https://form.jotform.com/basement_remodeling_com/vp-00-response-from-pc?id={{4.id}}\">this link</a>.<br><br>\n<b>USE THE FORM ABOVE TO RESPOND TO THESE QUESTIONS. DO NOT REPLY TO THIS EMAIL - IT WILL BE IGNORED.</b><br><br>\nHistory of this sale:<br>\n{{replace(6.`Processing Info`; newline; \"<br>\")}}\n<br><br>\nBest,<br>\nACH Group Helper",
+     "attachments": []
+    },
+    {
+     "moduleId": 40,
+     "label": null,
+     "module": "email:ActionSendEmail",
+     "condition": "«VP Action»: {{3.tag}} = request",
+     "from": "\"Sales\" notifications@basementremodeling.com",
+     "to": [
+      "{{7.PC.Email}}"
+     ],
+     "cc": [
+      "{{7.COO.Email}}"
+     ],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Sale to {{4.Client_First_Name}} {{4.Client_Last_Name}} Released From Hold",
+     "bodyHtml": "Hi {{7.PC.F_Name}},\n<br><br>\n{{7.COO.`Full Name`}} has released your sale from hold\n<br><br>\nClient Full Name: <b>{{4.Client_First_Name}} {{4.Client_Last_Name}}</b><br>\nClient Address: <b>{{4.`Full address`}}</b>\n<br><br>\nComments:\nDiscount: {{39.Discount}}\n<br><br>\n{{replace(3.text; newline; \"<br>\")}}\n<br><br>\nBest,<br>\nACH Group Helper",
+     "attachments": []
+    },
+    {
+     "moduleId": 59,
+     "label": null,
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "«PC Response»: {{3.tag}} = response",
+     "from": "Sale Issue <notifications@basementremodeling.com>",
+     "to": [
+      "{{7.PC.Email}}"
+     ],
+     "cc": [
+      "{{7.COO.Email}}"
+     ],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Re: Your sale to {{4.Client_First_Name}} {{4.Client_Last_Name}}",
+     "bodyHtml": "Hi Elena Lupan,\n<br><br>\n{{7.PC.`Full Name`}}  has left comments about the following sale:\n<br><br>\nClient Full Name: <b>{{4.Client_First_Name}} {{4.Client_Last_Name}}</b><br>\nClient Address: <b>{{4.`Full address`}}</b>\n<br><br>\nComments:\n<br><br>\n{{replace(3.text; newline; \"<br>\")}}\n<br><br>\nReply here: <a href=\"https://form.jotform.com/basement_remodeling_com/vp-01-issue-with-a-sale?id={{4.id}}\">REPLY</a>\n<br><br>\nHistory of this sale:<br>\n{{replace(6.`Processing Info`; newline; \"<br>\")}}\nBest,<br>\nACH Group Helper",
+     "attachments": []
+    }
+   ]
+  },
+  {
+   "id": 25715,
+   "name": "VP-01 Propose Start Date",
+   "stage": "submit_sale",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/25715/edit",
+   "webhook": {
+    "name": "VP 01 -- Propose Start Date",
+    "fields": [
+     {
+      "path": "formID",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "submissionID",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "webhookURL",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "ip",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "formTitle",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "pretty",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "username",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "rawRequest",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 3,
+        "where": "json:ParseJSON · json"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "type",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     }
+    ]
+   },
+   "emails": [
+    {
+     "moduleId": 26,
+     "label": null,
+     "module": "google-email:ActionSendEmail",
+     "condition": null,
+     "from": "\"BM - {{56.Client_First_Name}} {{56.Client_Last_Name}}\" notifications@basementremodeling.com",
+     "to": [
+      "{{49.COO.Email}}"
+     ],
+     "cc": [],
+     "bcc": [
+      "{{49.CEO.Email}}"
+     ],
+     "replyTo": null,
+     "subject": "{{if(56.Demo; \"START DATES HAVE BEEN PROPOSED\"; \"START DATE HAS BEEN PROPOSED\")}}",
+     "bodyHtml": "THE START DATE FOR PROJECT {{57.`Project Name`}} HAS BEEN PROPOSED.<br>\n<br>\nPROJECT ADDRESS: {{56.`Street Address`}}, {{56.City}}, {{56.State}}, {{56.Zip}}. Jurisdiction = {{56.County}}\n\n<br><br>\nVP START DATE CONFIRMED LINK:\n<a href=\"{{53.`VP 02 Start Date Confirmed`}}\">Click Here!</a>\n\n<br><br>\nVP UPDATE START DATE / TEAM:\n<a href=\"{{53.`VP 02 Update Start Date`}}\">Click Here!</a>\n{{if(56.`Skip Sending Intro Emails`; \"<br><br>Intro Emails will be skipped for this project\")}}",
+     "attachments": []
+    },
+    {
+     "moduleId": 102,
+     "label": "COO proposes start date",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "«Email not skipped»: {{56.`Skip Sending Intro Emails`}} ≠ {{true}}",
+     "from": "{{49.COO.F_Name}} {{49.COO.L_Name}} <{{49.COO.Email}}>",
+     "to": [
+      "{{56.Client_Email}}",
+      "{{56.Client_Secondary_Email}}"
+     ],
+     "cc": [
+      "{{49.PC.Email}}"
+     ],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Invitation email from BasementRemodeling.com! Please go over it carefully and let us know if you have any questions.",
+     "bodyHtml": "<p>Hello {{47.Salutation}}!</p>\n<p>This is {{49.COO.F_Name}} {{49.COO.L_Name}}, Director of Operations here at BasementRemodeling.com.</p>\n<p>First, let me thank you for choosing BasementRemodeling.com for your upcoming basement project. We are looking forward to making your vision come true! We will do our best to exceed your expectations for both the process and the final product. Welcome to the BasementRemodeling.com family!</p>\n<p><strong>The purpose of this email is to:</strong></p>\n\n{{if(47.Demo != true; \"<p>1. Set a date for a pre-construction meeting. Please note the pre-construction meeting takes 2-3 hours and it works better for everyone if all of the decision makers are present.\nAt the moment, we have <strong>the following date available: \" + formatDate(38.precon; \"dddd, MMMM Do, YYYY\") + \" at \" + formatDate(38.precon; \"h:mm A\") + \".</strong><br>\nYou can reply to this email with confirmation or with the request for another date. You can also simply <strong><a href=\"\"\" + 53.`Client 01 Confirm Start Date` + \"\"\" >CLICK HERE</a></strong> to confirm the meeting with a single click.</p>\n\"; \"\n<p>1. Set dates for pre-demolition and pre-construction meetings. Please note that the pre-demolition meeting lasts for about 30 minutes while the pre-construction meeting generally takes 2-3 hours. It is important that all of the decision makers are present for the pre-construction meeting.\nAt the moment, we have <strong>the following dates available</strong>: <br>\nPre-demo meeting: <strong>\" + formatDate(39.predemo; \"dddd, MMMM Do, YYYY\") + \" at \" + formatDate(39.predemo; \"h:mm A\") + \"</strong>. <br>\nPre-con meeting: <strong>\" + formatDate(38.precon; \"dddd, MMMM Do, YYYY\") + \" at \" + formatDate(38.precon; \"h:mm A\") + \"</strong>. <br>\nYou can reply to this email with confirmation or with a request for other dates. You can also simply <strong><a href=\"\"\" + 53.`Client 01 Confirm Start Date` + \"\"\" >CLICK HERE</a></strong> to confirm both meetings with a single click.</p>\")}}\n\n<p>2. Provide full clarity about the next steps and overall understanding of the pre-construction stage of the project. We use a custom-made online form to guide you through this important process. Please, <strong><a href=\"{{53.`Client 01 Project Overview Form`}}\" >CLICK HERE </a></strong> to be forwarded to our <strong>Project preparation overview form</strong>. <strong>It is essential to go through the entire form before confirming the date of the pre-construction meeting.</strong></p> \n\n<p>Once we confirm the {{if(56.Demo != true; \"date\"; \"dates\")}}, your project manager will follow up via email with the next steps to help us plan the project. As you think about a start date, please keep in mind that we need <strong>the work areas of the basement completely emptied out by the time of the pre-construction meeting.</strong></p>\n\n<p>Please let us know if you have any questions. We are excited to start the project and to get to know you!</p>\n\n<br>\nBest Regards, <br>\n{{49.COO.F_Name}} {{49.COO.L_Name}}",
+     "attachments": []
+    },
+    {
+     "moduleId": 104,
+     "label": "send email to VP",
+     "module": "app#emailsender-vt4aje:sendEmail",
+     "condition": "«Email not skipped»: {{56.`Skip Sending Intro Emails`}} ≠ {{true}}; «Just email VP»: {{3.q84_emailYourself}} = YES",
+     "from": "Internal Notification <notifications@basementremodeling.com>",
+     "to": [
+      "{{49.COO.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "Invitation email from BasementRemodeling.com! Please go over it carefully and let us know if you have any questions.",
+     "bodyHtml": "<p>Hello {{47.Salutation}}!</p>\n<p>This is {{49.COO.F_Name}} {{49.COO.L_Name}}, Director of Operations here at BasementRemodeling.com.</p>\n<p>First, let me thank you for choosing BasementRemodeling.com for your up-coming basement project. We are looking forward to making your vision come true! We will do our best to exceed your expectations for both the process and the final product. Welcome to the BasementRemodeling.com family!</p>\n<p><strong>The purpose of this email is to:</strong></p>\n\n{{if(47.Demo != true; \"<p>1. Set a date for a pre-construction meeting. Please note the pre-construction meeting takes 2-3 hours and it works better for everyone if all of the decision makers are present.\nAt the moment, we have <strong>the following date available: \" + formatDate(38.precon; \"dddd, MMMM Do, YYYY\") + \" at \" + formatDate(38.precon; \"h:mm A\") + \".</strong><br>\nYou can reply to this email with confirmation or with the request for another date. You can also simply <strong><a href=\"\"\" + 53.`Client 01 Confirm Start Date` + \"\"\" >CLICK HERE</a></strong> to confirm the meeting with a single click.</p>\n\"; \"\n<p>1. Set dates for pre-demolition and pre-construction meetings. Please note that the pre-demolition meeting lasts for about 30 minutes while the pre-construction meeting generally takes 2-3 hours. It is important that all of the decision makers are present for the pre-construction meeting.\nAt the moment, we have <strong>the following dates available</strong>: <br>\nPre-demo meeting: <strong>\" + formatDate(39.predemo; \"dddd, MMMM Do, YYYY\") + \" at \" + formatDate(39.predemo; \"h:mm A\") + \"</strong>. <br>\nPre-con meeting: <strong>\" + formatDate(38.precon; \"dddd, MMMM Do, YYYY\") + \" at \" + formatDate(38.precon; \"h:mm A\") + \"</strong>. <br>\nYou can reply to this email with confirmation or with a request for other dates. You can also simply <strong><a href=\"\"\" + 53.`Client 01 Confirm Start Date` + \"\"\" >CLICK HERE</a></strong> to confirm both meetings with a single click.</p>\")}}\n\n<p>2. Provide full clarity about the next steps and overall understanding of the pre-construction stage of the project. We use a custom-made online form to guide you through this important process. Please, <strong><a href=\"{{53.`Client 01 Project Overview Form`}}\" >CLICK HERE </a></strong> to be forwarded to our <strong>Project preparation overview form</strong>. <strong>It is essential to go through the entire form before confirming the date of the pre-construction meeting.</strong></p> \n\n<p>Once we confirm the {{if(56.Demo != true; \"date\"; \"dates\")}}, your project manager will follow up via email with the next steps to help us plan the project. As you think about a start date, please keep in mind that we need <strong>the work areas of the basement completely emptied out by the time of the pre-construction meeting.</strong></p>\n\n<p>Please let us know if you have any questions. We are excited to start the project and to get to know you!</p>\n\n<br>\nBest Regards, <br>\n{{49.COO.F_Name}} {{49.COO.L_Name}}",
+     "attachments": []
+    }
+   ]
+  },
+  {
+   "id": 25759,
+   "name": "Sales 02 - Generate Billing Statement",
+   "stage": "billing_statement",
+   "active": true,
+   "url": "https://us1.make.com/10349/scenarios/25759/edit",
+   "webhook": {
+    "name": null,
+    "fields": [
+     {
+      "path": "lead_id",
+      "type": "text",
+      "example": null,
+      "usedIn": [
+       {
+        "moduleId": 3,
+        "where": "Find Sale Entry · formula"
+       }
+      ],
+      "unused": false
+     },
+     {
+      "path": "proposal_id",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "general_info_id",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     },
+     {
+      "path": "sale_reference",
+      "type": "text",
+      "example": null,
+      "usedIn": [],
+      "unused": true
+     }
+    ]
+   },
+   "emails": [
+    {
+     "moduleId": 62,
+     "label": "New Email",
+     "module": "google-email:ActionSendEmail",
+     "condition": null,
+     "from": "\"{{53.PC.F_Name}} {{53.PC.L_Name}}\" notifications@basementremodeling.com",
+     "to": [
+      "{{53.COO.Email}}"
+     ],
+     "cc": [
+      "{{53.CEO.Email}}"
+     ],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "NEW SALE: {{23.Client_First_Name}} {{23.Client_Last_Name}}",
+     "bodyHtml": "<p><b>PROJECT INFO:</b></p>\n\n<p>NAME: {{23.Client_First_Name}} {{23.Client_Last_Name}}\n<br>EMAIL: {{41.Client_Email}}<br>\n<br>PC: {{53.PC.F_Name}} {{53.PC.L_Name}}/{{53.PC.positionCode}}/{{53.PC.Phone}}<br>\n<br>SALE PRICE: {{3.Price}}\n<br>SALE DISCOUNT: {{3.Discount}}<br>\n<br>SALE DATE: {{formatDate(now; \"MM/DD/YYYY\")}}<br>\n<br>MAJOR DEMOLITION: {{if(23.Demo; \"YES\"; \"NO\")}}\n<br>PROPOSED PREDEMO DATE: {{formatDate(3.`Proposed Predemo Date`; \"MM/DD/YYYY\")}}\n<br>PROPOSED PRECON DATE: {{formatDate(3.`Proposed Precon Date`; \"MM/DD/YYYY\")}}\n<br><br>\nADDRESS: {{23.`Street Address`}}, {{23.City}}, {{23.State}}, {{23.Zip}}<br>\nNOTES FROM PC: {{3.Notes}}\n</p>\n--------------------------------------------\n<p>SALE REVIEW WORKFLOW:</p>\n<ol>\n       <li><a href=\"{{55.`VP 01 Propose Start Date`}}\">PROPOSE A START DATE FORM HERE</a></li>\n</ol>\n<ol>\n\t<li>Google Search the address link to review property and find out about utilities, year built, etc. See Satellite and map view. <a href=\"https://www.google.com/search?q={{23.`Street Address`}}, {{23.City}}, {{23.State}}\" >Google search</a></li>\n\t<li>Check basement photos</li>\n\t<li>Check  <a href=\"{{81.downloadUrl}}\" >SCOPE WITH PROPOSAL</a>  </li>\n</ol>\n<ol>\n <li>Review  <a href=\"{{99.downloadUrl}}\">INTERNAL_SCOPE</a> to get familiar with the project. Check for below ground egress or walkout.</li>\n       <li>Here is customer <a href=\"{{81.downloadUrl}}\">CLIENT_SCOPE</a></li>\n      <li>Check <a href=\"https://drive.google.com/file/d/1caTQd22tByVEGYt8uK2rYYZ69-Tb4TdhScrERr0wkvc/view?usp=sharing\" target=\"_blank\" rel=\"noopener noreferrer\">the billing statement and ENTER WET BAR ALLOWANCES</a></li>\n</ol>\n<ol>\n      <li>PERMITS: {{if(3.Permits; \"YES\"; \"NO\")}}</li>\n      <li>Check <a href=\"https://airtable.com/shrcmEZvlPWvSxbNv\">COUNTY OR INCORPORATED TOWN</a>. From PC: County = {{23.County}}.</li>\n      <li>Plot plan needed? If egress window or walkout. <a href=\"{{99.downloadUrl}}\">INTERNAL_SCOPE</a> </li>\n      <li><a href=\"{{55.`VP 02 Request Permits Step 1`}}\">REQUEST PERMIT APPLICATION</a></li>\n</ol>\n<ol>\n      <li>Submit checklist in CompanyCam</li>\n      <li>Process Sale in BM Dashboard</li>\n</ol>\n<ol>\n     <li> <a href=\"https://form.jotform.com/basement_remodeling_com/vp-00-01-custom-todos?id={{23.`Record Id`}}\">REQUEST CUSTOM TODO-S</a> </li>\n</ol>\n--------------------------------------------\n<br><br>\nHELPFUL ZIP CODES LINKS: \n<br>\n<br>\n<a href = \"https://www.getzips.com/zip.htm\">ZIP CODES LOOKUP</a><br>\n\n<a href = \"https://sdat.dat.maryland.gov/RealProperty/Pages/default.aspx\">MARYLAND ZIPS</a><br>\n\n<a href = \"https://realestate.alexandriava.gov/index.php?action=address\">CITY OF ALEXANDRIA</a><br>\n\n<a href = \"http://realestate.fairfaxva.gov/default.asp\">FAIRFAX</a><br>\n\n<a href = \"http://property.fallschurchva.gov/Parcelviewer/\">FALLS CHURCH</a><br>\n\n<a href = \"http://gis.vgsi.com/manassasva/Search.aspx\">MANASSAS</a><br><a href = \"http://www.manassas-park.univers-clt.com/index.php?reset=true\">MANASSAS-PARK</a><br>\n\n<a href = \"http://reparcelasmt.loudoun.gov/pt/search/commonsearch.aspx?mode=address\">LOUDOUN</a><br><a href = \"https://logis.loudoun.gov/weblogis/\">LOUDOUN COUNTY TOWN LOOK UP</a><br>\n\n<a href = \"https://www.taxpayerservicecenter.com/RP_Search.jsp?search_type=Sales\">WASHINGTON DC</a><br>",
+     "attachments": []
+    },
+    {
+     "moduleId": 108,
+     "label": null,
+     "module": "google-email:sendAnEmail",
+     "condition": null,
+     "from": "Gmail connection 4582501",
+     "to": [
+      "todor.3d@basementremodeling.com",
+      "pavel.a@achgroupllc.com",
+      "{{110.COO.Email}}"
+     ],
+     "cc": [],
+     "bcc": [],
+     "replyTo": null,
+     "subject": "New Project Client Brief for {{41.Client_First_Name}} {{41.Client_Last_Name}} ",
+     "bodyHtml": "<p>Hi</p>\n\n<p>Attached is a quick <b>client communication guide</b> for <b>{{41.Client_First_Name}}  {{41.Client_Last_Name}}</b>.</p>\n\n<p>Please read it before reaching out — it includes tips on how to communicate with this client more effectively.</p>\n\n<p style=\"color:#888;font-size:12px;\">Predicted profile only. Use as guidance and adjust based on the live conversation.</p>\n\nCrystalKnows profile: {{101.data.data.url}}",
+     "attachments": [
+      "{{106.fileName}}"
+     ]
+    }
+   ]
+  }
+ ]
 }

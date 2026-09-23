@@ -40,6 +40,8 @@ export interface PayloadField {
 
 export interface EmailEntry {
   moduleId: number
+  /** Имя модуля, как его назвали в Make («Email to CLIENT and PC»); null — не назван. */
+  label: string | null
   /** Модуль Make: `google-email:ActionSendEmail`, `email:ActionSendEme`… */
   module: string
   /** Человеческое описание, когда письмо уходит: путь роутера и фильтры до него. */
@@ -70,6 +72,23 @@ export interface CatalogSnapshot {
   /** Когда собран снимок; null — ещё не собирали. */
   generatedAt: string | null
   scenarios: ScenarioEntry[]
+}
+
+export const MODULE_KINDS: Record<string, string> = {
+  'app#emailsender-vt4aje:sendEmail': 'Email sender',
+  'google-email:sendAnEmail': 'Gmail',
+  'google-email:ActionSendEmail': 'Gmail (legacy)',
+  'email:ActionSendEmail': 'Email (SMTP)',
+  'quickbooks:SendInvoice': 'QuickBooks invoice',
+}
+
+export interface ScenarioComment {
+  id: number
+  scenarioId: number
+  body: string
+  createdBy: string
+  createdByName: string | null
+  createdAt: string
 }
 
 /** Переменные Make в тексте письма — чтобы подсветить их в превью. */

@@ -1,0 +1,24 @@
+{
+  "_comment": "Сценарии Make цепочки продаж для Dev Apps (BAS-1556 / BAS-1504) и их этап. Скоуп согласован с Владиславом 23.09.2026: все включённые сценарии цепочки, включая пограничные.",
+  "scenarios": {
+    "4781330": { "stage": "proposal" },
+    "25674": { "stage": "proposal" },
+    "4301622": { "stage": "internal_scope" },
+    "4781497": { "stage": "change_order" },
+    "183574": { "stage": "invoice" },
+    "25745": { "stage": "invoice" },
+    "173561": { "stage": "invoice" },
+    "25758": { "stage": "invoice" },
+    "285832": { "stage": "invoice" },
+    "25691": { "stage": "invoice" },
+    "177004": { "stage": "deposit" },
+    "4827831": { "stage": "contract" },
+    "4913638": { "stage": "contract" },
+    "4505021": { "stage": "void" },
+    "343887": { "stage": "void" },
+    "4829745": { "stage": "submit_sale" },
+    "70425": { "stage": "submit_sale" },
+    "25715": { "stage": "submit_sale" },
+    "25759": { "stage": "billing_statement" }
+  }
+}
