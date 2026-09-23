@@ -3,6 +3,7 @@ import { type ReactNode } from 'react'
 import { AuthProvider } from '../auth/AuthProvider'
 import { AppRoleProvider } from './AppRoleContext'
 import { UnsavedChangesProvider } from './UnsavedChangesContext'
+import { PendingActionsProvider } from './PendingActions'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
@@ -15,7 +16,10 @@ export function Providers({ children }: { children: ReactNode }) {
           оболочка читает его сверху для фильтрации меню. */}
       <AuthProvider>
         <AppRoleProvider>
-          <UnsavedChangesProvider>{children}</UnsavedChangesProvider>
+          <UnsavedChangesProvider>
+            {/* Подтверждение + 10 с на отмену для записей Receipts Matcher и GMB. */}
+            <PendingActionsProvider>{children}</PendingActionsProvider>
+          </UnsavedChangesProvider>
         </AppRoleProvider>
       </AuthProvider>
     </QueryClientProvider>

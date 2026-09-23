@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Info, Plus, Trash2 } from 'lucide-react'
 import { Button, Card, Input, StatusBadge } from '../../components/ui'
 import { SaveBar } from '../../components/SaveBar'
+import { usePendingActions } from '../../app/PendingActions'
 import { errMsg } from '../../lib/utils'
 import { loadNotify, saveNotify } from '../../services/receipt-notify'
 import {
@@ -42,13 +43,33 @@ export function NotificationsTab() {
   )
   const blocking = changed.filter((c) => !validateList(edits[c.key]!).ok).length
 
+  const { confirmAndSchedule, busy } = usePendingActions()
   const saveM = useMutation({
-    mutationFn: () => saveNotify(changed),
-    onSuccess: async () => {
-      setEdits({})
+    mutationFn: (v: { changes: typeof changed; snap: typeof edits }) => saveNotify(v.changes),
+    // Снимаем только те правки, что ушли в базу и с тех пор не менялись: пока тикали 10 секунд,
+    // человек мог продолжить редактировать.
+    onSuccess: async (_r, v) => {
+      setEdits((prev) => {
+        const next = { ...prev }
+        for (const k of Object.keys(v.snap) as NotifyKey[]) if (prev[k] === v.snap[k]) delete next[k]
+        return next
+      })
       await qc.invalidateQueries({ queryKey: ['receipt-notify'] })
     },
   })
+
+  function onSave() {
+    const names = changed.map((c) => NOTIFY_KEYS.find((k) => k.key === c.key)?.label ?? c.key)
+    const v = { changes: changed, snap: edits }
+    void confirmAndSchedule(
+      {
+        title: `Save ${names.length === 1 ? 'this list' : `${names.length} lists`}?`,
+        body: <>Recipients change for: <b>{names.join(', ')}</b>. The automation uses them from its next run.</>,
+        cta: 'Save',
+      },
+      { label: `Saving ${names.join(', ')}`, run: () => saveM.mutateAsync(v) },
+    )
+  }
 
   if (q.isLoading) return <p className="text-sm text-gray-500">Loading…</p>
   if (q.error) return <p className="text-sm text-red-600">{errMsg(q.error)}</p>
@@ -83,10 +104,10 @@ export function NotificationsTab() {
       <SaveBar
         count={changed.length}
         blocking={blocking}
-        saving={saveM.isPending}
+        saving={saveM.isPending || busy}
         saved={saveM.isSuccess && changed.length === 0}
-        error={saveM.error ? errMsg(saveM.error) : null}
-        onSave={() => saveM.mutate()}
+        error={null}
+        onSave={onSave}
         onDiscard={() => setEdits({})}
       />
     </div>

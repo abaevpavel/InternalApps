@@ -4,6 +4,7 @@ import { ChevronDown, FileText, Lock, X } from 'lucide-react'
 import { Button, Card, Dropdown, Field, StatusBadge, Tabs } from '../../components/ui'
 import { cn, errMsg } from '../../lib/utils'
 import { loadAccounts, loadRuns, submitImport } from '../../services/receipt-import'
+import { usePendingActions } from '../../app/PendingActions'
 import {
   POLL_MS, STATUS_PILL, TWPERRY_LABEL,
   accountLabel, activeRun, emptyForm, formatSize, resultLine, submitLabel, toggleTwPerry, validateForm,
@@ -71,12 +72,45 @@ export function ImportTab() {
     if (field) setServerField((s) => ({ ...s, [field]: undefined }))
   }
 
+  const { confirmAndSchedule, busy } = usePendingActions()
+
+  /**
+   * Подтверждение + 10 секунд, в которые отправку можно отменить. После отправки Live-импорт
+   * с экрана не откатить (его исполняет автоматизация), поэтому «отмена» — только до неё.
+   */
   function onSubmit() {
     setAttempted(true)
     setServerError(null)
     setServerField({})
     if (Object.keys(localErrors).length) return
-    submitM.mutate(form)
+    const sent = form
+    const account = sent.twperryMonth ? TWPERRY_LABEL : accounts.find((a) => a.account === sent.account)?.label ?? sent.account
+    const files = [sent.csv?.name, sent.pdf?.name].filter(Boolean).join(' + ')
+    const live = sent.mode === 'live'
+    void confirmAndSchedule(
+      {
+        title: live ? `Import ${account} into the bookkeeping table?` : `Run a dry run for ${account}?`,
+        body: live ? (
+          <>
+            <b>{files}</b> will be written to TRANSACTIONS. Once it is sent, it can’t be undone from this screen.
+          </>
+        ) : (
+          <>
+            <b>{files}</b> is checked and nothing is written. The run is recorded under Dry runs.
+          </>
+        ),
+        cta: live ? 'Import' : 'Run dry run',
+        danger: live,
+      },
+      {
+        label: live ? `Sending the ${account} import` : `Sending the ${account} dry run`,
+        doneLabel: 'Sent — see the history',
+        run: async () => {
+          const res = await submitM.mutateAsync(sent)
+          if (!res.ok) throw new Error(res.message)
+        },
+      },
+    )
   }
 
   /** Ошибка поля: серверная — всегда; локальная — после попытки отправки или сразу для выбранного файла. */
@@ -88,7 +122,7 @@ export function ImportTab() {
     return attempted || fileChosen ? local : undefined
   }
 
-  const locked = !!running || submitM.isPending
+  const locked = !!running || submitM.isPending || busy
 
   return (
     <div>

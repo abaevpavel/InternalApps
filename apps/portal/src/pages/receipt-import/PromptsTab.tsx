@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, StatusBadge, Textarea } from '../../components/ui'
 import { SaveBar } from '../../components/SaveBar'
+import { usePendingActions } from '../../app/PendingActions'
 import { errMsg } from '../../lib/utils'
 import { loadPrompts, savePrompts } from '../../services/receipt-prompts'
 import { lengthHint, validatePrompt, type PromptKey } from '../../domain/receipt-prompts'
@@ -39,13 +40,32 @@ export function PromptsTab() {
     return k ? errorsOf(k).length > 0 : false
   }).length
 
+  const { confirmAndSchedule, busy } = usePendingActions()
   const saveM = useMutation({
-    mutationFn: () => savePrompts(changed),
-    onSuccess: async () => {
-      setEdits({})
+    mutationFn: (v: { changes: typeof changed }) => savePrompts(v.changes),
+    // Снимаем только правки, которые ушли в базу и не менялись за 10 секунд ожидания.
+    onSuccess: async (_r, v) => {
+      setEdits((prev) => {
+        const next = { ...prev }
+        for (const c of v.changes) if (prev[c.key] === c.value) delete next[c.key]
+        return next
+      })
       await qc.invalidateQueries({ queryKey: ['receipt-prompts'] })
     },
   })
+
+  function onSave() {
+    const names = changed.map((c) => keys.find((k) => k.key === c.key)?.label ?? c.key)
+    const v = { changes: changed }
+    void confirmAndSchedule(
+      {
+        title: `Save ${names.length === 1 ? 'this prompt' : `${names.length} prompts`}?`,
+        body: <>The receipts AI is told the new text of <b>{names.join(', ')}</b> from its next run.</>,
+        cta: 'Save',
+      },
+      { label: `Saving ${names.join(', ')}`, run: () => saveM.mutateAsync(v) },
+    )
+  }
 
   if (q.isLoading) return <p className="text-sm text-gray-500">Loading…</p>
   if (q.error) return <p className="text-sm text-red-600">{errMsg(q.error)}</p>
@@ -122,10 +142,10 @@ export function PromptsTab() {
       <SaveBar
         count={changed.length}
         blocking={blocking}
-        saving={saveM.isPending}
+        saving={saveM.isPending || busy}
         saved={saveM.isSuccess && changed.length === 0}
-        error={saveM.error ? errMsg(saveM.error) : null}
-        onSave={() => saveM.mutate()}
+        error={null}
+        onSave={onSave}
         onDiscard={() => setEdits({})}
       />
     </div>
