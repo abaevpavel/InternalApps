@@ -348,6 +348,16 @@ export const APPS: AppConfig[] = [
           name: 'Receipts automation (Mykyta)',
           detail: 'the receipt-import function queues the file and the automation writes it into the TRANSACTIONS bookkeeping table; results come back into receipt_import_runs. Counterpart ticket BAS-1449',
         },
+        {
+          name: 'Airtable — All employees (read)',
+          detail:
+            'appEcdKbrX4LcDzGC / tblHd8Gk2ZCclN9rd — a SYNCED copy of the Contacts Directory; its record ids are what receipts link to, so the employee sync reads here. Token: AIRTABLE_EMPLOYEES_TOKEN',
+        },
+        {
+          name: 'Airtable — 05-Contacts Directory (write)',
+          detail:
+            'appiScywNMqBk3x9e / tblVvfgjkGMGHWexL — Add person creates the employee here (F_Name, L_Name, Email, Title/Position, Department, Headshot, Category = Employee); All employees picks it up on Airtable’s next sync',
+        },
       ],
     },
   },

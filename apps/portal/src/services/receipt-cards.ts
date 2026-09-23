@@ -94,6 +94,73 @@ export async function deleteCard(id: string): Promise<void> {
 }
 
 /**
+ * Добавить человека (фича поверх BAS-1472): функция создаёт строку в 05-Contacts Directory
+ * (F_Name, L_Name, Email, Category = Employee). «All employees» — синхронизированная копия этой
+ * таблицы, поэтому у нас человек появится после синхронизации Airtable и нашего синка.
+ */
+export interface NewPerson {
+  firstName: string
+  lastName: string
+  email: string
+  title: string
+  departments: string[]
+  headshot: File | null
+}
+
+/** Возвращает предупреждение, если человек создан, но фото не загрузилось. */
+export async function addEmployee(input: NewPerson): Promise<{ warning: string | null }> {
+  const sb = requireSupabase()
+  const { data: auth } = await sb.auth.getSession()
+  const headshot = input.headshot
+    ? { data: await toBase64(input.headshot), content_type: input.headshot.type, filename: input.headshot.name }
+    : undefined
+  const { data, error } = await sb.functions.invoke('sync-receipt-employees', {
+    body: {
+      action: 'add_employee',
+      first_name: input.firstName,
+      last_name: input.lastName,
+      email: input.email,
+      title: input.title,
+      departments: input.departments,
+      headshot,
+      access_token: auth.session?.access_token ?? '',
+    },
+  })
+  if (error) throw new Error((await functionError(error)) ?? error.message)
+  return { warning: typeof data?.warning === 'string' ? data.warning : null }
+}
+
+/** Отделы и должности, которые уже есть у сотрудников справочника, — для выбора в форме. */
+export async function loadDirectoryOptions(): Promise<{ departments: string[]; titles: string[] }> {
+  const sb = requireSupabase()
+  const { data: auth } = await sb.auth.getSession()
+  const { data, error } = await sb.functions.invoke('sync-receipt-employees', {
+    body: { action: 'directory_options', access_token: auth.session?.access_token ?? '' },
+  })
+  if (error) throw new Error((await functionError(error)) ?? error.message)
+  return { departments: data?.departments ?? [], titles: data?.titles ?? [] }
+}
+
+function toBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''))
+    r.onerror = () => reject(r.error ?? new Error('Could not read the file.'))
+    r.readAsDataURL(file)
+  })
+}
+
+async function functionError(error: unknown): Promise<string | null> {
+  const ctx = (error as { context?: Response }).context
+  try {
+    const body = ctx ? await ctx.json() : null
+    return typeof body?.error === 'string' ? body.error : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * «Sync now» — тот же синк, что раз в сутки гоняет pg_cron. Токен кладём и в тело:
  * платформа умеет портить заголовок Authorization.
  */
@@ -103,14 +170,6 @@ export async function syncEmployeesNow(): Promise<{ fetched: number; added: numb
   const { data, error } = await sb.functions.invoke('sync-receipt-employees', {
     body: { access_token: auth.session?.access_token ?? '' },
   })
-  if (error) {
-    const ctx = (error as { context?: Response }).context
-    let msg: string | null = null
-    try {
-      const body = ctx ? await ctx.json() : null
-      msg = typeof body?.error === 'string' ? body.error : null
-    } catch { /* тело не JSON */ }
-    throw new Error(msg ?? error.message)
-  }
+  if (error) throw new Error((await functionError(error)) ?? error.message)
   return data
 }
