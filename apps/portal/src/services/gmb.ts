@@ -1,5 +1,6 @@
 import { requireSupabase, supabase } from '../lib/supabase'
 import type { GmbAgentStatus, GmbBundle, GmbRegion, GmbSetting, GmbSettingKey } from '../domain/gmb'
+import { normalizeDesired, type GmbListing } from '../domain/gmb-listings'
 
 /**
  * GMB Agent — данные экрана настроек (BAS-1353).
@@ -95,6 +96,61 @@ export async function saveChanges(changes: { key: string; value: unknown }[]): P
     throw new Error(
       `Not saved: ${refused.join(', ')}. These keys are developer-only — ask a portal administrator.`,
     )
+  }
+}
+
+/**
+ * Листинги Google (BAS-1543), `public.gmb_listings`. Порядок — по `store_code` (001…101),
+ * как в собственной инвентаризации клиента. Права: SELECT/UPDATE по
+ * `user_has_application_access(auth.uid(), '/gmb-agent')`, админу всё.
+ */
+export async function loadListings(): Promise<GmbListing[]> {
+  const sb = requireSupabase()
+  const { data, error } = await sb
+    .from('gmb_listings')
+    .select(
+      'location_id, live_title, registry_name, registry_approved, address, store_code, last_seen_at, last_renamed_at, last_renamed_from, desired_name, enforce_override',
+    )
+    .order('store_code')
+  if (error) throw error
+  return (data ?? []).map((r) => ({
+    locationId: r.location_id as string,
+    liveTitle: (r.live_title as string | null) ?? null,
+    registryName: (r.registry_name as string | null) ?? null,
+    registryApproved: Boolean(r.registry_approved),
+    address: (r.address as string | null) ?? null,
+    storeCode: (r.store_code as string | null) ?? null,
+    lastSeenAt: (r.last_seen_at as string | null) ?? null,
+    lastRenamedAt: (r.last_renamed_at as string | null) ?? null,
+    lastRenamedFrom: (r.last_renamed_from as string | null) ?? null,
+    desiredName: (r.desired_name as string | null) ?? null,
+    enforceOverride: (r.enforce_override as boolean | null) ?? null,
+  }))
+}
+
+/**
+ * Сохранить только изменённые строки — чтобы `updated_by` честно говорил, кто что менял.
+ * Грант у `authenticated` — UPDATE ровно трёх колонок, поэтому `updated_at` НЕ шлём
+ * (его двигает триггер; лишняя колонка в запросе — отказ Postgres, даже для админа).
+ * Пустое имя — NULL, не "". `.select()` ловит тихий отказ RLS.
+ */
+export async function saveListings(rows: Pick<GmbListing, 'locationId' | 'desiredName' | 'enforceOverride'>[]): Promise<void> {
+  const sb = requireSupabase()
+  const { data: session } = await sb.auth.getSession()
+  const userId = session.session?.user?.id ?? null
+
+  const refused: string[] = []
+  for (const r of rows) {
+    const { data, error } = await sb
+      .from('gmb_listings')
+      .update({ desired_name: normalizeDesired(r.desiredName), enforce_override: r.enforceOverride, updated_by: userId })
+      .eq('location_id', r.locationId)
+      .select('location_id')
+    if (error) throw error
+    if (!data || data.length === 0) refused.push(r.locationId)
+  }
+  if (refused.length) {
+    throw new Error(`Not saved: ${refused.length} listing(s). You may not have access to the GMB Agent — ask a portal administrator.`)
   }
 }
 

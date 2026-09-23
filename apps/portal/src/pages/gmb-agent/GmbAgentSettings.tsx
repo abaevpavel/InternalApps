@@ -5,13 +5,17 @@ import { Button, Card, Dropdown, Field, Input, PageTitle, StatusBadge, Tabs, Tex
 import { SaveBar } from '../../components/SaveBar'
 import { errMsg } from '../../lib/utils'
 import { useAuth } from '../../auth/AuthProvider'
-import { loadBundle, saveChanges } from '../../services/gmb'
+import { loadBundle, loadListings, saveChanges, saveListings } from '../../services/gmb'
 import {
-  CTA_OPTIONS, GMB_TZ_LABEL, MIN_STARS_OPTIONS, SECTION_ORDER, SECTION_TITLES, WEEKDAYS,
+  CTA_OPTIONS, EMAIL_LIST_MAX, GMB_TZ_LABEL, MIN_STARS_OPTIONS, SECTION_ORDER, SECTION_TITLES, WEEKDAYS,
   asRange, asString, asStringList, asTopics, buildCron, describeCron, fieldMeta, fieldRank, normalizeValue,
   parseCron, sameValue, validateValue,
   type GmbRegion, type GmbSection, type GmbSettingKey, type GmbTopic,
 } from '../../domain/gmb'
+import {
+  ENFORCE_OPTIONS, LISTINGS_HELPER, fromChoice, listingChanged, newListingNote, outcome, toChoice,
+  type GmbListing,
+} from '../../domain/gmb-listings'
 
 /**
  * GMB Agent — экран настроек (BAS-1353).
@@ -30,6 +34,9 @@ export function GmbAgentSettingsPage() {
   const [edits, setEdits] = useState<Record<string, unknown>>({})
 
   const q = useQuery({ queryKey: ['gmb-settings'], queryFn: loadBundle })
+  // Названия листингов (BAS-1543) — своя таблица, но одна кнопка Save на весь экран.
+  const lq = useQuery({ queryKey: ['gmb-listings'], queryFn: loadListings })
+  const [listingEdits, setListingEdits] = useState<Record<string, Pick<GmbListing, 'desiredName' | 'enforceOverride'>>>({})
 
   const baseline = useMemo(() => {
     const m: Record<string, unknown> = {}
@@ -74,11 +81,31 @@ export function GmbAgentSettingsPage() {
   /** Блокируем сохранение только из-за полей, которые человек трогал. */
   const blocking = changed.filter((c) => errors[c.key])
 
+  const listings = useMemo(
+    () => (lq.data ?? []).map((l) => (listingEdits[l.locationId] ? { ...l, ...listingEdits[l.locationId] } : l)),
+    [lq.data, listingEdits],
+  )
+  // Только реально изменённые строки: `updated_by` должен говорить правду о том, кто что менял.
+  const changedListings = useMemo(
+    () => listings.filter((l) => {
+      const before = lq.data?.find((b) => b.locationId === l.locationId)
+      return before ? listingChanged(before, l) : false
+    }),
+    [listings, lq.data],
+  )
+
   const saveM = useMutation({
-    mutationFn: () => saveChanges(changed),
+    mutationFn: async () => {
+      if (changed.length) await saveChanges(changed)
+      if (changedListings.length) await saveListings(changedListings)
+    },
     onSuccess: async () => {
       setEdits({})
-      await qc.invalidateQueries({ queryKey: ['gmb-settings'] })
+      setListingEdits({})
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['gmb-settings'] }),
+        qc.invalidateQueries({ queryKey: ['gmb-listings'] }),
+      ])
     },
   })
 
@@ -122,14 +149,32 @@ export function GmbAgentSettingsPage() {
         ))}
       </div>
 
+      {tab === 'listings' && (
+        <ListingNames
+          listings={listings}
+          loading={lq.isLoading}
+          error={lq.error ? errMsg(lq.error) : null}
+          dirtyIds={new Set(changedListings.map((l) => l.locationId))}
+          onChange={(id, patch) =>
+            setListingEdits((prev) => {
+              const base = prev[id] ?? lq.data?.find((l) => l.locationId === id)
+              return base ? { ...prev, [id]: { desiredName: base.desiredName, enforceOverride: base.enforceOverride, ...patch } } : prev
+            })
+          }
+        />
+      )}
+
       <SaveBar
-        count={changed.length}
+        count={changed.length + changedListings.length}
         blocking={blocking.length}
         saving={saveM.isPending}
-        saved={saveM.isSuccess && changed.length === 0}
+        saved={saveM.isSuccess && changed.length + changedListings.length === 0}
         error={saveM.error ? errMsg(saveM.error) : null}
         onSave={() => saveM.mutate()}
-        onDiscard={() => setEdits({})}
+        onDiscard={() => {
+          setEdits({})
+          setListingEdits({})
+        }}
       />
     </div>
   )
@@ -245,6 +290,8 @@ function ValueControl({
       return <TextControl value={asString(value)} onChange={onChange} rows={meta.rows} maxChars={meta.maxChars} placeholder={meta.placeholder} />
     case 'string_list':
       return <LinesControl value={asStringList(value)} onChange={onChange} />
+    case 'email_list':
+      return <EmailListControl value={asStringList(value)} onChange={onChange} placeholder={meta.placeholder} />
     case 'text_list':
       return <TextListControl value={asStringList(value)} onChange={onChange} maxChars={meta.maxChars} />
     case 'number':
@@ -366,6 +413,131 @@ function TextListControl({
       </Button>
       {value.length === 0 && <p className="text-xs text-gray-400">No examples — the list may stay empty.</p>}
     </div>
+  )
+}
+
+/** Адреса по одному в строке: добавить / удалить, до 20. Пустой список — «никому», это валидно. */
+function EmailListControl({
+  value, onChange, placeholder,
+}: { value: string[]; onChange: (v: string[]) => void; placeholder?: string }) {
+  return (
+    <div className="space-y-2">
+      {value.length === 0 && (
+        <p className="rounded-lg border border-dashed border-gray-200 px-3 py-2 text-sm text-gray-600">
+          Nobody will receive the weekly review email.
+        </p>
+      )}
+      {value.map((item, i) => (
+        <div key={i} className="flex gap-2">
+          <Input
+            type="email"
+            className="max-w-md"
+            value={item}
+            placeholder={placeholder}
+            onChange={(e) => onChange(value.map((x, j) => (j === i ? e.target.value : x)))}
+          />
+          <Button variant="ghost" aria-label="Remove address" className="h-9 shrink-0 px-2 text-gray-400 hover:text-red-600" onClick={() => onChange(value.filter((_, j) => j !== i))}>
+            <Trash2 size={15} />
+          </Button>
+        </div>
+      ))}
+      {value.length < EMAIL_LIST_MAX && (
+        <Button variant="ghost" className="px-2" onClick={() => onChange([...value, ''])}>
+          <Plus size={15} /> Add address
+        </Button>
+      )}
+    </div>
+  )
+}
+
+/* ---------------- названия листингов (BAS-1543) ---------------- */
+
+function ListingNames({
+  listings, loading, error, dirtyIds, onChange,
+}: {
+  listings: GmbListing[]
+  loading: boolean
+  error: string | null
+  dirtyIds: Set<string>
+  onChange: (id: string, patch: Partial<Pick<GmbListing, 'desiredName' | 'enforceOverride'>>) => void
+}) {
+  return (
+    <div className="mt-8">
+      <h2 className="mb-1 text-base font-semibold text-gray-900">Listing names</h2>
+      <p className="mb-4 text-sm text-gray-500">{LISTINGS_HELPER}</p>
+      {loading && <p className="text-sm text-gray-500">Loading…</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <div className="space-y-3">
+        {listings.map((l) => (
+          <ListingRow key={l.locationId} listing={l} dirty={dirtyIds.has(l.locationId)} onChange={(p) => onChange(l.locationId, p)} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function shortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function ListingRow({
+  listing: l, dirty, onChange,
+}: {
+  listing: GmbListing
+  dirty: boolean
+  onChange: (p: Partial<Pick<GmbListing, 'desiredName' | 'enforceOverride'>>) => void
+}) {
+  const res = outcome(l)
+  const fresh = newListingNote(l)
+  return (
+    <Card className="p-5">
+      <div className="mb-3 flex flex-wrap items-start gap-x-3 gap-y-1">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm text-gray-500">
+            Google shows: <span className="font-medium text-gray-900">{l.liveTitle ?? '—'}</span>
+          </p>
+          <p className="text-xs text-gray-400">
+            {[l.storeCode, l.address].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+        {dirty && <StatusBadge tone="warning">unsaved</StatusBadge>}
+        {l.lastSeenAt && <span className="text-xs text-gray-400">Checked {shortDate(l.lastSeenAt)}</span>}
+      </div>
+
+      {fresh && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900">
+          <Info size={14} className="mt-0.5 shrink-0" />
+          <span>{fresh.banner}</span>
+        </div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,260px)]">
+        <Field label="Name this listing should keep" hint={l.registryName ? `Agent keeps it as: ${l.registryName}` : undefined}>
+          <Input
+            value={l.desiredName ?? ''}
+            placeholder={l.registryName ?? 'No name set'}
+            onChange={(e) => onChange({ desiredName: e.target.value })}
+          />
+          {fresh?.ignoredName && <p className="mt-1 text-xs text-amber-700">{fresh.ignoredName}</p>}
+        </Field>
+        <Field label="Name check">
+          <Dropdown
+            value={toChoice(l.enforceOverride)}
+            onChange={(c) => onChange({ enforceOverride: fromChoice(c) })}
+            options={ENFORCE_OPTIONS}
+          />
+        </Field>
+      </div>
+
+      <p className="mt-3 text-sm font-medium text-gray-900">{res.line}</p>
+      {res.drift && <p className="text-sm text-amber-700">{res.drift}</p>}
+      {l.lastRenamedAt && (
+        <p className="mt-1 text-xs text-gray-400">
+          Last put back: {shortDate(l.lastRenamedAt)}
+          {l.lastRenamedFrom ? `, was ‘${l.lastRenamedFrom}’` : ''}
+        </p>
+      )}
+    </Card>
   )
 }
 

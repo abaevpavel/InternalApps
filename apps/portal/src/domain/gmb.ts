@@ -12,7 +12,7 @@
  */
 
 export type GmbSection = 'reviews' | 'posts' | 'listings' | 'general'
-export type GmbValueType = 'string' | 'string_list' | 'text_list' | 'number' | 'range' | 'boolean' | 'topic_table'
+export type GmbValueType = 'string' | 'string_list' | 'text_list' | 'email_list' | 'number' | 'range' | 'boolean' | 'topic_table'
 export type GmbEditableBy = 'staff' | 'developer'
 
 /** Строка каталога `gmb."SettingKey"` — read-only для экрана. */
@@ -151,6 +151,12 @@ export const FIELDS: Record<string, GmbFieldMeta> = {
   },
   reviews_max_chars: { label: 'Max reply length', hint: 'Characters. 4096 is Google’s own limit and cannot be raised.', min: 100, max: 4096 },
   reviews_cron: { label: 'Review reply schedule', cronFloor: 'hourly' },
+  notify_review_digest_to: {
+    label: 'Weekly review email',
+    hint: 'Who receives the weekly email listing every new review. One address per row. Leave empty to email nobody. A week with no new reviews sends nothing.',
+    optional: true,
+    placeholder: 'name@basementremodeling.com',
+  },
   employee_names: {
     label: 'Staff names',
     hint: 'One first name per line, as reviewers write them ("Pavel was on time"). No commas. Duplicates are collapsed on save.',
@@ -183,7 +189,7 @@ export const FIELDS: Record<string, GmbFieldMeta> = {
   /* ---------------- Listings ---------------- */
   listing_check_cron: {
     label: 'Listing name check schedule',
-    hint: 'The canonical listing names themselves stay in the agent’s database with their own approval cycle — only the check schedule lives here.',
+    hint: 'When the agent checks listing names. The names themselves are set per listing below.',
     cronFloor: 'daily',
   },
 
@@ -203,7 +209,7 @@ export const FIELDS: Record<string, GmbFieldMeta> = {
  */
 const FIELD_ORDER: string[] = [
   'reviews_voice', 'auto_reply_min_stars', 'tone_positive', 'tone_neutral', 'tone_negative', 'reviews_signature',
-  'reviews_forbidden', 'reviews_max_chars', 'reviews_cron', 'employee_names',
+  'reviews_forbidden', 'reviews_max_chars', 'reviews_cron', 'employee_names', 'notify_review_digest_to',
   'posts_topic_guidance', 'posts_voice', 'posts_length_words', 'posts_max_chars',
   'posts_cta_default', 'posts_forbidden', 'posts_examples', 'posts_cron', 'post_topics',
   'listing_check_cron',
@@ -346,6 +352,7 @@ export function normalizeValue(key: string, type: GmbValueType, value: unknown):
     case 'string_list':
       return collapseList(asStringList(value))
     case 'text_list':
+    case 'email_list':
       return asStringList(value).map((x) => x.trim()).filter(Boolean)
     case 'number':
       return Number(value)
@@ -399,6 +406,8 @@ export function validateValue(
       }
       return null
     }
+    case 'email_list':
+      return validateEmailList(asStringList(value))
     case 'number': {
       const n = Number(value)
       if (!Number.isFinite(n)) return 'Must be a number.'
@@ -437,6 +446,29 @@ export function validateValue(
     default:
       return null
   }
+}
+
+/**
+ * `email_list` (BAS-1543, `notify_review_digest_to`) — зеркало правил агента: он отклоняет
+ * ВЕСЬ снимок настроек, если одно значение невалидно, и тогда на экране «сохранено», а
+ * в работе тишина. Поэтому те же правила здесь, до сохранения:
+ * массив строк, до 20, каждая непустая, до 254 символов, без запятой / точки с запятой /
+ * пробела внутри (не делим — просим одну на строку), похожа на адрес. Дубликаты агент
+ * схлопывает сам, пустой список валиден («никому»).
+ */
+export const EMAIL_LIST_MAX = 20
+const EMAIL_LIST_RE = /^[^@]+@[^@.]+(\.[^@.]+)+$/
+
+export function validateEmailList(list: string[]): string | null {
+  if (list.length > EMAIL_LIST_MAX) return `At most ${EMAIL_LIST_MAX} addresses.`
+  for (const raw of list) {
+    const e = raw.trim()
+    if (!e) return 'Entries cannot be empty.'
+    if (e.length > 254) return `"${e.slice(0, 40)}…" is longer than 254 characters.`
+    if (/[,;\s]/.test(e)) return `"${e}": one address per row.`
+    if (!EMAIL_LIST_RE.test(e)) return `"${e}" does not look like an email address.`
+  }
+  return null
 }
 
 /** Одинаковы ли значения (для «есть несохранённые изменения»). */
