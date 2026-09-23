@@ -361,6 +361,22 @@ export const APPS: AppConfig[] = [
       ],
     },
   },
+  {
+    // Dev Apps (BAS-1556, BAS-1503/1504): инструменты разработчика — каталог писем, которые
+    // отправляют сценарии Make цепочки продаж, и payload'ы их вебхуков. Данные — снимок JSON
+    // в репо (собирается скриптом из блюпринтов Make, только чтение), своих таблиц нет.
+    // Доступ — роли Developer и Admin (миграция 0020).
+    code: 'dev-apps',
+    label: 'Dev Apps',
+    shortLabel: 'Dev Apps',
+    routePrefixes: ['/dev-apps'],
+    webhooks: [],
+    resources: {
+      database: '— no tables: a JSON snapshot committed to the repo',
+      tables: [],
+      external: [{ name: 'Make.com', detail: 'blueprints of the sales-chain scenarios, read-only, to build the snapshot' }],
+    },
+  },
 ]
 
 /**
