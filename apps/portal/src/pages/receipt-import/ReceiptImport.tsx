@@ -7,14 +7,14 @@ import { loadAccounts, loadRuns, submitImport } from '../../services/receipt-imp
 import {
   POLL_MS, STATUS_PILL, TWPERRY_LABEL,
   accountLabel, activeRun, emptyForm, formatSize, resultLine, submitLabel, toggleTwPerry, validateForm,
-  type ImportAccount, type ImportField, type ImportForm, type ImportRun,
+  type ImportAccount, type ImportField, type ImportForm, type ImportMode, type ImportRun,
 } from '../../domain/receipt-import'
 
 /**
  * 07 Finances — Receipts Matcher · импорт транзакций (BAS-1450).
  *
  * Одна форма вместо двух отдельных с общим паролем: человек выбирает счёт, кладёт выгрузку
- * (для месяца TW Perry — ещё и PDF выписки), выбирает Dry run или Live. Импорт идёт в фоне,
+ * (для месяца TW Perry — ещё и PDF выписки), по умолчанию сразу Live (Dry run — в меню Mode). Импорт идёт в фоне,
  * результат появляется в истории на этом же экране. Контракт — вложение к BAS-1450.
  */
 export function ReceiptImportPage() {
@@ -45,8 +45,8 @@ export function ReceiptImportPage() {
     onSuccess: async (res) => {
       if (res.ok) {
         setAttempted(false)
-        // Live между визитами не запоминаем — и после отправки тоже возвращаемся к Dry run.
-        setForm((f) => ({ ...f, mode: 'dry' }))
+        // Dry run — разовая проверка: после отправки режим возвращается к Live по умолчанию.
+        setForm((f) => ({ ...f, mode: 'live' }))
         if (res.runId) setExpanded(null)
       } else {
         if (res.field) setServerField({ [res.field]: res.message })
@@ -92,6 +92,12 @@ export function ReceiptImportPage() {
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
         <Card className="h-fit space-y-5 p-6">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-gray-900">New import</h2>
+            <ModeMenu mode={form.mode} onChange={(m) => update({ mode: m }, 'mode')} />
+          </div>
+          <FieldError text={fieldError('mode')} />
+
           <TwPerryToggle checked={form.twperryMonth} onChange={(on) => { setForm((f) => toggleTwPerry(f, on)); setServerField({}); setServerError(null) }} />
 
           {form.twperryMonth ? (
@@ -129,29 +135,11 @@ export function ReceiptImportPage() {
             </Field>
           )}
 
-          <Field label="Mode">
-            <div className="flex rounded-lg border border-gray-200 p-0.5">
-              {(['dry', 'live'] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => update({ mode: m }, 'mode')}
-                  className={cn(
-                    'flex-1 rounded-md py-2 text-sm font-medium transition',
-                    form.mode === m ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50',
-                  )}
-                >
-                  {m === 'dry' ? 'Dry run' : 'Live'}
-                </button>
-              ))}
-            </div>
-            {form.mode === 'dry' ? (
-              <p className="mt-1.5 text-xs text-gray-500">Shows what would happen. Writes nothing.</p>
-            ) : (
-              <p className="mt-1.5 text-xs font-medium text-amber-700">Writes to the bookkeeping table. Can’t be undone from this screen.</p>
-            )}
-            <FieldError text={fieldError('mode')} />
-          </Field>
+          {form.mode === 'dry' ? (
+            <p className="text-xs text-gray-500">Dry run: shows what would happen. Writes nothing.</p>
+          ) : (
+            <p className="text-xs font-medium text-amber-700">Writes to the bookkeeping table. Can’t be undone from this screen.</p>
+          )}
 
           {serverError && <p className="text-sm text-red-600">{serverError}</p>}
 
@@ -182,6 +170,74 @@ function FieldError({ text }: { text?: string }) {
   return text ? <p className="mt-1 text-sm text-red-600">{text}</p> : null
 }
 
+/**
+ * Режим — маленькая плашка вверху формы, а не сегмент на виду: бухгалтеру слово «dry run»
+ * ничего не говорит. По клику — контекстное меню с одним переключателем.
+ */
+function ModeMenu({ mode, onChange }: { mode: ImportMode; onChange: (m: ImportMode) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const dry = mode === 'dry'
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        aria-haspopup="true"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition',
+          dry ? 'bg-blue-50 text-blue-700 hover:bg-blue-100' : 'bg-gray-100 text-gray-700 hover:bg-gray-200',
+        )}
+      >
+        Mode: {dry ? 'Dry run' : 'Live'}
+        <ChevronDown size={12} className={cn('transition', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1.5 w-64 rounded-lg border border-gray-200 bg-white p-3 shadow-lg">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-gray-900">Dry run</span>
+            <Switch checked={dry} onChange={(on) => onChange(on ? 'dry' : 'live')} label="Dry run" />
+          </div>
+          <p className="mt-1 text-xs text-gray-500">Shows what would happen. Writes nothing.</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={cn('relative h-6 w-11 shrink-0 rounded-full transition', checked ? 'bg-blue-600' : 'bg-gray-300')}
+    >
+      <span className={cn('absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition', checked ? 'left-[22px]' : 'left-0.5')} />
+    </button>
+  )
+}
+
 function TwPerryToggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 p-4">
@@ -189,16 +245,7 @@ function TwPerryToggle({ checked, onChange }: { checked: boolean; onChange: (v: 
         <p className="text-sm font-medium text-gray-900">TW Perry monthly statement</p>
         <p className="text-xs text-gray-500">The CSV and the statement PDF from the same Billtrust mail.</p>
       </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label="TW Perry monthly statement"
-        onClick={() => onChange(!checked)}
-        className={cn('relative h-6 w-11 shrink-0 rounded-full transition', checked ? 'bg-blue-600' : 'bg-gray-300')}
-      >
-        <span className={cn('absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition', checked ? 'left-[22px]' : 'left-0.5')} />
-      </button>
+      <Switch checked={checked} onChange={onChange} label="TW Perry monthly statement" />
     </div>
   )
 }

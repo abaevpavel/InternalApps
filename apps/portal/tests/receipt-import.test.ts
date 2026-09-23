@@ -8,8 +8,8 @@ import {
 const file = (name: string, size = 1000) => new File([new Uint8Array(size)], name)
 
 describe('receipt-import form', () => {
-  it('opens on Dry run every time', () => {
-    expect(emptyForm().mode).toBe('dry')
+  it('opens on Live; dry run is opt-in', () => {
+    expect(emptyForm().mode).toBe('live')
   })
 
   it('toggle on clears the account, toggle off clears the PDF', () => {

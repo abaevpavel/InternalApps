@@ -57,9 +57,13 @@ export const HISTORY_LIMIT = 20
 /** Интервал перечитывания истории, пока есть запуск в работе. */
 export const POLL_MS = 5000
 
-/** Форма при каждом открытии: Dry run, Live между визитами не запоминаем. */
+/**
+ * Форма при каждом открытии — Live. Осознанное отступление от контракта (там Dry run по
+ * умолчанию): бухгалтеру «dry run» ничего не говорит, поэтому режим спрятан в маленькое
+ * меню вверху формы, а над кнопкой Live всегда висит предупреждение, что это не откатить.
+ */
 export function emptyForm(): ImportForm {
-  return { twperryMonth: false, account: null, csv: null, pdf: null, mode: 'dry' }
+  return { twperryMonth: false, account: null, csv: null, pdf: null, mode: 'live' }
 }
 
 /**
