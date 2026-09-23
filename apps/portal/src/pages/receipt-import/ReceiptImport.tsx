@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, FileText, Lock, X } from 'lucide-react'
-import { Button, Card, Dropdown, Field, StatusBadge } from '../../components/ui'
+import { Button, Card, Dropdown, Field, StatusBadge, Tabs } from '../../components/ui'
 import { cn, errMsg } from '../../lib/utils'
 import { loadAccounts, loadRuns, submitImport } from '../../services/receipt-import'
 import {
@@ -26,6 +26,8 @@ export function ImportTab() {
   const [serverError, setServerError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [pointAt, setPointAt] = useState<string | null>(null)
+  // Вкладка истории: живые импорты и проверочные прогоны раздельно, чтобы бухгалтер их не путала.
+  const [historyMode, setHistoryMode] = useState<ImportMode>('live')
 
   const accountsQ = useQuery({ queryKey: ['receipt-import-accounts'], queryFn: loadAccounts })
   const runsQ = useQuery({
@@ -41,10 +43,12 @@ export function ImportTab() {
   const localErrors = useMemo(() => validateForm(form), [form])
 
   const submitM = useMutation({
-    mutationFn: () => submitImport(form),
-    onSuccess: async (res) => {
+    mutationFn: (f: ImportForm) => submitImport(f),
+    onSuccess: async (res, sent) => {
       if (res.ok) {
         setAttempted(false)
+        // Показываем вкладку того режима, в котором отправили, — запуск появится там.
+        setHistoryMode(sent.mode)
         // Dry run — разовая проверка: после отправки режим возвращается к Live по умолчанию.
         setForm((f) => ({ ...f, mode: 'live' }))
         if (res.runId) setExpanded(null)
@@ -72,7 +76,7 @@ export function ImportTab() {
     setServerError(null)
     setServerField({})
     if (Object.keys(localErrors).length) return
-    submitM.mutate()
+    submitM.mutate(form)
   }
 
   /** Ошибка поля: серверная — всегда; локальная — после попытки отправки или сразу для выбранного файла. */
@@ -158,6 +162,8 @@ export function ImportTab() {
           onToggle={(id) => setExpanded((cur) => (cur === id ? null : id))}
           pointAt={pointAt}
           onPointed={() => setPointAt(null)}
+          mode={historyMode}
+          onModeChange={setHistoryMode}
         />
       </div>
     </div>
@@ -296,7 +302,7 @@ function clock(iso: string): string {
 }
 
 function History({
-  runs, accounts, loading, error, running, expanded, onToggle, pointAt, onPointed,
+  runs, accounts, loading, error, running, expanded, onToggle, pointAt, onPointed, mode, onModeChange,
 }: {
   runs: ImportRun[]
   accounts: ImportAccount[]
@@ -307,15 +313,24 @@ function History({
   onToggle: (id: string) => void
   pointAt: string | null
   onPointed: () => void
+  mode: ImportMode
+  onModeChange: (m: ImportMode) => void
 }) {
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
-  // 409: «другой импорт ещё идёт» — прокручиваем к нему.
+  // 409: «другой импорт ещё идёт» — открываем вкладку его режима и прокручиваем к нему.
   useEffect(() => {
     if (!pointAt) return
+    const target = runs.find((r) => r.id === pointAt)
+    if (target && target.mode !== mode) {
+      onModeChange(target.mode)
+      return
+    }
     rowRefs.current[pointAt]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     onPointed()
-  }, [pointAt, runs, onPointed])
+  }, [pointAt, runs, mode, onModeChange, onPointed])
+
+  const shown = runs.filter((r) => r.mode === mode)
 
   return (
     <Card className="h-fit p-6">
@@ -327,16 +342,29 @@ function History({
         </div>
       )}
 
+      <Tabs
+        className="mb-4"
+        tabs={[
+          { key: 'live' as const, label: 'Live imports' },
+          { key: 'dry' as const, label: 'Dry runs' },
+        ]}
+        value={mode}
+        onChange={onModeChange}
+      />
+      {mode === 'dry' && <p className="mb-3 text-xs text-gray-500">Test runs only — nothing here was written to the bookkeeping table.</p>}
+
       {loading && <p className="text-sm text-gray-500">Loading…</p>}
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {!loading && !error && runs.length === 0 && <p className="text-sm text-gray-500">No imports yet.</p>}
+      {!loading && !error && shown.length === 0 && (
+        <p className="text-sm text-gray-500">{mode === 'live' ? 'No live imports yet.' : 'No dry runs yet.'}</p>
+      )}
 
-      {runs.length > 0 && (
+      {shown.length > 0 && (
         <div className="divide-y divide-gray-100">
           <div className="hidden grid-cols-[120px_120px_minmax(0,1fr)_96px_16px] gap-3 pb-2 text-xs text-gray-400 sm:grid">
             <span>When</span><span>Account</span><span>Result</span><span>Status</span><span />
           </div>
-          {runs.map((r) => {
+          {shown.map((r) => {
             const pill = STATUS_PILL[r.status] ?? { label: r.status, tone: 'neutral' as const }
             const open = expanded === r.id
             return (

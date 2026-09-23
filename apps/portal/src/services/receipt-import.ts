@@ -28,15 +28,35 @@ export async function loadAccounts(): Promise<ImportAccount[]> {
   return (data ?? []).map((r) => ({ account: r.account as string, label: (r.label as string) ?? (r.account as string) }))
 }
 
+const RUN_COLUMNS =
+  'id, created_at, created_by_name, twperry_month, account, mode, csv_name, pdf_name, status, summary, problems, details, started_at, finished_at'
+
+/**
+ * История — по 20 последних запусков КАЖДОГО режима: на экране Live и Dry run на разных
+ * вкладках, и серия проверочных прогонов не должна вытеснять из списка живые импорты.
+ * Идущий запуск (любого режима) тоже попадает сюда — по нему экран блокирует форму.
+ */
 export async function loadRuns(): Promise<ImportRun[]> {
   const sb = requireSupabase()
-  const { data, error } = await sb
-    .from('receipt_import_runs')
-    .select('id, created_at, created_by_name, twperry_month, account, mode, csv_name, pdf_name, status, summary, problems, details, started_at, finished_at')
-    .order('created_at', { ascending: false })
-    .limit(HISTORY_LIMIT)
-  if (error) throw error
-  return (data ?? []).map((r) => ({
+  const [live, dry] = await Promise.all(
+    (['live', 'dry'] as const).map((mode) =>
+      sb
+        .from('receipt_import_runs')
+        .select(RUN_COLUMNS)
+        .eq('mode', mode)
+        .order('created_at', { ascending: false })
+        .limit(HISTORY_LIMIT),
+    ),
+  )
+  if (live.error) throw live.error
+  if (dry.error) throw dry.error
+  return [...(live.data ?? []), ...(dry.data ?? [])]
+    .map(toRun)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+function toRun(r: Record<string, unknown>): ImportRun {
+  return {
     id: r.id as string,
     createdAt: r.created_at as string,
     createdByName: (r.created_by_name as string | null) ?? null,
@@ -53,7 +73,7 @@ export async function loadRuns(): Promise<ImportRun[]> {
       : [],
     startedAt: (r.started_at as string | null) ?? null,
     finishedAt: (r.finished_at as string | null) ?? null,
-  }))
+  }
 }
 
 /**
