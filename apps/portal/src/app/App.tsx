@@ -26,7 +26,7 @@ const GmailAutoSenderPage = lazy(() => import('../pages/gmail-sender/GmailAutoSe
 const SalesEmailSenderPage = lazy(() => import('../pages/sales/SalesEmailSender').then((m) => ({ default: m.SalesEmailSenderPage })))
 const HRSyncAirtablePage = lazy(() => import('../pages/hr-sync/HRSyncAirtable').then((m) => ({ default: m.HRSyncAirtablePage })))
 const GmbAgentSettingsPage = lazy(() => import('../pages/gmb-agent/GmbAgentSettings').then((m) => ({ default: m.GmbAgentSettingsPage })))
-const ReceiptImportPage = lazy(() => import('../pages/receipt-import/ReceiptImport').then((m) => ({ default: m.ReceiptImportPage })))
+const ReceiptsMatcherPage = lazy(() => import('../pages/receipt-import/ReceiptsMatcher').then((m) => ({ default: m.ReceiptsMatcherPage })))
 const SendBuildertrendSchedulePage = lazy(() => import('../pages/buildertrend-schedule/SendBuildertrendSchedule').then((m) => ({ default: m.SendBuildertrendSchedulePage })))
 const TasksPage = lazy(() => import('../pages/task-planner/Tasks').then((m) => ({ default: m.TasksPage })))
 const CreateTaskPage = lazy(() => import('../pages/task-planner/CreateTask').then((m) => ({ default: m.CreateTaskPage })))
@@ -99,7 +99,7 @@ function Shell() {
           <Route path="/hr-sync-airtable" element={<HRSyncAirtablePage />} />
           <Route path="/buildertrend-schedule" element={<SendBuildertrendSchedulePage />} />
           <Route path="/gmb-agent" element={<GmbAgentSettingsPage />} />
-          <Route path="/receipt-import" element={<ReceiptImportPage />} />
+          <Route path="/receipt-import" element={<ReceiptsMatcherPage />} />
           {/* Task Planner — роуты портала, общая БД (таблицы tp_*) */}
           <Route path="/task-planner" element={<TaskPlannerLayout />}>
             {/* Корень апки: планировщику — список задач, бригадиру — его My Tasks

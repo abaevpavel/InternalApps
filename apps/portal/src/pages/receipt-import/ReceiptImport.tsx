@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, FileText, Lock, X } from 'lucide-react'
-import { Button, Card, Dropdown, Field, PageTitle, StatusBadge } from '../../components/ui'
+import { Button, Card, Dropdown, Field, StatusBadge } from '../../components/ui'
 import { cn, errMsg } from '../../lib/utils'
 import { loadAccounts, loadRuns, submitImport } from '../../services/receipt-import'
 import {
@@ -17,7 +17,7 @@ import {
  * (для месяца TW Perry — ещё и PDF выписки), по умолчанию сразу Live (Dry run — в меню Mode). Импорт идёт в фоне,
  * результат появляется в истории на этом же экране. Контракт — вложение к BAS-1450.
  */
-export function ReceiptImportPage() {
+export function ImportTab() {
   const qc = useQueryClient()
   const [form, setForm] = useState<ImportForm>(emptyForm)
   const [attempted, setAttempted] = useState(false)
@@ -87,8 +87,8 @@ export function ReceiptImportPage() {
   const locked = !!running || submitM.isPending
 
   return (
-    <div className="mx-auto w-full max-w-[1100px] px-4 py-10 pb-24 sm:px-6">
-      <PageTitle title="Import transactions" subtitle="One export into TRANSACTIONS. Matching, employees and projects are filled afterwards." />
+    <div>
+      <p className="mb-6 text-sm text-gray-500">One export into TRANSACTIONS. Matching, employees and projects are filled afterwards.</p>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
         <Card className="h-fit space-y-5 p-6">
