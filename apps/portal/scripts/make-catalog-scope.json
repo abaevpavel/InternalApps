@@ -1,24 +1,149 @@
 {
-  "_comment": "Сценарии Make цепочки продаж для Dev Apps (BAS-1556 / BAS-1504) и их этап. Скоуп согласован с Владиславом 23.09.2026: все включённые сценарии цепочки, включая пограничные.",
+  "_comment": "Сценарии Make цепочки продаж для Dev Apps (BAS-1556 / BAS-1504) и их этап. Скоуп согласован с Владиславом 23.09.2026: все включённые сценарии цепочки, включая пограничные. source — кто шлёт вебхук по умолчанию (mac_app / external / unknown); на экране можно переопределить (таблица dev_webhook_sources). appActions — действия Mac-приложения (скриншот Владислава 24.09.2026).",
   "scenarios": {
-    "4781330": { "stage": "proposal" },
-    "25674": { "stage": "proposal" },
-    "4301622": { "stage": "internal_scope" },
-    "4781497": { "stage": "change_order" },
-    "183574": { "stage": "invoice" },
-    "25745": { "stage": "invoice" },
-    "173561": { "stage": "invoice" },
-    "25758": { "stage": "invoice" },
-    "285832": { "stage": "invoice" },
-    "25691": { "stage": "invoice" },
-    "177004": { "stage": "deposit" },
-    "4827831": { "stage": "contract" },
-    "4913638": { "stage": "contract" },
-    "4505021": { "stage": "void" },
-    "343887": { "stage": "void" },
-    "4829745": { "stage": "submit_sale" },
-    "70425": { "stage": "submit_sale" },
-    "25715": { "stage": "submit_sale" },
-    "25759": { "stage": "billing_statement" }
+    "4781330": {
+      "stage": "proposal",
+      "source": "mac_app",
+      "sender": "Mac app (estimatingTool)"
+    },
+    "25674": {
+      "stage": "proposal",
+      "source": "external",
+      "sender": "JotForm"
+    },
+    "4781497": {
+      "stage": "change_order",
+      "source": "mac_app",
+      "sender": "Mac app (estimatingTool)"
+    },
+    "183574": {
+      "stage": "invoice",
+      "source": "unknown"
+    },
+    "25745": {
+      "stage": "invoice",
+      "source": "unknown"
+    },
+    "173561": {
+      "stage": "invoice",
+      "source": "external",
+      "sender": "QuickBooks"
+    },
+    "25758": {
+      "stage": "invoice",
+      "source": "unknown"
+    },
+    "285832": {
+      "stage": "invoice",
+      "source": "unknown"
+    },
+    "25691": {
+      "stage": "invoice",
+      "source": "unknown"
+    },
+    "177004": {
+      "stage": "deposit",
+      "source": "mac_app",
+      "sender": "Mac app (estimatingTool)"
+    },
+    "4827831": {
+      "stage": "contract",
+      "source": "mac_app",
+      "sender": "Mac app (estimatingTool)"
+    },
+    "4913638": {
+      "stage": "contract",
+      "source": "unknown"
+    },
+    "4505021": {
+      "stage": "void",
+      "source": "mac_app",
+      "sender": "Mac app (estimatingTool)"
+    },
+    "343887": {
+      "stage": "void",
+      "source": "mac_app",
+      "sender": "Mac app (estimatingTool)"
+    },
+    "4829745": {
+      "stage": "submit_sale",
+      "source": "mac_app",
+      "sender": "Mac app (estimatingTool)"
+    },
+    "70425": {
+      "stage": "submit_sale",
+      "source": "external",
+      "sender": "JotForm"
+    },
+    "25715": {
+      "stage": "submit_sale",
+      "source": "external",
+      "sender": "JotForm"
+    },
+    "25759": {
+      "stage": "billing_statement",
+      "source": "unknown"
+    }
+  },
+  "appActions": [
+    {
+      "action": "sentInternally",
+      "button": "Generate Docs",
+      "document": "proposal + change order"
+    },
+    {
+      "action": "sentToClient",
+      "button": "Send to client for review",
+      "document": "proposal + change order"
+    },
+    {
+      "action": "sentToClientToSign",
+      "button": "Send to client to sign",
+      "document": "proposal"
+    },
+    {
+      "action": "sentForPayment",
+      "button": "Send to client for payment",
+      "document": "change order"
+    },
+    {
+      "action": "recordedAndSentToClient",
+      "button": "Record & Send to Client (negative CO)",
+      "document": "change order"
+    },
+    {
+      "action": "voided",
+      "button": "Void (change order)",
+      "document": "change order"
+    },
+    {
+      "action": "void",
+      "button": "Void contract (proposal)",
+      "document": "proposal"
+    },
+    {
+      "action": "submitSale",
+      "button": "Submit Sale",
+      "document": "proposal"
+    },
+    {
+      "action": "sendDeposit",
+      "button": "Send Deposit",
+      "document": "client"
+    },
+    {
+      "action": "voidDeposit",
+      "button": "Void Deposit",
+      "document": "client"
+    }
+  ],
+  "disabled": {
+    "4301622": {
+      "stage": "internal_scope",
+      "source": "mac_app",
+      "sender": "Mac app (estimatingTool)",
+      "name": "SALE - Send Internal Scope Estimation Tool - NOT IN USE",
+      "note": "Выключен в Make (стоп Pavel Abaev 23.09.2026 16:58Z), в каталог не входит."
+    }
   }
 }

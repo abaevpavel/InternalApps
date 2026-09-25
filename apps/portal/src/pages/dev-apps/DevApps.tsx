@@ -4,6 +4,7 @@ import snapshot from '../../data/make-catalog.json'
 import type { CatalogSnapshot } from '../../domain/make-catalog'
 import { EmailsTab } from './EmailsTab'
 import { PayloadsTab } from './PayloadsTab'
+import { AirtableTab } from './AirtableTab'
 
 /**
  * Dev Apps — инструменты разработчика (BAS-1556, BAS-1503/1504). Доступ — роли Developer и Admin.
@@ -12,6 +13,7 @@ import { PayloadsTab } from './PayloadsTab'
 const TABS = [
   { key: 'emails', label: 'Emails' },
   { key: 'payloads', label: 'Payloads' },
+  { key: 'airtable', label: 'Airtable' },
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
@@ -33,12 +35,14 @@ export function DevAppsPage() {
         }
       />
       <Tabs
-        className="mb-6 max-w-sm"
+        className="mb-6 max-w-md"
         tabs={TABS.map((t) => ({ key: t.key, label: t.label }))}
         value={tab}
         onChange={(k) => setParams(k === 'emails' ? {} : { tab: k }, { replace: true })}
       />
-      {tab === 'emails' ? <EmailsTab catalog={catalog} /> : <PayloadsTab catalog={catalog} />}
+      {tab === 'emails' && <EmailsTab catalog={catalog} />}
+      {tab === 'payloads' && <PayloadsTab catalog={catalog} />}
+      {tab === 'airtable' && <AirtableTab />}
     </div>
   )
 }

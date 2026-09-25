@@ -1,0 +1,877 @@
+{
+ "_comment": "Целевая структура payload'ов Mac-приложения (BAS-1503 / BAS-1505). Правится по договорённости с Владиславом; экран Dev Apps → Payloads показывает её в правой колонке Target вместе с пометками из базы (dev_payload_marks). scope: mac:proposal / mac:changeOrder / mac:deposit. База — релиз v1.45.22.",
+ "scopes": {
+  "mac:proposal": {
+   "decided": "2026-09-24",
+   "summary": "Люди — объектами в корне, одинаково во всех payload'ах: clientInfo[] (массив, полный — только данные человека), projectInfo (статусы проекта: projectStatus, depositStatus, checkInStatus, createdDate), pcInfo, authorInfo, senderInfo, pmInfo (форма пользователя приложения: id, name, email, phone, code, role; пароль и комиссии не шлём). estimateResult не трогаем вообще — его меняет Владислав сам. pmInfo — источник не определён: в приложении v1.45.22 PM нет. projectInfo.signedProposal — только подписанный пропосал (контракт), projectInfo.changeOrders[] — все CO клиента, только Mongo id и номер (CO-…); полное содержимое — только у текущего документа в estimateResult.",
+   "add": [
+    {
+     "path": "clientInfo[].clientId",
+     "type": "text",
+     "note": "Mongo id клиента"
+    },
+    {
+     "path": "clientInfo[].clientFirst",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].clientLast",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].clientPhone",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].clientEmail",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].clientStreet",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].city",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].county",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].state",
+     "type": "text",
+     "note": "аббревиатура штата"
+    },
+    {
+     "path": "clientInfo[].zip",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].externalReferenceNumber",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.id",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.name",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.multiplier",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.percent",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.isDefault",
+     "type": "boolean"
+    },
+    {
+     "path": "clientInfo[].houseBuiltYear",
+     "type": "number",
+     "note": "новое — из ClientModel"
+    },
+    {
+     "path": "clientInfo[].latitude",
+     "type": "number",
+     "note": "новое — из ClientModel"
+    },
+    {
+     "path": "clientInfo[].longitude",
+     "type": "number",
+     "note": "новое — из ClientModel"
+    },
+    {
+     "path": "projectInfo.projectStatus",
+     "type": "text",
+     "note": "статус проекта (ClientModel.projectStatus)"
+    },
+    {
+     "path": "projectInfo.depositStatus",
+     "type": "text",
+     "note": "статус депозита (ClientModel.depositStatus); даты депозита в приложении нет"
+    },
+    {
+     "path": "projectInfo.checkInStatus",
+     "type": "text",
+     "note": "ClientModel.checkInStatus"
+    },
+    {
+     "path": "projectInfo.createdDate",
+     "type": "date",
+     "note": "когда заведён клиент/проект (ClientModel.createdDate). ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.id",
+     "type": "text",
+     "note": "id подписанного пропосала (контракта), RealmEstimateModel. Только пропосал с signed = true; нет подписанного — signedProposal не отправляется"
+    },
+    {
+     "path": "projectInfo.signedProposal.estimateNumber",
+     "type": "number",
+     "note": "номер пропосала"
+    },
+    {
+     "path": "projectInfo.signedProposal.code",
+     "type": "text"
+    },
+    {
+     "path": "projectInfo.signedProposal.status",
+     "type": "text",
+     "note": "в модели поля нет — приложение вычисляет, как estimatesInfo[].status"
+    },
+    {
+     "path": "projectInfo.signedProposal.createdDate",
+     "type": "date",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.sentToClientDate",
+     "type": "date",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.contractSigned",
+     "type": "date",
+     "note": "дата подписания контракта. ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.voidedDate",
+     "type": "date",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.submitSaleDate",
+     "type": "date",
+     "note": "ставит Make при Submit sale. ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.savedToDraftDate",
+     "type": "date",
+     "note": "ставит Make, когда send to sign сохранил черновик. ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.approvedOverrideDate",
+     "type": "date",
+     "note": "ставит Make при отправке с одобренными просроченными позициями. ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.contractEnvelopeId",
+     "type": "text",
+     "note": "конверт DocuSign"
+    },
+    {
+     "path": "projectInfo.changeOrders[].id",
+     "type": "text",
+     "note": "Mongo _id CO (RealmChangeOrderModel). Все CO клиента (связь по clientId); отдельной ссылки CO → контракт нет"
+    },
+    {
+     "path": "projectInfo.changeOrders[].number",
+     "type": "text",
+     "note": "номер CO (CO-…)"
+    },
+    {
+     "path": "pcInfo.id",
+     "type": "text",
+     "note": "PC — пользователь, закреплённый за клиентом (ClientModel.projectConsultantEmail); сейчас в estimatesInfo только projectConsultantName/Email"
+    },
+    {
+     "path": "pcInfo.name",
+     "type": "text"
+    },
+    {
+     "path": "pcInfo.email",
+     "type": "text",
+     "note": "= ClientModel.projectConsultantEmail; поэтому в clientInfo[] его нет"
+    },
+    {
+     "path": "pcInfo.phone",
+     "type": "text"
+    },
+    {
+     "path": "pcInfo.code",
+     "type": "text",
+     "note": "код пользователя (UserModel.code)"
+    },
+    {
+     "path": "pcInfo.role",
+     "type": "text",
+     "note": "admin / production / sales"
+    },
+    {
+     "path": "authorInfo.id",
+     "type": "text",
+     "note": "id пользователя в приложении (users) — автор сметы; в EstimateModel.author сейчас хранится только ИМЯ (user.name при создании) — нужен id/email, по имени искать ненадёжно"
+    },
+    {
+     "path": "authorInfo.name",
+     "type": "text"
+    },
+    {
+     "path": "authorInfo.email",
+     "type": "text"
+    },
+    {
+     "path": "authorInfo.phone",
+     "type": "text"
+    },
+    {
+     "path": "authorInfo.code",
+     "type": "text",
+     "note": "код пользователя (UserModel.code)"
+    },
+    {
+     "path": "authorInfo.role",
+     "type": "text",
+     "note": "admin / production / sales"
+    },
+    {
+     "path": "senderInfo.id",
+     "type": "text",
+     "note": "id пользователя в приложении (users) — тот, кто нажал кнопку (залогиненный пользователь); сейчас senderName/senderEmail и pc_email"
+    },
+    {
+     "path": "senderInfo.name",
+     "type": "text"
+    },
+    {
+     "path": "senderInfo.email",
+     "type": "text"
+    },
+    {
+     "path": "senderInfo.phone",
+     "type": "text"
+    },
+    {
+     "path": "senderInfo.code",
+     "type": "text",
+     "note": "код пользователя (UserModel.code)"
+    },
+    {
+     "path": "senderInfo.role",
+     "type": "text",
+     "note": "admin / production / sales"
+    },
+    {
+     "path": "pmInfo.id",
+     "type": "text",
+     "note": "ИСТОЧНИК НЕ ОПРЕДЕЛЁН: в приложении v1.45.22 PM нет — ни у клиента, ни у сметы нет ссылки на него. Кандидаты: пользователь приложения с ролью production, если к клиенту добавят поле PM, или проект в Airtable (03-Projects)"
+    },
+    {
+     "path": "pmInfo.name",
+     "type": "text"
+    },
+    {
+     "path": "pmInfo.email",
+     "type": "text"
+    },
+    {
+     "path": "pmInfo.phone",
+     "type": "text"
+    },
+    {
+     "path": "pmInfo.code",
+     "type": "text",
+     "note": "если PM — пользователь приложения"
+    },
+    {
+     "path": "pmInfo.role",
+     "type": "text",
+     "note": "если PM — пользователь приложения (скорее production)"
+    }
+   ],
+   "delete": [
+    {
+     "path": "projectConsultantEmail",
+     "note": "Submit sale → pcInfo.email"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].projectConsultantName",
+     "note": "→ pcInfo.name (PC только в pcInfo)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].projectConsultantEmail",
+     "note": "→ pcInfo.email (PC только в pcInfo)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].senderName",
+     "note": "→ senderInfo.name (отправитель только в senderInfo)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].senderEmail",
+     "note": "→ senderInfo.email (отправитель только в senderInfo)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].pc_email",
+     "note": "старое поле, там email отправителя → senderInfo.email"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].author",
+     "note": "→ authorInfo (автор только в authorInfo)"
+    },
+    {
+     "path": "estimateResult.clientInfo[]",
+     "note": "копия clientInfo[] в корне — клиент только там"
+    },
+    {
+     "path": "id",
+     "note": "Submit sale: id пропосала → estimateResult.estimatesInfo[].id (одно имя, одно место)"
+    },
+    {
+     "path": "proposalId",
+     "note": "Generate/Void Contract: id пропосала → estimateResult.estimatesInfo[].id"
+    }
+   ],
+   "history": [
+    "24.09.2026: люди вынесены в корень для пропосала (Clients scope) и CO/CO void одинаково.",
+    "24.09.2026: projectStatus / depositStatus / checkInStatus / createdDate перенесены из clientInfo[] в projectInfo (решение Владислава).",
+    "25.09.2026: в projectInfo добавлены списки proposals[] и changeOrders[] (решение Владислава).",
+    "25.09.2026: вместо списка всех пропосалов — только подписанный: projectInfo.signedProposal (объект).",
+    "25.09.2026: в changeOrders[] только id (Mongo) и number (CO-…) — решение Владислава.",
+    "25.09.2026: id пропосала — только estimatesInfo[].id, клиента — только clientInfo[].clientId; PC / отправитель / автор — только в pcInfo / senderInfo / authorInfo; estimateResult.clientInfo[] убрать; все даты — ISO с временем (решения Владислава, п. 6–10)."
+   ],
+   "keep": [
+    {
+     "path": "estimateResult.estimatesInfo[].estimateDate",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z (сейчас MM/DD/YYYY)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].cashDiscountValidTill",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z (сейчас MM/DD/YYYY)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].depositDiscountDiscountValidTill",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z (сейчас MM/DD/YYYY)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].appliedDiscounts[].validTill",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z (сейчас MM/DD/YYYY)"
+    },
+    {
+     "path": "saleDateValue",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "proposedPredemolitionDate",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "proposedPreconstructionDate",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "contractForm.preliminaryStartDate",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z (сейчас MM/DD/YYYY)"
+    }
+   ],
+   "appChanges": [
+    "authorInfo: приложение хранит автора сметы только именем (EstimateModel.author = user.name). Чтобы отправлять id, email, телефон и т.д., нужно сохранять id автора при создании сметы и подтягивать его профиль (UserModel).",
+    "pmInfo: в приложении нет PM — источник не решён.",
+    "Все даты — ISO 8601 с временем (сейчас estimateDate, validTill, *ValidTill, sentToClientDate, sentForPaymentDate, voidedDate — MM/DD/YYYY; proposedPre*Date — текстом).",
+    "Люди — объектами в корне (clientInfo[], pcInfo, authorInfo, senderInfo, pmInfo); из estimatesInfo поля людей и estimateResult.clientInfo[] убрать.",
+    "id пропосала — только estimatesInfo[].id (убрать id / proposalId в корне); id клиента — только clientInfo[].clientId.",
+    "projectInfo: статусы проекта, signedProposal (подписанный пропосал), changeOrders[] (id + номер CO)."
+   ]
+  },
+  "mac:changeOrder": {
+   "decided": "2026-09-24",
+   "summary": "Люди — объектами в корне, одинаково во всех payload'ах: clientInfo[] (массив, полный — только данные человека), projectInfo (статусы проекта: projectStatus, depositStatus, checkInStatus, createdDate), pcInfo, authorInfo, senderInfo, pmInfo (форма пользователя приложения: id, name, email, phone, code, role; пароль и комиссии не шлём). estimateResult не трогаем вообще — его меняет Владислав сам. pmInfo — источник не определён: в приложении v1.45.22 PM нет. projectInfo.signedProposal — только подписанный пропосал (контракт), projectInfo.changeOrders[] — все CO клиента, только Mongo id и номер (CO-…); полное содержимое — только у текущего документа в estimateResult.",
+   "add": [
+    {
+     "path": "clientInfo[].clientId",
+     "type": "text",
+     "note": "Mongo id клиента"
+    },
+    {
+     "path": "clientInfo[].clientFirst",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].clientLast",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].clientPhone",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].clientEmail",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].clientStreet",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].city",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].county",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].state",
+     "type": "text",
+     "note": "аббревиатура штата"
+    },
+    {
+     "path": "clientInfo[].zip",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].externalReferenceNumber",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.id",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.name",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.multiplier",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.percent",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.isDefault",
+     "type": "boolean"
+    },
+    {
+     "path": "clientInfo[].houseBuiltYear",
+     "type": "number",
+     "note": "новое — из ClientModel"
+    },
+    {
+     "path": "clientInfo[].latitude",
+     "type": "number",
+     "note": "новое — из ClientModel"
+    },
+    {
+     "path": "clientInfo[].longitude",
+     "type": "number",
+     "note": "новое — из ClientModel"
+    },
+    {
+     "path": "projectInfo.projectStatus",
+     "type": "text",
+     "note": "статус проекта (ClientModel.projectStatus)"
+    },
+    {
+     "path": "projectInfo.depositStatus",
+     "type": "text",
+     "note": "статус депозита (ClientModel.depositStatus); даты депозита в приложении нет"
+    },
+    {
+     "path": "projectInfo.checkInStatus",
+     "type": "text",
+     "note": "ClientModel.checkInStatus"
+    },
+    {
+     "path": "projectInfo.createdDate",
+     "type": "date",
+     "note": "когда заведён клиент/проект (ClientModel.createdDate). ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.id",
+     "type": "text",
+     "note": "id подписанного пропосала (контракта), RealmEstimateModel. Только пропосал с signed = true; нет подписанного — signedProposal не отправляется"
+    },
+    {
+     "path": "projectInfo.signedProposal.estimateNumber",
+     "type": "number",
+     "note": "номер пропосала"
+    },
+    {
+     "path": "projectInfo.signedProposal.code",
+     "type": "text"
+    },
+    {
+     "path": "projectInfo.signedProposal.status",
+     "type": "text",
+     "note": "в модели поля нет — приложение вычисляет, как estimatesInfo[].status"
+    },
+    {
+     "path": "projectInfo.signedProposal.createdDate",
+     "type": "date",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.sentToClientDate",
+     "type": "date",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.contractSigned",
+     "type": "date",
+     "note": "дата подписания контракта. ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.voidedDate",
+     "type": "date",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.submitSaleDate",
+     "type": "date",
+     "note": "ставит Make при Submit sale. ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.savedToDraftDate",
+     "type": "date",
+     "note": "ставит Make, когда send to sign сохранил черновик. ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.approvedOverrideDate",
+     "type": "date",
+     "note": "ставит Make при отправке с одобренными просроченными позициями. ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z"
+    },
+    {
+     "path": "projectInfo.signedProposal.contractEnvelopeId",
+     "type": "text",
+     "note": "конверт DocuSign"
+    },
+    {
+     "path": "projectInfo.changeOrders[].id",
+     "type": "text",
+     "note": "Mongo _id CO (RealmChangeOrderModel). Все CO клиента (связь по clientId); отдельной ссылки CO → контракт нет"
+    },
+    {
+     "path": "projectInfo.changeOrders[].number",
+     "type": "text",
+     "note": "номер CO (CO-…)"
+    },
+    {
+     "path": "pcInfo.id",
+     "type": "text",
+     "note": "PC — пользователь, закреплённый за клиентом (ClientModel.projectConsultantEmail); сейчас в estimatesInfo только projectConsultantName/Email"
+    },
+    {
+     "path": "pcInfo.name",
+     "type": "text"
+    },
+    {
+     "path": "pcInfo.email",
+     "type": "text",
+     "note": "= ClientModel.projectConsultantEmail; поэтому в clientInfo[] его нет"
+    },
+    {
+     "path": "pcInfo.phone",
+     "type": "text"
+    },
+    {
+     "path": "pcInfo.code",
+     "type": "text",
+     "note": "код пользователя (UserModel.code)"
+    },
+    {
+     "path": "pcInfo.role",
+     "type": "text",
+     "note": "admin / production / sales"
+    },
+    {
+     "path": "authorInfo.id",
+     "type": "text",
+     "note": "id пользователя в приложении (users) — автор сметы; в EstimateModel.author сейчас хранится только ИМЯ (user.name при создании) — нужен id/email, по имени искать ненадёжно"
+    },
+    {
+     "path": "authorInfo.name",
+     "type": "text"
+    },
+    {
+     "path": "authorInfo.email",
+     "type": "text"
+    },
+    {
+     "path": "authorInfo.phone",
+     "type": "text"
+    },
+    {
+     "path": "authorInfo.code",
+     "type": "text",
+     "note": "код пользователя (UserModel.code)"
+    },
+    {
+     "path": "authorInfo.role",
+     "type": "text",
+     "note": "admin / production / sales"
+    },
+    {
+     "path": "senderInfo.id",
+     "type": "text",
+     "note": "id пользователя в приложении (users) — тот, кто нажал кнопку (залогиненный пользователь); сейчас senderName/senderEmail и pc_email"
+    },
+    {
+     "path": "senderInfo.name",
+     "type": "text"
+    },
+    {
+     "path": "senderInfo.email",
+     "type": "text"
+    },
+    {
+     "path": "senderInfo.phone",
+     "type": "text"
+    },
+    {
+     "path": "senderInfo.code",
+     "type": "text",
+     "note": "код пользователя (UserModel.code)"
+    },
+    {
+     "path": "senderInfo.role",
+     "type": "text",
+     "note": "admin / production / sales"
+    },
+    {
+     "path": "pmInfo.id",
+     "type": "text",
+     "note": "ИСТОЧНИК НЕ ОПРЕДЕЛЁН: в приложении v1.45.22 PM нет — ни у клиента, ни у сметы нет ссылки на него. Кандидаты: пользователь приложения с ролью production, если к клиенту добавят поле PM, или проект в Airtable (03-Projects)"
+    },
+    {
+     "path": "pmInfo.name",
+     "type": "text"
+    },
+    {
+     "path": "pmInfo.email",
+     "type": "text"
+    },
+    {
+     "path": "pmInfo.phone",
+     "type": "text"
+    },
+    {
+     "path": "pmInfo.code",
+     "type": "text",
+     "note": "если PM — пользователь приложения"
+    },
+    {
+     "path": "pmInfo.role",
+     "type": "text",
+     "note": "если PM — пользователь приложения (скорее production)"
+    }
+   ],
+   "history": [
+    "24.09.2026: ключи clientInfo / pcInfo / authorInfo / senderInfo / pmInfo заведены Владиславом на экране; содержимое — по моделям v1.45.22 (ClientModel, UserModel).",
+    "24.09.2026: люди вынесены в корень для пропосала (Clients scope) и CO/CO void одинаково.",
+    "24.09.2026: projectStatus / depositStatus / checkInStatus / createdDate перенесены из clientInfo[] в projectInfo (решение Владислава).",
+    "25.09.2026: в projectInfo добавлены списки proposals[] и changeOrders[] (решение Владислава).",
+    "25.09.2026: вместо списка всех пропосалов — только подписанный: projectInfo.signedProposal (объект).",
+    "25.09.2026: в changeOrders[] только id (Mongo) и number (CO-…) — решение Владислава.",
+    "25.09.2026: id пропосала — только estimatesInfo[].id, клиента — только clientInfo[].clientId; PC / отправитель / автор — только в pcInfo / senderInfo / authorInfo; estimateResult.clientInfo[] убрать; все даты — ISO с временем (решения Владислава, п. 6–10)."
+   ],
+   "delete": [
+    {
+     "path": "estimateResult.estimatesInfo[].projectConsultantName",
+     "note": "→ pcInfo.name (PC только в pcInfo)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].projectConsultantEmail",
+     "note": "→ pcInfo.email (PC только в pcInfo)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].senderName",
+     "note": "→ senderInfo.name (отправитель только в senderInfo)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].senderEmail",
+     "note": "→ senderInfo.email (отправитель только в senderInfo)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].pc_email",
+     "note": "старое поле, там email отправителя → senderInfo.email"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].author",
+     "note": "→ authorInfo (автор только в authorInfo)"
+    },
+    {
+     "path": "estimateResult.clientInfo[]",
+     "note": "копия clientInfo[] в корне — клиент только там"
+    }
+   ],
+   "keep": [
+    {
+     "path": "estimateResult.estimatesInfo[].estimateDate",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z (сейчас MM/DD/YYYY)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].cashDiscountValidTill",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z (сейчас MM/DD/YYYY)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].depositDiscountDiscountValidTill",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z (сейчас MM/DD/YYYY)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].appliedDiscounts[].validTill",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z (сейчас MM/DD/YYYY)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].sentToClientDate",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z (сейчас MM/DD/YYYY)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].sentForPaymentDate",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z (сейчас MM/DD/YYYY)"
+    },
+    {
+     "path": "estimateResult.estimatesInfo[].voidedDate",
+     "note": "ФОРМАТ: ISO 8601 с временем, например 2026-09-22T04:00:00.000Z (сейчас MM/DD/YYYY)"
+    }
+   ],
+   "appChanges": [
+    "authorInfo: приложение хранит автора сметы только именем (EstimateModel.author = user.name). Чтобы отправлять id, email, телефон и т.д., нужно сохранять id автора при создании сметы и подтягивать его профиль (UserModel).",
+    "pmInfo: в приложении нет PM — источник не решён.",
+    "Все даты — ISO 8601 с временем (сейчас estimateDate, validTill, *ValidTill, sentToClientDate, sentForPaymentDate, voidedDate — MM/DD/YYYY; proposedPre*Date — текстом).",
+    "Люди — объектами в корне (clientInfo[], pcInfo, authorInfo, senderInfo, pmInfo); из estimatesInfo поля людей и estimateResult.clientInfo[] убрать.",
+    "id пропосала — только estimatesInfo[].id (убрать id / proposalId в корне); id клиента — только clientInfo[].clientId.",
+    "projectInfo: статусы проекта, signedProposal (подписанный пропосал), changeOrders[] (id + номер CO)."
+   ]
+  },
+  "mac:deposit": {
+   "decided": "2026-09-24",
+   "summary": "Депозит: только клиент — clientInfo[] в корне (массив, полный; clientId там). Без людей и projectInfo (решение Владислава 25.09.2026). Плоские fullName/email/externalReferenceNumber/clientId — удалить.",
+   "delete": [
+    {
+     "path": "fullName",
+     "note": "→ clientInfo[].clientFirst + clientLast"
+    },
+    {
+     "path": "email",
+     "note": "→ clientInfo[].clientEmail"
+    },
+    {
+     "path": "externalReferenceNumber",
+     "note": "→ clientInfo[].externalReferenceNumber"
+    },
+    {
+     "path": "clientId",
+     "note": "→ clientInfo[].clientId"
+    }
+   ],
+   "add": [
+    {
+     "path": "clientInfo[].clientId",
+     "type": "text",
+     "note": "Mongo id клиента"
+    },
+    {
+     "path": "clientInfo[].clientFirst",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].clientLast",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].clientPhone",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].clientEmail",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].clientStreet",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].city",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].county",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].state",
+     "type": "text",
+     "note": "аббревиатура штата"
+    },
+    {
+     "path": "clientInfo[].zip",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].externalReferenceNumber",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.id",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.name",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.multiplier",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.percent",
+     "type": "text"
+    },
+    {
+     "path": "clientInfo[].pricingZone.isDefault",
+     "type": "boolean"
+    },
+    {
+     "path": "clientInfo[].houseBuiltYear",
+     "type": "number",
+     "note": "новое — из ClientModel"
+    },
+    {
+     "path": "clientInfo[].latitude",
+     "type": "number",
+     "note": "новое — из ClientModel"
+    },
+    {
+     "path": "clientInfo[].longitude",
+     "type": "number",
+     "note": "новое — из ClientModel"
+    }
+   ],
+   "keep": [
+    {
+     "path": "action"
+    },
+    {
+     "path": "idempotencyKey"
+    },
+    {
+     "path": "test"
+    }
+   ],
+   "makeChanges": [
+    "Deposit void, Send Deposit: fullName → clientInfo[].clientFirst + clientInfo[].clientLast",
+    "Deposit void, Send Deposit: email → clientInfo[].clientEmail",
+    "Deposit void, Send Deposit: externalReferenceNumber → clientInfo[].externalReferenceNumber",
+    "Deposit void, Send Deposit: estimateId — приложение его не шлёт, убрать чтение в Make (решение 24.09)",
+    "Send Deposit: depositStatus — приложение его не шлёт, убрать чтение в Make"
+   ],
+   "history": [
+    "24.09.2026: найден устаревший второй отправитель вебхука Sales - Send Deposit — кнопка «Request Deposit» в Airtable 02-Sales → PRICING DATA (формула: form.basementremodeling.com/user/thank-you?url=<вебхук>&id=Lead_Id). Слала только {id}; сценарий отсекал такой прогон первым фильтром (#41, externalReferenceNumber exists) — депозит не уходил, а человек видел thank-you. Кнопку удалил Владислав 24.09.2026.",
+    "24.09.2026: projectStatus / depositStatus / checkInStatus / createdDate перенесены из clientInfo[] в projectInfo (решение Владислава).",
+    "25.09.2026: в projectInfo добавлены списки proposals[] и changeOrders[] (решение Владислава).",
+    "25.09.2026: вместо списка всех пропосалов — только подписанный: projectInfo.signedProposal (объект).",
+    "25.09.2026: в changeOrders[] только id (Mongo) и number (CO-…) — решение Владислава."
+   ],
+   "appChanges": [
+    "Депозит: клиент — clientInfo[] (полный, как в пропосале) вместо плоских fullName / email / externalReferenceNumber / clientId."
+   ]
+  }
+ }
+}
