@@ -17,9 +17,13 @@
 //   AIRTABLE_TOKEN         (required) — Personal Access Token, scope data.records:read на базу
 //   AIRTABLE_BASE          (опц., default appucrtf5MBcFXVza)
 //   AIRTABLE_TABLE         (опц., default "General Project Info")
-//   AIRTABLE_VIEW          (опц., но РЕКОМЕНДУЕТСЯ) — id/имя вью, что кормит форму (тот же фильтр
-//                          и сортировка, что видит PM; иначе вернутся все ~665 записей)
+//   AIRTABLE_VIEW          (опц.) — id/имя вью, если нужна его сортировка или доп. фильтр
 //   AIRTABLE_STATUS_FIELD  (опц.) — поле для префикса метки (DEPOSIT/PROP). Не задан → без префикса.
+//
+// BAS-1611: отдаются только активные проекты — `Status` (lookup из All projects) = In Progress
+// или On Hold, как в выпадающем списке JotForm. Проекты на депозите (DEPOSIT_/PROP_) остаются.
+// Без фильтра селектор показывал все ~690 записей, включая Complete/Cancelled, и PM не мог
+// найти свой проект.
 
 // ⚠️ SEC-9. `verify_jwt = true` в config.toml НЕ означает «вызвал залогиненный человек»:
 // шлюз проверяет только подпись токена, а публичный anon-ключ — такой же подписанный JWT
@@ -39,6 +43,8 @@ const VIEW = Deno.env.get('AIRTABLE_VIEW') ?? ''
 const STATUS_FIELD = Deno.env.get('AIRTABLE_STATUS_FIELD') ?? ''
 const TOKEN = Deno.env.get('AIRTABLE_TOKEN') ?? ''
 const NAME_FIELD = 'Project Name'
+// `Status` — lookup, приходит массивом, поэтому ARRAYJOIN перед сравнением.
+const ACTIVE_FILTER = `OR(FIND("In Progress", ARRAYJOIN({Status})), FIND("On Hold", ARRAYJOIN({Status})))`
 
 // Инжектится платформой в каждую edge-функцию.
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
@@ -109,6 +115,7 @@ Deno.serve(async (req) => {
       url.searchParams.set('pageSize', '100')
       url.searchParams.append('fields[]', NAME_FIELD)
       if (STATUS_FIELD) url.searchParams.append('fields[]', STATUS_FIELD)
+      url.searchParams.set('filterByFormula', ACTIVE_FILTER)
       if (VIEW) url.searchParams.set('view', VIEW)
       if (offset) url.searchParams.set('offset', offset)
 
