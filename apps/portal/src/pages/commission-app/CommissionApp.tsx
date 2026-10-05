@@ -48,13 +48,13 @@ export function CommissionAppPage() {
           { key: 'history', label: 'History' },
         ]}
       />
-      {tab === 'confirm' && <ConfirmTab parsed={parsed} />}
+      {tab === 'confirm' && <ConfirmTab parsed={parsed} onOpenHistory={() => setTab('history')} />}
       {tab === 'history' && <HistoryTab />}
     </div>
   )
 }
 
-function ConfirmTab({ parsed }: { parsed: ReturnType<typeof parseRecordIds> }) {
+function ConfirmTab({ parsed, onOpenHistory }: { parsed: ReturnType<typeof parseRecordIds>; onOpenHistory: () => void }) {
   const { authUser } = useAuth()
   const qc = useQueryClient()
   const ids = parsed.ids
@@ -101,6 +101,23 @@ function ConfirmTab({ parsed }: { parsed: ReturnType<typeof parseRecordIds> }) {
   const records = q.data ?? []
   const s = summarize(records)
   const missing = ids.filter((id) => !records.some((r) => r.id === id))
+
+  // Подтверждать нечего (запрос уже обработан или записи не в REQUESTED) — таблица и итог
+  // тут лишние: кто и когда подтвердил, видно в History.
+  if (s.confirmable.length === 0) {
+    return (
+      <Card className="flex flex-col items-center px-6 py-14 text-center">
+        <CheckCircle2 className="mb-3 text-gray-300" size={40} />
+        <div className="font-semibold text-gray-900">Nothing to confirm</div>
+        <p className="mt-1 max-w-md text-sm text-gray-500">
+          This payout request has already been processed, or its Change Orders are not in REQUESTED status.
+        </p>
+        <Button className="mt-5" onClick={onOpenHistory}>
+          Open History
+        </Button>
+      </Card>
+    )
+  }
 
   const columns: Column<PayoutRecord>[] = [
     { key: 'co', header: 'Change Order', render: (r) => <Cell title={r.billingRecordId} sub={r.projectName ?? undefined} /> },
@@ -149,15 +166,11 @@ function ConfirmTab({ parsed }: { parsed: ReturnType<typeof parseRecordIds> }) {
             Confirming as <span className="font-medium text-gray-700">{authUser?.email ?? '—'}</span>
           </div>
         </div>
-        <Button variant="primary" className="px-6 py-2.5" disabled={s.confirmable.length === 0 || m.isPending} onClick={() => m.mutate()}>
+        <Button variant="primary" className="px-6 py-2.5" disabled={m.isPending} onClick={() => m.mutate()}>
           <CheckCircle2 size={16} />
           {m.isPending ? 'Confirming…' : 'Confirm payment'}
         </Button>
       </Card>
-
-      {s.confirmable.length === 0 && records.length > 0 && (
-        <p className="text-center text-sm text-gray-500">Nothing to confirm: every Change Order here is already paid or not requested.</p>
-      )}
 
       {m.error && (
         <Card className="flex gap-3 border-red-200 bg-red-50 p-4 text-sm text-red-700">
