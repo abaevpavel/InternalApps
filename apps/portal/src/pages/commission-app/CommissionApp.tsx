@@ -256,6 +256,15 @@ function HistoryRow({ row }: { row: PayoutConfirmation }) {
                   <td className="py-2 pr-3">
                     <div className="font-medium text-gray-800">{e.billingRecordId ?? e.id}</div>
                     {e.projectName && <div className="text-xs text-gray-500">{e.projectName}</div>}
+                    <a
+                      href={`https://airtable.com/${row.airtable_base}/${row.airtable_table}/${e.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-mono text-xs text-blue-600 hover:underline"
+                      title="Open the record in Airtable"
+                    >
+                      {e.id}
+                    </a>
                   </td>
                   <td className="py-2 pr-3 text-gray-600">{e.requester ?? '—'}</td>
                   <td className="py-2 pr-3 text-right">{formatMoney(e.commission ?? null)}</td>

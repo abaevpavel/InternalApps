@@ -27,6 +27,10 @@ export interface PayoutConfirmation {
   error: string | null
   requester_names: string[]
   requested_ids: string[]
+  /** Где лежат изменённые записи и их Airtable id (что реально стало PAID). */
+  airtable_base: string
+  airtable_table: string
+  changed_record_ids: string[]
   records: PayoutHistoryEntry[]
   total_paid: number
   paid_count: number

@@ -259,6 +259,10 @@ async function confirm(ids: string[], caller: { id: string; email: string }): Pr
     error,
     requester_names: Array.from(new Set(records.map((r) => r.requester).filter((x): x is string => !!x))),
     requested_ids: ids,
+    // Правило: всегда пишем id записи Airtable, в которую внесли изменение, и где она лежит.
+    airtable_base: BASE,
+    airtable_table: CO_TABLE,
+    changed_record_ids: paid.map((r) => r.id),
     records: entries,
     total_paid: totalPaid,
     paid_count: paid.length,
