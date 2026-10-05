@@ -28,6 +28,7 @@ const HRSyncAirtablePage = lazy(() => import('../pages/hr-sync/HRSyncAirtable').
 const GmbAgentSettingsPage = lazy(() => import('../pages/gmb-agent/GmbAgentSettings').then((m) => ({ default: m.GmbAgentSettingsPage })))
 const ReceiptsMatcherPage = lazy(() => import('../pages/receipt-import/ReceiptsMatcher').then((m) => ({ default: m.ReceiptsMatcherPage })))
 const DevAppsPage = lazy(() => import('../pages/dev-apps/DevApps').then((m) => ({ default: m.DevAppsPage })))
+const CommissionAppPage = lazy(() => import('../pages/commission-app/CommissionApp').then((m) => ({ default: m.CommissionAppPage })))
 const SendBuildertrendSchedulePage = lazy(() => import('../pages/buildertrend-schedule/SendBuildertrendSchedule').then((m) => ({ default: m.SendBuildertrendSchedulePage })))
 const TasksPage = lazy(() => import('../pages/task-planner/Tasks').then((m) => ({ default: m.TasksPage })))
 const CreateTaskPage = lazy(() => import('../pages/task-planner/CreateTask').then((m) => ({ default: m.CreateTaskPage })))
@@ -39,11 +40,45 @@ const PlannerHome = lazy(() => import('../pages/task-planner/TaskPlannerLayout')
 const MyTasksPage = lazy(() => import('../pages/task-planner/MyTasks').then((m) => ({ default: m.MyTasksPage })))
 const ApprovalsPage = lazy(() => import('../pages/task-planner/Approvals').then((m) => ({ default: m.ApprovalsPage })))
 
+/**
+ * Куда человек шёл до логина. Ссылки из писем ведут глубоко в апку (напр. BAS-1635:
+ * `/commission-app?ids=…`), а вход — Google OAuth с возвратом на корень. Без этого после
+ * логина ссылка терялась и человек оказывался на My Applications.
+ */
+const POST_LOGIN_KEY = 'portal.postLoginPath'
+
+function rememberPath(path: string) {
+  try {
+    if (path && path !== '/' && !path.startsWith('/login')) sessionStorage.setItem(POST_LOGIN_KEY, path)
+  } catch {
+    // sessionStorage недоступен (приватный режим и т.п.) — просто откроется главная
+  }
+}
+
+function takeRememberedPath(): string | null {
+  try {
+    const p = sessionStorage.getItem(POST_LOGIN_KEY)
+    if (p) sessionStorage.removeItem(POST_LOGIN_KEY)
+    return p
+  } catch {
+    return null
+  }
+}
+
 function Protected({ children }: { children: React.ReactNode }) {
   const { authUser, profile, denied, loading } = useAuth()
+  const location = useLocation()
   if (loading) return <div className="p-10 text-gray-500">Loading…</div>
   // denied (email не в whitelist) обрабатывает LoginPage
-  if (!authUser || denied || !profile) return <Navigate to="/login" replace />
+  if (!authUser || denied || !profile) {
+    rememberPath(location.pathname + location.search)
+    return <Navigate to="/login" replace />
+  }
+  // Вернулись с логина на корень — открываем ссылку, с которой пришли.
+  if (location.pathname === '/') {
+    const back = takeRememberedPath()
+    if (back) return <Navigate to={back} replace />
+  }
   return <>{children}</>
 }
 
@@ -102,6 +137,7 @@ function Shell() {
           <Route path="/gmb-agent" element={<GmbAgentSettingsPage />} />
           <Route path="/receipt-import" element={<ReceiptsMatcherPage />} />
           <Route path="/dev-apps" element={<DevAppsPage />} />
+          <Route path="/commission-app" element={<CommissionAppPage />} />
           {/* Task Planner — роуты портала, общая БД (таблицы tp_*) */}
           <Route path="/task-planner" element={<TaskPlannerLayout />}>
             {/* Корень апки: планировщику — список задач, бригадиру — его My Tasks

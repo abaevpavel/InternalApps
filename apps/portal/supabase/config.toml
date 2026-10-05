@@ -34,6 +34,11 @@ verify_jwt = true
 [functions.list-schedule-projects]
 verify_jwt = true
 
+# --- Commission App (BAS-1635): подтверждение выплаты комиссий → Airtable + история ---
+# Человека и доступ к /commission-app функция проверяет сама (SEC-9), см. index.ts.
+[functions.commission-payout]
+verify_jwt = true
+
 # --- Унаследованные от Lovable, забраны в репо 2026-09-03 ---
 # ⚠️ verify_jwt проверяет только ПОДПИСЬ токена, а публичный anon-ключ из бандла портала —
 # валидный подписанный JWT проекта. Поэтому обе функции (как и list-schedule-projects)

@@ -377,6 +377,28 @@ export const APPS: AppConfig[] = [
       external: [{ name: 'Make.com', detail: 'blueprints of the sales-chain scenarios, read-only, to build the snapshot' }],
     },
   },
+  {
+    code: 'commission-app',
+    label: 'Commission App',
+    shortLabel: 'Commission App',
+    routePrefixes: ['/commission-app'],
+    webhooks: [],
+    resources: {
+      database: SUPABASE,
+      tables: ['cp_payout_confirmations (confirmation history)', 'cp_app_gate (access check for the edge function)'],
+      edgeFunctions: ['commission-payout (load Change Orders from Airtable, confirm payout → PAID + history)'],
+      external: [
+        {
+          name: 'Airtable (read + write)',
+          detail: 'Clients Change Orders (appucrtf5MBcFXVza / tbl5z6kVeFL8wkr0s): Commission STATUS REQUESTED → PAID; token in edge secrets (InternalAppsReadWrite)',
+        },
+        {
+          name: 'Make.com (incoming link)',
+          detail: '"Request payout Commission (Comm App Retool)" emails billing a link /commission-app?ids=…',
+        },
+      ],
+    },
+  },
 ]
 
 /**
