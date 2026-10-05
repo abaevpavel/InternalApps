@@ -1,16 +1,23 @@
 import { useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Inbox } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Inbox, Search, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, Cell, DataTable, PageTitle, StatusBadge, Tabs, type Column } from '../../components/ui'
+import { Button, Card, Cell, DataTable, Input, PageTitle, Select, StatusBadge, Tabs, type Column } from '../../components/ui'
+import { DatePicker } from '../sales/DatePicker'
 import { useAuth } from '../../auth/AuthProvider'
 import { errMsg } from '../../lib/utils'
 import {
+  EMPTY_HISTORY_FILTER,
+  endExclusive,
+  filterHistory,
   formatMoney,
+  historyPeople,
   isConfirmable,
   parseRecordIds,
   skipReason,
+  startOfDay,
   summarize,
+  type HistoryFilter,
   type PayoutRecord,
 } from '../../domain/commission-app'
 import {
@@ -212,23 +219,103 @@ function ThankYou({ result }: { result: ConfirmResult }) {
 }
 
 function HistoryTab() {
-  const q = useQuery({ queryKey: ['cp-confirmations'], queryFn: () => listConfirmations(100) })
+  const [f, setF] = useState<HistoryFilter>(EMPTY_HISTORY_FILTER)
+  const set = (patch: Partial<HistoryFilter>) => setF((prev) => ({ ...prev, ...patch }))
 
-  if (q.isLoading) return <Card className="px-6 py-12 text-center text-sm text-gray-400">Loading…</Card>
-  if (q.error) return <Card className="px-6 py-12 text-center text-sm text-red-600">{errMsg(q.error)}</Card>
+  // Даты — в запрос (на сервере), люди и поиск — по загруженному.
+  const from = f.from ? startOfDay(f.from) : null
+  const toExclusive = f.to ? endExclusive(f.to) : null
+  const q = useQuery({
+    queryKey: ['cp-confirmations', from?.toISOString() ?? null, toExclusive?.toISOString() ?? null],
+    queryFn: () => listConfirmations({ from, toExclusive }, HISTORY_LIMIT),
+  })
 
-  const rows = q.data ?? []
-  if (rows.length === 0) {
-    return <Card className="px-6 py-12 text-center text-sm text-gray-400">No payouts confirmed yet.</Card>
-  }
+  const all = q.data ?? []
+  const people = useMemo(() => historyPeople(all), [all])
+  const rows = useMemo(() => filterHistory(all, f), [all, f])
+  const total = rows.reduce((sum, r) => sum + Number(r.total_paid), 0)
+  const hasFilter = !!(f.from || f.to || f.requester || f.confirmedBy || f.search.trim())
+
   return (
-    <div className="space-y-3">
-      {rows.map((r) => (
-        <HistoryRow key={r.id} row={r} />
-      ))}
+    <div className="space-y-4">
+      <Card className="p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400">From</span>
+            <DatePicker value={f.from} onChange={(d) => set({ from: d })} placeholder="Any date" />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400">To</span>
+            <DatePicker value={f.to} onChange={(d) => set({ to: d })} placeholder="Any date" />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400">Requester</span>
+            <Select value={f.requester} onChange={(e) => set({ requester: e.target.value })} className="w-48">
+              <option value="">Everyone</option>
+              {people.requesters.map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </Select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400">Confirmed by</span>
+            <Select value={f.confirmedBy} onChange={(e) => set({ confirmedBy: e.target.value })} className="w-56">
+              <option value="">Anyone</option>
+              {people.confirmers.map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </Select>
+          </label>
+          <label className="block min-w-[14rem] flex-1">
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-400">Search</span>
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Input
+                value={f.search}
+                onChange={(e) => set({ search: e.target.value })}
+                placeholder="CO number, project, record id"
+                className="pl-9"
+              />
+            </div>
+          </label>
+          {hasFilter && (
+            <Button variant="ghost" onClick={() => setF(EMPTY_HISTORY_FILTER)}>
+              <X size={15} /> Clear
+            </Button>
+          )}
+        </div>
+      </Card>
+
+      {q.isLoading ? (
+        <Card className="px-6 py-12 text-center text-sm text-gray-400">Loading…</Card>
+      ) : q.error ? (
+        <Card className="px-6 py-12 text-center text-sm text-red-600">{errMsg(q.error)}</Card>
+      ) : rows.length === 0 ? (
+        <Card className="px-6 py-12 text-center text-sm text-gray-400">
+          {hasFilter ? 'No confirmations match these filters.' : 'No payouts confirmed yet.'}
+        </Card>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-sm text-gray-500">
+            <span>
+              {rows.length} confirmation(s) · <span className="font-semibold text-gray-900">{formatMoney(total)}</span> paid
+            </span>
+            {all.length >= HISTORY_LIMIT && (
+              <span className="text-xs text-amber-700">Showing the latest {HISTORY_LIMIT}. Narrow the dates to see older ones.</span>
+            )}
+          </div>
+          <div className="space-y-3">
+            {rows.map((r) => (
+              <HistoryRow key={r.id} row={r} />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }
+
+const HISTORY_LIMIT = 500
 
 const STATUS_LABEL: Record<PayoutConfirmation['status'], { tone: 'success' | 'warning' | 'danger'; label: string }> = {
   confirmed: { tone: 'success', label: 'Confirmed' },
@@ -241,7 +328,7 @@ function HistoryRow({ row }: { row: PayoutConfirmation }) {
   const st = STATUS_LABEL[row.status]
   return (
     <Card className="p-4">
-      <button className="flex w-full flex-wrap items-start justify-between gap-3 text-left" onClick={() => setOpen((v) => !v)}>
+      <button className="flex w-full flex-wrap items-start justify-between gap-3 rounded-md text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" onClick={() => setOpen((v) => !v)}>
         <div className="flex min-w-0 flex-1 gap-2">
           {open ? <ChevronDown size={18} className="mt-0.5 text-gray-400" /> : <ChevronRight size={18} className="mt-0.5 text-gray-400" />}
           <div className="min-w-0">

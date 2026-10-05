@@ -84,14 +84,17 @@ export async function confirmPayout(ids: string[]): Promise<ConfirmResult> {
   }
 }
 
-/** История подтверждений, свежие сверху. Читается напрямую — RLS пускает тех, кому выдана апка. */
-export async function listConfirmations(limit = 100): Promise<PayoutConfirmation[]> {
+/**
+ * История подтверждений, свежие сверху. Читается напрямую — RLS пускает тех, кому выдана апка.
+ * Диапазон дат режем на сервере (список со временем большой), остальные фильтры — на экране.
+ * `from` включительно, `toExclusive` — начало дня после последнего выбранного.
+ */
+export async function listConfirmations(range: { from?: Date | null; toExclusive?: Date | null } = {}, limit = 500): Promise<PayoutConfirmation[]> {
   const sb = requireSupabase()
-  const { data, error } = await sb
-    .from('cp_payout_confirmations')
-    .select('*')
-    .order('confirmed_at', { ascending: false })
-    .limit(limit)
+  let q = sb.from('cp_payout_confirmations').select('*').order('confirmed_at', { ascending: false }).limit(limit)
+  if (range.from) q = q.gte('confirmed_at', range.from.toISOString())
+  if (range.toExclusive) q = q.lt('confirmed_at', range.toExclusive.toISOString())
+  const { data, error } = await q
   if (error) throw error
   return (data ?? []) as PayoutConfirmation[]
 }

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  EMPTY_HISTORY_FILTER,
+  filterHistory,
+  historyPeople,
   MAX_IDS,
   parseRecordIds,
   skipReason,
@@ -80,5 +83,46 @@ describe('summarize — что будет подтверждено', () => {
     expect(skipReason(co({ status: 'PAID' }))).toBe('Already paid')
     expect(skipReason(co({ status: null }))).toBe('No commission status')
     expect(skipReason(co({ status: 'NOT PAID' }))).toBe('Status is NOT PAID, not REQUESTED')
+  })
+})
+
+
+describe('filterHistory — History с большим списком', () => {
+  const row = (at: string, requester: string, by: string, co: string, project: string) => ({
+    confirmed_at: at,
+    confirmed_by_email: by,
+    requester_names: [requester],
+    records: [{ id: `rec${co.replace(/\D/g, '').padEnd(14, 'X').slice(0, 14)}`, billingRecordId: co, projectName: project }],
+  })
+  const rows = [
+    row('2026-10-01T15:00:00', 'Shanae Mobley', 'billing@achgroupllc.com', 'C-CO-260518-98165', 'Conelley-Sykesville'),
+    row('2026-10-05T16:00:00', 'Pavel Abaev', 'todor.3d@basementremodeling.com', 'C-CO-260809-62237', 'Djankov-Washington'),
+    row('2026-10-07T09:00:00', 'Shanae Mobley', 'billing@achgroupllc.com', 'C-CO-260825-54441', 'Bittner-Falls church'),
+  ]
+
+  it('без фильтров — всё', () => {
+    expect(filterHistory(rows, EMPTY_HISTORY_FILTER)).toHaveLength(3)
+  })
+
+  it('диапазон дат включает последний день целиком', () => {
+    const r = filterHistory(rows, { ...EMPTY_HISTORY_FILTER, from: new Date(2026, 9, 2), to: new Date(2026, 9, 5) })
+    expect(r.map((x) => x.requester_names[0])).toEqual(['Pavel Abaev'])
+  })
+
+  it('по заявителю и по тому, кто подтвердил', () => {
+    expect(filterHistory(rows, { ...EMPTY_HISTORY_FILTER, requester: 'Shanae Mobley' })).toHaveLength(2)
+    expect(filterHistory(rows, { ...EMPTY_HISTORY_FILTER, confirmedBy: 'todor.3d@basementremodeling.com' })).toHaveLength(1)
+  })
+
+  it('поиск по номеру CO и проекту без учёта регистра', () => {
+    expect(filterHistory(rows, { ...EMPTY_HISTORY_FILTER, search: '260825' })).toHaveLength(1)
+    expect(filterHistory(rows, { ...EMPTY_HISTORY_FILTER, search: 'djankov' })).toHaveLength(1)
+  })
+
+  it('списки людей для фильтров — без дублей, по алфавиту', () => {
+    expect(historyPeople(rows)).toEqual({
+      requesters: ['Pavel Abaev', 'Shanae Mobley'],
+      confirmers: ['billing@achgroupllc.com', 'todor.3d@basementremodeling.com'],
+    })
   })
 })

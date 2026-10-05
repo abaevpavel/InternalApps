@@ -96,3 +96,74 @@ export function skipReason(r: PayoutRecord): string {
   if (!r.status) return 'No commission status'
   return `Status is ${r.status}, not ${REQUESTED}`
 }
+
+/* ---------------- History: фильтры ---------------- */
+
+/** Минимум полей строки истории, нужный фильтрам (совпадает с PayoutConfirmation сервиса). */
+export interface HistoryRowLike {
+  confirmed_at: string
+  confirmed_by_email: string
+  requester_names: string[]
+  records: { id: string; billingRecordId?: string; projectName?: string | null }[]
+}
+
+export interface HistoryFilter {
+  /** Начало дня (локально), включительно. */
+  from: Date | null
+  /** День окончания (локально), включительно — до конца этого дня. */
+  to: Date | null
+  requester: string
+  confirmedBy: string
+  search: string
+}
+
+export const EMPTY_HISTORY_FILTER: HistoryFilter = { from: null, to: null, requester: '', confirmedBy: '', search: '' }
+
+export function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
+/** Первый момент СЛЕДУЮЩЕГО дня — граница «по такой-то день включительно». */
+export function endExclusive(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
+}
+
+/**
+ * Фильтр истории. Поиск — по номеру CO (Billing Record ID), проекту, Airtable id записи,
+ * заявителю и аккаунту, который подтвердил; без учёта регистра.
+ */
+export function filterHistory<T extends HistoryRowLike>(rows: T[], f: HistoryFilter): T[] {
+  const q = f.search.trim().toLowerCase()
+  const from = f.from ? startOfDay(f.from).getTime() : null
+  const to = f.to ? endExclusive(f.to).getTime() : null
+  return rows.filter((r) => {
+    const at = new Date(r.confirmed_at).getTime()
+    if (from !== null && at < from) return false
+    if (to !== null && at >= to) return false
+    if (f.requester && !r.requester_names.includes(f.requester)) return false
+    if (f.confirmedBy && r.confirmed_by_email !== f.confirmedBy) return false
+    if (q) {
+      const hay = [
+        r.confirmed_by_email,
+        ...r.requester_names,
+        ...r.records.flatMap((e) => [e.id, e.billingRecordId ?? '', e.projectName ?? '']),
+      ]
+        .join(' ')
+        .toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  })
+}
+
+/** Значения для выпадающих списков «Requester» / «Confirmed by», по алфавиту. */
+export function historyPeople<T extends HistoryRowLike>(rows: T[]): { requesters: string[]; confirmers: string[] } {
+  const requesters = new Set<string>()
+  const confirmers = new Set<string>()
+  for (const r of rows) {
+    r.requester_names.forEach((n) => requesters.add(n))
+    confirmers.add(r.confirmed_by_email)
+  }
+  const sort = (s: Set<string>) => Array.from(s).sort((a, b) => a.localeCompare(b))
+  return { requesters: sort(requesters), confirmers: sort(confirmers) }
+}
