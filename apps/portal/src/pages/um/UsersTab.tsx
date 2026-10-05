@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { KeyRound, MailX, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, KeyRound, MailX, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import {
   createInvitation, deleteInvitation, deleteUser, listPendingInvitations, listProfiles,
   listRoles, setUserPassword, setUserRoles, updateProfileName,
@@ -10,6 +10,7 @@ import { Badge, Button, Card, DataTable, Field, Input, Modal, Select, type Colum
 import { cn, errMsg, initials } from '../../lib/utils'
 import { fullName, type Invitation, type Profile, type Role } from '../../domain/types'
 import { useAuth } from '../../auth/AuthProvider'
+import { groupUsersByRole } from '../../domain/user-groups'
 
 type SortKey = 'name' | 'joined'
 
@@ -48,7 +49,8 @@ export function UsersTab() {
     qc.invalidateQueries({ queryKey: ['user-applications'] })
   }
 
-  const rows = useMemo<Row[]>(() => {
+  // Фильтр/поиск/сортировка — как раньше; затем раскладка по блокам ролей.
+  const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
 
     let u = users
@@ -63,13 +65,11 @@ export function UsersTab() {
     let inv = invites
     if (roleFilter !== 'all') inv = inv.filter((x) => x.role_ids.includes(roleFilter))
     if (q) inv = inv.filter((x) => x.email.toLowerCase().includes(q))
-
-    // Приглашения сверху — это то, что требует действия админа.
-    return [
-      ...inv.map((invite) => ({ kind: 'invite', invite }) as Row),
-      ...u.map((user) => ({ kind: 'user', user }) as Row),
-    ]
+    return { users: u, invites: inv }
   }, [users, invites, roleFilter, search, sortKey])
+
+  const groups = useMemo(() => groupUsersByRole(filtered.users, filtered.invites, roles), [filtered, roles])
+  const [collapsed, setCollapsed] = useCollapsedGroups()
 
   const columns: Column<Row>[] = [
     {
@@ -185,8 +185,8 @@ export function UsersTab() {
     },
   ]
 
-  const userCount = rows.filter((r) => r.kind === 'user').length
-  const inviteCount = rows.filter((r) => r.kind === 'invite').length
+  const userCount = filtered.users.length
+  const inviteCount = filtered.invites.length
 
   return (
     <div>
@@ -223,20 +223,46 @@ export function UsersTab() {
         </div>
       </div>
 
-      <Card>
-        {isLoading ? (
-          <div className="px-4 py-10 text-center text-sm text-gray-400">Loading…</div>
-        ) : error ? (
-          <div className="px-4 py-10 text-center text-sm text-red-600">{errMsg(error)}</div>
-        ) : (
-          <DataTable
-            columns={columns}
-            rows={rows}
-            getRowKey={(r) => (r.kind === 'invite' ? `inv-${r.invite.id}` : `usr-${r.user.id}`)}
-            empty="No users found."
-          />
-        )}
-      </Card>
+      {isLoading ? (
+        <Card className="px-4 py-10 text-center text-sm text-gray-400">Loading…</Card>
+      ) : error ? (
+        <Card className="px-4 py-10 text-center text-sm text-red-600">{errMsg(error)}</Card>
+      ) : groups.length === 0 ? (
+        <Card className="px-4 py-10 text-center text-sm text-gray-400">No users found.</Card>
+      ) : (
+        <div className="space-y-4">
+          {groups.map((g) => {
+            const isOpen = !collapsed.includes(g.key)
+            const groupRows: Row[] = [
+              ...g.invites.map((invite) => ({ kind: 'invite', invite }) as Row),
+              ...g.users.map((user) => ({ kind: 'user', user }) as Row),
+            ]
+            return (
+              <Card key={g.key}>
+                <button
+                  onClick={() => setCollapsed(isOpen ? [...collapsed, g.key] : collapsed.filter((k) => k !== g.key))}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-gray-50',
+                    isOpen && 'border-b border-gray-100',
+                  )}
+                  aria-expanded={isOpen}
+                >
+                  {isOpen ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronRight size={16} className="text-gray-400" />}
+                  <span className="font-semibold text-gray-900">{g.label}</span>
+                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">{groupRows.length}</span>
+                </button>
+                {isOpen && (
+                  <DataTable
+                    columns={columns}
+                    rows={groupRows}
+                    getRowKey={(r) => (r.kind === 'invite' ? `inv-${r.invite.id}` : `usr-${r.user.id}`)}
+                  />
+                )}
+              </Card>
+            )
+          })}
+        </div>
+      )}
 
       {adding && (
         <AddUserModal invitedBy={authUser?.id ?? ''} onClose={() => setAdding(false)} onSaved={invalidate} />
@@ -247,6 +273,33 @@ export function UsersTab() {
       {pwdFor && <SetPasswordModal email={pwdFor} onClose={() => setPwdFor(null)} onSaved={invalidate} />}
     </div>
   )
+}
+
+/**
+ * Какие блоки ролей свёрнуты. Помним в браузере: это удобство одного админа, не данные.
+ * localStorage может бросать (приватный режим) — тогда просто ничего не запоминаем.
+ */
+const COLLAPSED_KEY = 'portal.users.collapsedGroups'
+
+function useCollapsedGroups(): [string[], (v: string[]) => void] {
+  const [value, setValue] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(COLLAPSED_KEY)
+      const parsed = raw ? JSON.parse(raw) : []
+      return Array.isArray(parsed) ? parsed.filter((x) => typeof x === 'string') : []
+    } catch {
+      return []
+    }
+  })
+  const set = (v: string[]) => {
+    setValue(v)
+    try {
+      localStorage.setItem(COLLAPSED_KEY, JSON.stringify(v))
+    } catch {
+      // не критично
+    }
+  }
+  return [value, set]
 }
 
 /* ---------------- Add User (invitation) ---------------- */
