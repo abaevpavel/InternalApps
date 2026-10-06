@@ -1,13 +1,11 @@
-import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, ExternalLink, LayoutGrid, List } from 'lucide-react'
+import { ArrowRight, ExternalLink } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
 import { listUserApplications } from '../services/data'
-import { getPreferences, saveHomeView, type HomeView } from '../services/preferences'
+import { useViewMode, ViewSwitch } from '../components/ViewSwitch'
 import { openApp } from '../lib/sso'
 import { Card } from '../components/ui'
-import { cn } from '../lib/utils'
 import { HomeTabs } from '../components/HomeTabs'
 import type { Application } from '../domain/types'
 import { displayAppName, groupByDepartment } from '../domain/departments'
@@ -17,7 +15,7 @@ export function MyApplicationsPage() {
   // Тот же id, что в useAppAccess — иначе разойдутся ключи react-query (BUG-8).
   const { effectiveUserId: userId } = useAuth()
 
-  const [view, setView] = useHomeView(userId)
+  const [view, setView] = useViewMode('home')
 
   const { data: apps = [], isLoading } = useQuery({
     queryKey: ['user-applications', userId],
@@ -79,65 +77,6 @@ export function MyApplicationsPage() {
         )}
       </div>
     </>
-  )
-}
-
-/**
- * Вид главной — карточки или список — хранится за пользователем в базе
- * (`user_preferences`), поэтому одинаков на любом компьютере. Пока ответ базы не пришёл,
- * показываем последний выбор из этого браузера (кэш), чтобы вид не мигал. Если запись в
- * базу не удалась (миграция ещё не применена и т.п.) — выбор всё равно работает в этом
- * браузере.
- */
-function useHomeView(userId: string | null): [HomeView, (v: HomeView) => void] {
-  const qc = useQueryClient()
-  const cacheKey = `portal.home.view.${userId ?? 'anon'}`
-  const cached = (): HomeView => {
-    try {
-      return localStorage.getItem(cacheKey) === 'list' ? 'list' : 'cards'
-    } catch {
-      return 'cards'
-    }
-  }
-  const { authUser } = useAuth()
-  const q = useQuery({ queryKey: ['user-preferences', authUser?.id ?? null], queryFn: getPreferences, enabled: !!authUser, retry: false, staleTime: 60_000 })
-  const [local, setLocal] = useState<{ key: string; view: HomeView } | null>(null)
-
-  const view: HomeView = local?.key === cacheKey ? local.view : q.data?.homeView ?? cached()
-
-  const saveM = useMutation({ mutationFn: saveHomeView, onSuccess: () => qc.invalidateQueries({ queryKey: ['user-preferences'] }) })
-
-  const set = (v: HomeView) => {
-    setLocal({ key: cacheKey, view: v })
-    try {
-      localStorage.setItem(cacheKey, v)
-    } catch {
-      // не критично
-    }
-    saveM.mutate(v)
-  }
-  return [view, set]
-}
-
-function ViewSwitch({ value, onChange }: { value: HomeView; onChange: (v: HomeView) => void }) {
-  const item = (v: HomeView, label: string, Icon: typeof List) => (
-    <button
-      type="button"
-      onClick={() => onChange(v)}
-      aria-pressed={value === v}
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition',
-        value === v ? 'bg-white text-gray-900 shadow-card' : 'text-gray-500 hover:text-gray-700',
-      )}
-    >
-      <Icon size={15} /> {label}
-    </button>
-  )
-  return (
-    <div className="inline-flex gap-1 rounded-lg bg-gray-100 p-1">
-      {item('cards', 'Cards', LayoutGrid)}
-      {item('list', 'List', List)}
-    </div>
   )
 }
 
