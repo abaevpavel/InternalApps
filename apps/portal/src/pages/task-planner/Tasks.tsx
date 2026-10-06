@@ -17,7 +17,7 @@ import { cn, errMsg } from '../../lib/utils'
 import {
   fetchTasks, fetchTeams, fetchSkills, fetchAvailability,
   fetchScheduleRun, applyScheduleToTasks, pullScheduleIntoTasks,
-  replaceProposedWithSchedule, deleteTasksByStatus, restoreRequestedFromRun,
+  replaceProposedWithSchedule, deleteTasksByStatus,
   updateTask, deleteTask, type UpdateTaskInput,
 } from '../../services/task-planner/data'
 import { sendToAi, sendToSlack, buildSlackPayload } from '../../services/task-planner/n8n'
@@ -178,20 +178,6 @@ function Requested({ goProposed }: { goProposed: () => void }) {
     onError: (e: unknown) => setError(errMsg(e)),
   })
 
-  // Сброс тестового набора: восстановить эталонные requested-задачи из последнего
-  // прогона (input_tasks) + проставить утренние якоря 09/11/12 в формате ИИ.
-  const restore = useMutation({
-    mutationFn: async () => {
-      const n = await restoreRequestedFromRun()
-      if (!n) throw new Error('No saved run with input_tasks to restore')
-      return n
-    },
-    onSuccess: () => {
-      setError(null)
-      qc.invalidateQueries({ queryKey: ['tasks'] })
-    },
-    onError: (e: unknown) => setError(errMsg(e)),
-  })
 
   // Удаление задачи прямо из Requested (Edit убран, Delete оставлен).
   const del = useMutation({
@@ -200,16 +186,28 @@ function Requested({ goProposed }: { goProposed: () => void }) {
     onError: (e: unknown) => setError(errMsg(e)),
   })
 
-  const busy = send.isPending || recover.isPending || restore.isPending
+  const busy = send.isPending || recover.isPending
   return (
     <div className="space-y-6">
+      {/* Режим тестов: Requested — постоянный тестовый набор. Send to AI делает proposed-копии,
+          исходные задачи остаются здесь, чтобы прогонять тот же набор снова. Перед релизом
+          это снимается (роадмап TP-1.1–TP-1.3): Proposed/Scheduled — та же строка, Requested
+          пустеет после утверждения. Кнопка Reset test set уже убрана: Requested и так не пустеет. */}
+      <Card className="flex items-start gap-3 border-amber-200 bg-amber-50 p-4">
+        <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" />
+        <div className="text-sm text-amber-900">
+          <div className="font-semibold">Test mode — Requested tasks are locked as a test set</div>
+          <p className="mt-0.5">
+            Send to AI and Approve All work on copies; the tasks below stay in Requested so the same set can be run again.
+            Unlock before release: proposed and scheduled must become the same task, and Requested must empty after approval.
+          </p>
+        </div>
+      </Card>
+
       <Card className="p-5">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Generate Schedule</h2>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" className="text-gray-500" disabled={busy} onClick={() => restore.mutate()}>
-              {restore.isPending ? 'Resetting…' : '↺ Reset test set'}
-            </Button>
             <Badge className="bg-gray-100 text-gray-600">{tasks?.length ?? 0} tasks</Badge>
           </div>
         </div>

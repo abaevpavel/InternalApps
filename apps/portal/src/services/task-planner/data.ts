@@ -549,65 +549,6 @@ export async function replaceProposedWithSchedule(
 }
 
 /**
- * Восстановить эталонные requested-задачи из input_tasks сохранённого прогона
- * (по requestId, иначе самый свежий). Чинит строки, которые прошлая логика
- * перевела в proposed и перезаписала расписанием. Возвращает число восстановленных.
- */
-/**
- * Тестовые якоря: чиним битые exact-задачи прошлого прогона — ставим реальные
- * УТРЕННИЕ времена в формате, который ждёт ИИ (`{type:'exact', time}`).
- * (Раньше: один вечерний 21:45 + два exact с пустым временем.)
- */
-const TEST_ANCHOR_TIMES: Record<string, string> = {
-  '1b984091-621c-477e-b801-902868393d79': '09:00', // Stair Trim & Railing Install
-  '05327e6a-200e-484d-8440-9b31be8f893e': '11:00', // Build & Install Closet Framing
-  '13a699f8-a475-4594-be3a-eda65e52ebb2': '12:00', // relocate vanity light box
-}
-
-export async function restoreRequestedFromRun(requestId?: string): Promise<number> {
-  if (!supabase) throw new Error('Supabase is not configured')
-  const sel = 'request_ID, input_tasks, created_at'
-  const q = requestId
-    ? supabase.from('tp_ai_teams_schedule').select(sel).eq('request_ID', requestId).limit(1)
-    : supabase.from('tp_ai_teams_schedule').select(sel).order('created_at', { ascending: false }).limit(1)
-  const { data, error } = await q
-  if (error) throw error
-  const row = data?.[0] as { input_tasks?: Record<string, any>[] } | undefined
-  const tasks = row?.input_tasks ?? []
-  if (!tasks.length) return 0
-  await Promise.all(
-    tasks.map((t) =>
-      (async () => {
-        // выровненный формат якоря: {type:'exact', time}; иначе — исходный scheduled_time
-        const anchor = TEST_ANCHOR_TIMES[t.id]
-        const scheduled_time = anchor ? { type: 'exact', time: anchor } : (t.scheduled_time ?? null)
-        const { error } = await supabase!
-          .from('tp_tasks')
-          .update({
-            status: 'requested',
-            team_id: t.team?.team_id ?? null,
-            project_id: t.project?.project_id ?? null,
-            description: t.description ?? null,
-            task_type: t.task_type ?? 'Project task',
-            priority: t.priority ?? 5,
-            scheduled_date: t.scheduled_date ?? null,
-            scheduled_time,
-            estimated_duration: t.estimated_duration ?? null,
-            skill_requirements: t.skill_requirements ?? [],
-            additional_stop: t.additional_stop ?? null,
-            schedule_prompt: t.schedule_prompt ?? null,
-            stop_number: t.stop_number ?? null,
-            travel_time: null,
-          })
-          .eq('id', t.id)
-        if (error) throw error
-      })(),
-    ),
-  )
-  return tasks.length
-}
-
-/**
  * Подтянуть результат планировщика (по requestId/последний) и материализовать
  * как proposed-копии. Requested не трогаем. Спасает от таймаута/refresh.
  */
