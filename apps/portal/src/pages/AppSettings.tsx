@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Card, Field, Input, PageTitle, Tabs, Textarea } from '../components/ui'
+import { Button, Card, Field, Input, PageTitle, Select, Tabs, Textarea } from '../components/ui'
+import { CollapseAllControls, CollapseGroup, CollapsibleCard } from '../components/Collapsible'
+import { useAppRecord } from '../app/useAppRecord'
+import { DEPARTMENTS, displayAppName } from '../domain/departments'
 import { errMsg } from '../lib/utils'
 import { appByCode, appRoleSettingKey, type AppConfig, type AppRoleSlot, type WebhookField } from '../app/appRegistry'
 import { getSettingsMap, setSetting } from '../services/app-settings'
-import { listRoles } from '../services/data'
+import { listRoles, updateApplication } from '../services/data'
 import { listBucketsSafe, probeTables } from '../services/resources'
 import type { Role } from '../domain/types'
 
@@ -16,6 +19,7 @@ export function AppSettingsPage() {
   const nav = useNavigate()
   const app = appByCode(appCode)
   const [tab, setTab] = useState<SettingsTab>('general')
+  const { name: appName } = useAppRecord(app)
 
   if (!app) {
     return (
@@ -27,7 +31,7 @@ export function AppSettingsPage() {
 
   return (
     <div className="mx-auto w-full max-w-[1200px] px-4 py-10 sm:px-6">
-      <PageTitle title={`${app.label} — Settings`} subtitle="App-scoped configuration. Changes apply to everyone (admin only)." />
+      <PageTitle title={`${appName ?? app.label} — Settings`} subtitle="App-scoped configuration. Changes apply to everyone (admin only)." />
       <Tabs
         className="mb-6 max-w-md"
         tabs={[
@@ -39,10 +43,13 @@ export function AppSettingsPage() {
         value={tab}
         onChange={setTab}
       />
-      {tab === 'general' && <GeneralTab app={app} />}
-      {tab === 'roles' && <RolesTab app={app} />}
-      {tab === 'resources' && <ResourcesTab app={app} />}
-      {tab === 'webhooks' && <WebhooksTab app={app} />}
+      <CollapseGroup key={tab} storageKey={`app-settings.${app.code}.${tab}`}>
+        <CollapseAllControls className="mb-2" />
+        {tab === 'general' && <GeneralTab app={app} />}
+        {tab === 'roles' && <RolesTab app={app} />}
+        {tab === 'resources' && <ResourcesTab app={app} />}
+        {tab === 'webhooks' && <WebhooksTab app={app} />}
+      </CollapseGroup>
     </div>
   )
 }
@@ -121,8 +128,15 @@ function RoleSlotCard({
   }
 
   return (
-    <Card className="p-6">
-      <div className="mb-1 font-medium text-gray-900">{slot.label}</div>
+    <CollapsibleCard
+      id={`role-${slot.key}`}
+      header={
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-gray-900">{slot.label}</span>
+          {dirty && <span className="text-xs text-amber-600">unsaved</span>}
+        </div>
+      }
+    >
       {slot.hint && <p className="mb-4 text-sm text-gray-500">{slot.hint}</p>}
 
       {allRoles.length === 0 ? (
@@ -154,7 +168,7 @@ function RoleSlotCard({
         {saveM.isSuccess && !dirty && <span className="text-sm text-green-600">Saved ✓</span>}
         {saveM.error && <span className="text-sm text-red-600">{errMsg(saveM.error)}</span>}
       </div>
-    </Card>
+    </CollapsibleCard>
   )
 }
 
@@ -179,7 +193,7 @@ function ResourcesTab({ app }: { app: AppConfig }) {
   const liveByName = new Map((bucketsQ.data ?? []).map((b) => [b.name, b]))
 
   return (
-    <Card className="space-y-5 p-6">
+    <CollapsibleCard id="resources" header={<span className="font-medium text-gray-900">Resources</span>} bodyClassName="space-y-5 px-6 pb-6">
       <p className="text-sm text-gray-500">
         Live overview — tables show current row counts (verified against the DB); buckets show real public/private.
         Edge functions & external integrations are declared (can't be introspected from the client).
@@ -261,7 +275,7 @@ function ResourcesTab({ app }: { app: AppConfig }) {
           </ul>
         </div>
       )}
-    </Card>
+    </CollapsibleCard>
   )
 }
 
@@ -294,13 +308,84 @@ function GeneralTab({ app }: { app: AppConfig }) {
   const qc = useQueryClient()
   const q = useQuery({ queryKey: ['app-settings', app.code], queryFn: () => getSettingsMap(app.code) })
   return (
-    <Card className="p-6">
-      <DescriptionField
-        appCode={app.code}
-        current={q.data?.description as string | undefined}
-        onSaved={() => qc.invalidateQueries({ queryKey: ['app-settings', app.code] })}
-      />
-    </Card>
+    <div className="space-y-5">
+      <AppIdentityCard app={app} />
+      <CollapsibleCard id="description" header={<span className="font-medium text-gray-900">Project description</span>}>
+        <DescriptionField
+          appCode={app.code}
+          current={q.data?.description as string | undefined}
+          onSaved={() => qc.invalidateQueries({ queryKey: ['app-settings', app.code] })}
+        />
+      </CollapsibleCard>
+    </div>
+  )
+}
+
+/**
+ * Имя и департамент апки (BAS-1681) — строка `applications`. Имя пишется вручную,
+ * департамент выбирается из списка. Видно на главной (группировка), в шапке и в меню.
+ */
+function AppIdentityCard({ app }: { app: AppConfig }) {
+  const qc = useQueryClient()
+  const { record } = useAppRecord(app)
+  const [name, setName] = useState('')
+  const [department, setDepartment] = useState('')
+  useEffect(() => {
+    if (!record) return
+    setName(record.name)
+    setDepartment(record.department ?? '')
+  }, [record])
+
+  const saveM = useMutation({
+    mutationFn: () => updateApplication(record!.id, { name, department: department || null }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['applications'] })
+      qc.invalidateQueries({ queryKey: ['user-applications'] })
+    },
+  })
+
+  const dirty = !!record && (name.trim() !== record.name || (department || null) !== (record.department ?? null))
+
+  return (
+    <CollapsibleCard
+      id="identity"
+      header={
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-gray-900">Name and department</span>
+          {dirty && <span className="text-xs text-amber-600">unsaved</span>}
+        </div>
+      }
+    >
+      {!record ? (
+        <p className="text-sm text-gray-400">This app has no row in the applications table yet.</p>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,240px)]">
+            <Field label="App name" hint="Shown with the department in front, e.g. “02-SALES — Send an Offer Email”: on the My Applications card, in the header and in the menu.">
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="App name" />
+            </Field>
+            <Field label="Department" hint="Apps are grouped by department on My Applications.">
+              <Select value={department} onChange={(e) => setDepartment(e.target.value)}>
+                <option value="">No department</option>
+                {DEPARTMENTS.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <p className="mt-2 text-sm text-gray-500">
+            Shown as: <span className="font-medium text-gray-900">{displayAppName(name || '…', department || null)}</span>
+          </p>
+          <div className="mt-3 flex items-center gap-2">
+            <Button variant="primary" disabled={!dirty || !name.trim() || saveM.isPending} onClick={() => saveM.mutate()}>
+              Save
+            </Button>
+            {saveM.isSuccess && !dirty && <span className="text-sm text-green-600">Saved ✓</span>}
+            {saveM.error && <span className="text-sm text-red-600">{errMsg(saveM.error)}</span>}
+          </div>
+        </>
+      )}
+    </CollapsibleCard>
   )
 }
 
@@ -346,17 +431,18 @@ function WebhooksTab({ app }: { app: AppConfig }) {
   }
 
   return (
-    <Card className="space-y-6 p-6">
+    <div className="space-y-5">
       {app.webhooks.map((w) => (
-        <WebhookRow
-          key={w.key}
-          appCode={app.code}
-          field={w}
-          current={q.data?.[w.key] as string | undefined}
-          onSaved={() => qc.invalidateQueries({ queryKey: ['app-settings', app.code] })}
-        />
+        <CollapsibleCard key={w.key} id={`webhook-${w.key}`} header={<span className="font-medium text-gray-900">{w.label}</span>}>
+          <WebhookRow
+            appCode={app.code}
+            field={w}
+            current={q.data?.[w.key] as string | undefined}
+            onSaved={() => qc.invalidateQueries({ queryKey: ['app-settings', app.code] })}
+          />
+        </CollapsibleCard>
       ))}
-    </Card>
+    </div>
   )
 }
 
@@ -384,7 +470,7 @@ function WebhookRow({
   const overridden = current !== undefined
 
   return (
-    <Field label={field.label} hint={field.hint}>
+    <Field label="URL" hint={field.hint}>
       <div className="flex gap-2">
         <Input value={value} onChange={(e) => setValue(e.target.value)} placeholder="https://…" />
         <Button variant="primary" disabled={saveM.isPending} onClick={() => saveM.mutate()}>

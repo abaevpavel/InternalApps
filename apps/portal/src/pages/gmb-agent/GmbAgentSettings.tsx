@@ -1,3 +1,4 @@
+import { CollapseAllControls, CollapseGroup, CollapsibleCard } from '../../components/Collapsible'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Info, Plus, Trash2 } from 'lucide-react'
@@ -150,6 +151,8 @@ export function GmbAgentSettingsPage() {
         onChange={setTab}
       />
 
+      <CollapseGroup storageKey={`gmb-agent.${tab}`} defaultCollapsed>
+      {tab !== 'history' && <CollapseAllControls className="mb-2" />}
       <div className="space-y-5">
         {sectionKeys.map((k) => (
           <SettingCard
@@ -181,6 +184,7 @@ export function GmbAgentSettingsPage() {
           }
         />
       )}
+      </CollapseGroup>
 
       <SaveBar
         count={changed.length + changedListings.length}
@@ -277,12 +281,17 @@ function SettingCard({
 }) {
   const meta = fieldMeta(entry.key)
   return (
-    <Card className="p-6">
-      <div className="mb-1 flex items-center gap-2">
-        <span className="font-medium text-gray-900">{meta.label}</span>
-        <span className="font-mono text-xs text-gray-400">{entry.key}</span>
-        {dirty && <StatusBadge tone="warning">unsaved</StatusBadge>}
-      </div>
+    <CollapsibleCard
+      id={entry.key}
+      header={
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-medium text-gray-900">{meta.label}</span>
+          <span className="font-mono text-xs text-gray-400">{entry.key}</span>
+          {dirty && <StatusBadge tone="warning">unsaved</StatusBadge>}
+          {error && <StatusBadge tone="danger">error</StatusBadge>}
+        </div>
+      }
+    >
       {/* `notes` из каталога НЕ показываем: там технические строки вида «plain text, <= 600
           chars», которые повторяют валидацию — её и так делает форма, а счётчик символов
           стоит под полем. Смысл поля объясняет `hint` из domain/gmb.ts. */}
@@ -300,7 +309,7 @@ function SettingCard({
       )}
       {locked && <p className="mt-2 text-xs text-gray-400">Only a portal administrator can change this.</p>}
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-    </Card>
+    </CollapsibleCard>
   )
 }
 
@@ -526,19 +535,25 @@ function ListingRow({
   const res = outcome(l)
   const fresh = newListingNote(l)
   return (
-    <Card className="p-5">
-      <div className="mb-3 flex flex-wrap items-start gap-x-3 gap-y-1">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm text-gray-500">
-            Google shows: <span className="font-medium text-gray-900">{l.liveTitle ?? '—'}</span>
-          </p>
-          <p className="text-xs text-gray-400">
-            {[l.storeCode, l.address].filter(Boolean).join(' · ')}
-          </p>
+    <CollapsibleCard
+      id={`listing-${l.locationId}`}
+      headerClassName="px-5 py-4"
+      bodyClassName="px-5 pb-5"
+      header={
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-gray-500">
+              Google shows: <span className="font-medium text-gray-900">{l.liveTitle ?? '—'}</span>
+            </p>
+            <p className="text-xs text-gray-400">
+              {[l.storeCode, l.address].filter(Boolean).join(' · ')}
+            </p>
+          </div>
+          {dirty && <StatusBadge tone="warning">unsaved</StatusBadge>}
+          {l.lastSeenAt && <span className="text-xs text-gray-400">Checked {shortDate(l.lastSeenAt)}</span>}
         </div>
-        {dirty && <StatusBadge tone="warning">unsaved</StatusBadge>}
-        {l.lastSeenAt && <span className="text-xs text-gray-400">Checked {shortDate(l.lastSeenAt)}</span>}
-      </div>
+      }
+    >
 
       {fresh && (
         <div className="mb-3 flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900">
@@ -573,7 +588,7 @@ function ListingRow({
           {l.lastRenamedFrom ? `, was ‘${l.lastRenamedFrom}’` : ''}
         </p>
       )}
-    </Card>
+    </CollapsibleCard>
   )
 }
 

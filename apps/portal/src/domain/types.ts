@@ -15,6 +15,8 @@ export interface Application {
   url: string | null
   icon: string | null
   created_at: string
+  /** Департамент (BAS-1681), один из DEPARTMENTS. Null — не выбран (до миграции 0026 колонки нет). */
+  department?: string | null
 }
 
 export interface Role {

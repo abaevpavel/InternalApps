@@ -7,6 +7,7 @@ import {
   createTaskType, updateTaskType, deleteTaskType, runEdgeSync,
 } from '../../services/task-planner/data'
 import { errMsg } from '../../lib/utils'
+import { CollapseAllControls, CollapseGroup, CollapsibleCard } from '../../components/Collapsible'
 import type { Project, Skill, TaskType, TeamMember } from '../../domain/task-planner/types'
 
 type Tab = 'projects' | 'team' | 'skills' | 'task_types'
@@ -101,14 +102,23 @@ export function AdminPage() {
       )}
 
       {tab === 'skills' && (
+        <CollapseGroup storageKey="task-planner.skills">
+        <CollapseAllControls className="mb-2" />
         <div className="space-y-4">
           {skillGroups.length === 0 && <Card><p className="p-4 text-sm text-gray-500">No skills.</p></Card>}
           {skillGroups.map(([cat, list]) => (
-            <Card key={cat}>
-              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
-                <span className="text-sm font-semibold uppercase tracking-wide text-gray-700">{cat}</span>
-                <Badge className="bg-gray-100 text-gray-600">{list.length}</Badge>
-              </div>
+            <CollapsibleCard
+              key={cat}
+              id={cat}
+              headerClassName="px-4 py-2.5"
+              bodyClassName="border-t border-gray-100"
+              header={
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold uppercase tracking-wide text-gray-700">{cat}</span>
+                  <Badge className="bg-gray-100 text-gray-600">{list.length}</Badge>
+                </div>
+              }
+            >
               <ul className="divide-y divide-gray-100">
                 {list.map((s, i) => (
                   <li key={s.id} className="flex gap-4 px-4 py-2.5 text-sm">
@@ -118,9 +128,10 @@ export function AdminPage() {
                   </li>
                 ))}
               </ul>
-            </Card>
+            </CollapsibleCard>
           ))}
         </div>
+        </CollapseGroup>
       )}
 
       {tab === 'task_types' && (

@@ -35,6 +35,17 @@ export async function listApplications(): Promise<Application[]> {
   return sortApps((data ?? []) as Application[])
 }
 
+/** Переименовать апку и/или сменить департамент (BAS-1681). Пишет только админ (RLS). */
+export async function updateApplication(id: string, patch: { name: string; department: string | null }): Promise<void> {
+  const sb = requireSupabase()
+  const name = patch.name.trim()
+  if (!name) throw new Error('App name cannot be empty.')
+  const { data, error } = await sb.from('applications').update({ name, department: patch.department }).eq('id', id).select('id')
+  if (error) throw error
+  // RLS режет запись молча (0 строк без ошибки) — говорим об этом прямо.
+  if (!data?.length) throw new Error('Not saved: only a portal administrator can rename apps.')
+}
+
 /** Приложения, доступные юзеру = объединение приложений всех его ролей. */
 export async function listUserApplications(userId: string): Promise<Application[]> {
   const sb = requireSupabase()

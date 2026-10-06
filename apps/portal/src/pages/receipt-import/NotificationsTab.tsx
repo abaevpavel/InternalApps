@@ -1,3 +1,4 @@
+import { CollapseAllControls, CollapseGroup, CollapsibleCard } from '../../components/Collapsible'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Info, Plus, Trash2 } from 'lucide-react'
@@ -75,7 +76,9 @@ export function NotificationsTab() {
   if (q.error) return <p className="text-sm text-red-600">{errMsg(q.error)}</p>
 
   return (
+    <CollapseGroup storageKey="receipt-notifications">
     <div className="max-w-3xl space-y-5">
+      <CollapseAllControls />
       <p className="text-sm text-gray-500">
         Who the receipts automation writes to. A save takes effect on its next run.
       </p>
@@ -111,6 +114,7 @@ export function NotificationsTab() {
         onDiscard={() => setEdits({})}
       />
     </div>
+    </CollapseGroup>
   )
 }
 
@@ -131,14 +135,18 @@ function RecipientList({
   const patch = (i: number, p: Partial<Recipient>) => onChange(list.map((r, j) => (j === i ? { ...r, ...p } : r)))
 
   return (
-    <Card className="p-6">
-      <div className="mb-1 flex flex-wrap items-center gap-2">
+    <CollapsibleCard
+      id={label}
+      header={
+      <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium text-gray-900">{label}</span>
         {dirty && <StatusBadge tone="warning">unsaved</StatusBadge>}
         {updatedAt && (
           <span className="ml-auto text-xs text-gray-400">Last changed {new Date(updatedAt).toLocaleString('en-US')}</span>
         )}
       </div>
+      }
+    >
       <p className="mb-4 text-sm text-gray-500">{hint}</p>
 
       {list.length === 0 ? (
@@ -170,7 +178,7 @@ function RecipientList({
           <Plus size={15} /> Add person
         </Button>
       )}
-    </Card>
+    </CollapsibleCard>
   )
 }
 

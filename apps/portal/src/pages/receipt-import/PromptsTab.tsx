@@ -1,3 +1,4 @@
+import { CollapseAllControls, CollapseGroup, CollapsibleCard } from '../../components/Collapsible'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, StatusBadge, Textarea } from '../../components/ui'
@@ -71,7 +72,9 @@ export function PromptsTab() {
   if (q.error) return <p className="text-sm text-red-600">{errMsg(q.error)}</p>
 
   return (
+    <CollapseGroup storageKey="receipt-prompts">
     <div className="max-w-4xl space-y-5">
+      <CollapseAllControls />
       <p className="text-sm text-gray-500">
         What the receipts AI is told. Rewrite the wording freely, but keep the field names it answers with. A save takes effect on the next run.
       </p>
@@ -83,8 +86,11 @@ export function PromptsTab() {
         // Высота — по содержимому: два системных промпта по ~3 КБ, подсказки в одну строку.
         const rows = Math.min(24, Math.max(3, Math.ceil(text.length / 90) + text.split('\n').length))
         return (
-          <Card key={k.key} className="p-6">
-            <div className="mb-1 flex flex-wrap items-center gap-2">
+          <CollapsibleCard
+            key={k.key}
+            id={k.key}
+            header={
+            <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium text-gray-900">{k.label}</span>
               <span className="font-mono text-xs text-gray-400">{k.key}</span>
               {dirty && <StatusBadge tone="warning">unsaved</StatusBadge>}
@@ -94,6 +100,8 @@ export function PromptsTab() {
                 </span>
               )}
             </div>
+            }
+          >
             {k.whatItDoes && <p className="text-sm text-gray-600">{k.whatItDoes}</p>}
             {k.whereUsed && <p className="mb-3 text-xs text-gray-400">Runs: {k.whereUsed}</p>}
 
@@ -135,7 +143,7 @@ export function PromptsTab() {
                 {errors.map((e) => <li key={e}>{e}</li>)}
               </ul>
             )}
-          </Card>
+          </CollapsibleCard>
         )
       })}
 
@@ -149,5 +157,6 @@ export function PromptsTab() {
         onDiscard={() => setEdits({})}
       />
     </div>
+    </CollapseGroup>
   )
 }

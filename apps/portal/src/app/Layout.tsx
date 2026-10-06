@@ -1,3 +1,4 @@
+import { useAppRecord } from './useAppRecord'
 import { Suspense, useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, LogOut, Menu, Settings, SlidersHorizontal, UserRound } from 'lucide-react'
@@ -32,16 +33,15 @@ const APP_SCREEN_TITLES: [prefix: string, title: string][] = [
 
 /**
  * Что показать в шапке: «АПКА — ЭКРАН» внутри апки, свой титул на портальных страницах.
- * Апку определяет реестр, поэтому дописывать сюда ничего не нужно — достаточно завести
- * её в `appRegistry`.
+ * Апку определяет реестр, имя — строка `applications` в базе (useAppRecord).
  */
-function headerTitle(pathname: string, app: { label: string; shortLabel?: string } | null): string {
-  if (pathname.startsWith('/settings/') && app) {
-    return `${app.shortLabel ?? app.label} — SETTINGS`.toUpperCase()
+function headerTitle(pathname: string, appName: string | null): string {
+  if (pathname.startsWith('/settings/') && appName) {
+    return `${appName} — SETTINGS`.toUpperCase()
   }
-  if (app) {
+  if (appName) {
     const screen = APP_SCREEN_TITLES.find(([p]) => pathname.startsWith(p))?.[1]
-    const name = (app.shortLabel ?? app.label).toUpperCase()
+    const name = appName.toUpperCase()
     return screen ? `${name} — ${screen}` : name
   }
   return PORTAL_TITLES.find(([p]) => pathname.startsWith(p))?.[1] ?? 'MY APPLICATIONS'
@@ -57,6 +57,8 @@ export function Layout() {
   const appRole = useCurrentAppRole()
   // Апка контекста — включая её экран настроек (`/settings/:appCode`), см. currentAppForPath.
   const currentApp = currentAppForPath(pathname)
+  // Имя апки — из базы (его правит админ, BAS-1681); реестр — запасной вариант.
+  const { name: currentAppName } = useAppRecord(currentApp)
   // Экран может копить несохранённые правки (чек-лист проекта) — спрашиваем перед уходом.
   const unsaved = useUnsavedRegistry()
   const [askLeave, setAskLeave] = useState(false)
@@ -71,7 +73,7 @@ export function Layout() {
     }
     goBack()
   }
-  const title = headerTitle(pathname, currentApp)
+  const title = headerTitle(pathname, currentAppName)
 
   useEffect(() => {
     if (!open) return
@@ -114,7 +116,7 @@ export function Layout() {
                   На главной портала (currentApp = null) блока нет вовсе. */}
               {currentApp && (
                 <>
-                  <SectionLabel>{currentApp.shortLabel ?? currentApp.label}</SectionLabel>
+                  <SectionLabel>{currentAppName}</SectionLabel>
                   {visibleNavItems(currentApp, { isAdmin, appRole })
                     .map((item) => (
                       <MenuItem
