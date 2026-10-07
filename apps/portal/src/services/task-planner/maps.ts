@@ -43,8 +43,11 @@ export interface PlaceSuggestion {
   text: string
 }
 
-/** Подсказки ищем в первую очередь вокруг DC/MD/VA — там работают бригады. */
-const DMV_BIAS = { center: { lat: 38.95, lng: -77.05 }, radius: 80_000 }
+/**
+ * Подсказки ищем в первую очередь вокруг DC/MD/VA — там работают бригады. Это приоритет,
+ * а не граница. Google принимает радиус не больше 50 000 м — больше, и каждый запрос падает.
+ */
+const DMV_BIAS = { center: { lat: 38.95, lng: -77.05 }, radius: 50_000 }
 
 /**
  * Подсказки адресов и мест (BAS-1410) — Places API (New) через Maps JS SDK.
@@ -61,6 +64,9 @@ export async function suggestPlaces(input: string): Promise<PlaceSuggestion[]> {
     input: q,
     includedRegionCodes: ['us'],
     locationBias: DMV_BIAS,
+    // Адрес уходит бригадам и планировщику — всегда на английском, не по языку браузера.
+    language: 'en',
+    region: 'us',
   })
   return suggestions
     .map((s) => s.placePrediction)
