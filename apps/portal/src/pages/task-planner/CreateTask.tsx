@@ -1,3 +1,4 @@
+import { AddressAutocomplete } from './AddressAutocomplete'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronDown, X } from 'lucide-react'
@@ -82,7 +83,8 @@ export function CreateTaskPage() {
     onSuccess: () => {
       setError(null)
       qc.invalidateQueries({ queryKey: ['tasks'] })
-      nav('/tasks')
+      // BAS-1410: роута /tasks нет — человек улетал на главную портала. Requested — корень апки.
+      nav('/task-planner')
     },
     onError: (e: unknown) => setError(errMsg(e)),
   })
@@ -183,7 +185,7 @@ export function CreateTaskPage() {
               <SegBtn active={stopWhen === 'after'} onClick={() => setStopWhen('after')}>AFTER</SegBtn>
             </div>
           </div>
-          <Input value={stopAddress} onChange={(e) => setStopAddress(e.target.value)}
+          <AddressAutocomplete value={stopAddress} onChange={setStopAddress}
             placeholder="Search for any address or place (e.g., Home Depot Beltsville)" />
           <div className="mt-2 w-28">
             <label className="mb-1 block text-xs text-gray-500">Duration (min)</label>

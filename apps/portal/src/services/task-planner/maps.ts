@@ -26,13 +26,46 @@ function loadGoogleMaps(): Promise<typeof google.maps> {
     // Синхронный (monolithic) загрузчик: на onload весь API, включая DistanceMatrixService,
     // уже привязан к google.maps. Через loading=async классы не попадают в namespace без
     // importLibrary, а сам importLibrary при простом <script src> не всегда инициализируется.
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_KEY}&v=weekly`
+    // libraries=places — подсказки адресов в Create Task (BAS-1410, Places API New).
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_KEY}&v=weekly&libraries=places`
     s.async = true
     s.onerror = () => reject(new Error('google-maps-load-failed'))
     s.onload = () => resolve(window.google.maps)
     document.head.appendChild(s)
   })
   return mapsPromise
+}
+
+/* ---------------- Подсказки адресов (Places API New) ---------------- */
+
+export interface PlaceSuggestion {
+  id: string
+  text: string
+}
+
+/** Подсказки ищем в первую очередь вокруг DC/MD/VA — там работают бригады. */
+const DMV_BIAS = { center: { lat: 38.95, lng: -77.05 }, radius: 80_000 }
+
+/**
+ * Подсказки адресов и мест (BAS-1410) — Places API (New) через Maps JS SDK.
+ * Нужен ключ с разрешённым Places API (New) и разрешённым адресом сайта (referrer).
+ * Ошибку пробрасываем: поле адреса остаётся обычным вводом, подсказки просто не появятся.
+ */
+export async function suggestPlaces(input: string): Promise<PlaceSuggestion[]> {
+  const q = input.trim()
+  if (q.length < 3) return []
+  const g = await loadGoogleMaps()
+  // Скрипт мог загрузиться раньше без библиотеки places (старый кэш страницы) — догружаем.
+  const places = g.places ?? ((await g.importLibrary('places')) as google.maps.PlacesLibrary)
+  const { suggestions } = await places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+    input: q,
+    includedRegionCodes: ['us'],
+    locationBias: DMV_BIAS,
+  })
+  return suggestions
+    .map((s) => s.placePrediction)
+    .filter((p): p is google.maps.places.PlacePrediction => !!p)
+    .map((p) => ({ id: p.placeId, text: p.text.text }))
 }
 
 /* ---------------- Haversine-фолбэк ---------------- */
