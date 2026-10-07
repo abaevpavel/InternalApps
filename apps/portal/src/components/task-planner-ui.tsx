@@ -1,9 +1,8 @@
 /** Лёгкие UI-примитивы на Tailwind (без внешнего UI-кита). Стиль — светлый/воздушный. */
 import {
-  type ButtonHTMLAttributes, type InputHTMLAttributes, type SelectHTMLAttributes,
+  type ButtonHTMLAttributes, type InputHTMLAttributes,
   type ReactNode, type Key,
 } from 'react'
-import { ChevronDown } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 /* ---------------- Button ---------------- */
@@ -55,16 +54,8 @@ export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<H
   return <textarea className={cn(fieldBase, className)} {...props} />
 }
 
-export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <div className="relative">
-      <select className={cn(fieldBase, 'appearance-none pr-9', className)} {...props}>
-        {children}
-      </select>
-      <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
-    </div>
-  )
-}
+/** Выпадающий список — общий портальный (кастомный, с поиском в длинных списках). */
+export { Select } from './ui'
 
 /** Поле формы: подпись + контрол. */
 export function Field({

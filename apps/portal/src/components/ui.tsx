@@ -2,7 +2,7 @@
 import {
   type ButtonHTMLAttributes, type InputHTMLAttributes, type SelectHTMLAttributes,
   type ReactNode, type Key,
-  useEffect, useRef, useState,
+  Children, Fragment, isValidElement, useEffect, useRef, useState,
 } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown, Eye, EyeOff } from 'lucide-react'
@@ -88,13 +88,171 @@ export function PasswordInput({
   )
 }
 
-export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+interface SelectOption {
+  value: string
+  label: string
+  disabled?: boolean
+}
+
+/** Текст <option>: строка, число или массив кусочков (`{n} — label`). */
+function optionText(node: ReactNode): string {
+  if (node == null || typeof node === 'boolean') return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(optionText).join('')
+  if (isValidElement<{ children?: ReactNode }>(node)) return optionText(node.props.children)
+  return ''
+}
+
+/** <option> из children (в т.ч. внутри фрагментов и массивов из map). */
+function collectOptions(children: ReactNode): SelectOption[] {
+  const out: SelectOption[] = []
+  Children.forEach(children, (child) => {
+    if (!isValidElement<{ children?: ReactNode; value?: unknown; disabled?: boolean }>(child)) return
+    if (child.type === Fragment) {
+      out.push(...collectOptions(child.props.children))
+      return
+    }
+    if (child.type === 'option') {
+      const label = optionText(child.props.children)
+      out.push({ value: String(child.props.value ?? label), label, disabled: child.props.disabled })
+    }
+  })
+  return out
+}
+
+/** С какого числа пунктов в раскрытом списке появляется поиск. */
+const SELECT_SEARCH_FROM = 10
+
+/**
+ * Выпадающий список портала. API как у нативного <select> (value, onChange(e) →
+ * e.target.value, <option> в children), но раскрытый список — свой, в стиле портала:
+ * нативный в раскрытом виде не стилизуется (BAS-1410). Длинный список — с поиском.
+ * Пункт с value="" — это заглушка («Choose…»): показывается серым, когда ничего не выбрано.
+ */
+export function Select({
+  className, children, value, onChange, disabled, id, name, 'aria-label': ariaLabel,
+}: SelectHTMLAttributes<HTMLSelectElement>) {
+  const options = collectOptions(children)
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [rect, setRect] = useState<{ top: number; left: number; width: number; up: boolean } | null>(null)
+
+  const place = () => {
+    const el = ref.current?.getBoundingClientRect()
+    if (!el) return
+    // Внизу экрана места мало — открываем вверх.
+    const up = window.innerHeight - el.bottom < 280 && el.top > window.innerHeight - el.bottom
+    setRect({ top: up ? el.top - 4 : el.bottom + 4, left: el.left, width: el.width, up })
+  }
+
+  useEffect(() => {
+    if (!open) return
+    place()
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (ref.current?.contains(t) || menuRef.current?.contains(t)) return
+      setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    const onMove = () => place()
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', onMove, true)
+    window.addEventListener('resize', onMove)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onMove, true)
+      window.removeEventListener('resize', onMove)
+    }
+  }, [open])
+
+  const current = options.find((o) => o.value === String(value ?? ''))
+  const isPlaceholder = !current || current.value === ''
+  const searchable = options.length > SELECT_SEARCH_FROM
+  const q = query.trim().toLowerCase()
+  const shown = q ? options.filter((o) => o.value !== '' && o.label.toLowerCase().includes(q)) : options
+
+  function pick(v: string) {
+    setOpen(false)
+    setQuery('')
+    if (v === String(value ?? '')) return
+    // Синтетическое событие: вызывающий код читает e.target.value, как у нативного select.
+    onChange?.({ target: { value: v, name }, currentTarget: { value: v, name } } as unknown as React.ChangeEvent<HTMLSelectElement>)
+  }
+
   return (
-    <div className="relative">
-      <select className={cn(fieldBase, 'appearance-none pr-9', className)} {...props}>
-        {children}
-      </select>
-      <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" />
+    <div ref={ref} className={cn('relative', className)}>
+      <button
+        type="button"
+        id={id}
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(fieldBase, 'flex items-center justify-between gap-2 pr-3 text-left', disabled && 'cursor-not-allowed opacity-50')}
+      >
+        <span className={cn('truncate', isPlaceholder && 'text-gray-400')}>{current?.label ?? 'Select…'}</span>
+        <ChevronDown size={15} className={cn('shrink-0 text-gray-400 transition', open && 'rotate-180')} />
+      </button>
+      {open && rect && createPortal(
+        <div
+          ref={menuRef}
+          role="listbox"
+          style={{
+            position: 'fixed',
+            left: rect.left,
+            width: Math.max(rect.width, 200),
+            ...(rect.up ? { bottom: window.innerHeight - rect.top } : { top: rect.top }),
+          }}
+          className="z-[60] flex max-h-72 flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg"
+        >
+          {searchable && (
+            <div className="border-b border-gray-100 p-2">
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const first = shown.find((o) => !o.disabled && o.value !== '')
+                    if (first) pick(first.value)
+                  }
+                }}
+                placeholder="Search…"
+                className="w-full rounded-md border border-gray-200 px-2.5 py-1.5 text-sm outline-none focus:border-accent-500"
+              />
+            </div>
+          )}
+          <div className="overflow-auto py-1">
+            {shown.length === 0 && <div className="px-3 py-2 text-sm text-gray-400">Nothing found</div>}
+            {shown.map((o) => {
+              const selected = o.value === String(value ?? '')
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  disabled={o.disabled}
+                  onClick={() => pick(o.value)}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40',
+                    selected ? 'font-medium text-gray-900' : o.value === '' ? 'text-gray-400' : 'text-gray-700',
+                  )}
+                >
+                  <Check size={14} className={cn('shrink-0', selected && o.value !== '' ? 'text-accent-600' : 'invisible')} />
+                  <span className="truncate">{o.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }

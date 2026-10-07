@@ -394,7 +394,9 @@ export async function createTask(input: CreateTaskInput): Promise<string> {
     task_type: input.task_type,
     project_id: input.project_id,
     description: input.description,
-    title: input.title ?? null,
+    // title в tp_tasks обязателен (not null), а форма его не спрашивает — берём первую
+    // строку описания, как materializeProposedCopies. Без этого Create Task падал с 23502.
+    title: (input.title?.trim() || input.description.split('\n')[0].trim() || 'Task').slice(0, 200),
     scheduled_date: input.scheduled_date,
     scheduled_time: input.scheduled_time,
     estimated_duration: input.estimated_duration_min / 60, // минуты → часы (схема хранит часы)

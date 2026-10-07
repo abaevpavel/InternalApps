@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ExternalLink, Pencil, Trash2 } from 'lucide-react'
-import { Button, Card, Input, StatusBadge, Tabs } from '../../components/ui'
+import { Button, Card, Input, Select, StatusBadge, Tabs } from '../../components/ui'
 import { cn, errMsg } from '../../lib/utils'
 import { loadSources, saveSource } from '../../services/dev-sources'
 import { loadMarks, setMark, type MarkStatus, type MarksIndex } from '../../services/dev-marks'
@@ -803,8 +803,8 @@ function SourceEditor({ scenario, current }: { scenario: ScenarioEntry; current:
                 if (e.key === 'Enter') saveM.mutate()
               }}
             />
-            <select
-              className="h-8 rounded-lg border border-gray-200 bg-white px-1.5 text-xs text-gray-700"
+            <Select
+              className="w-40"
               value={kind}
               onChange={(e) => setKind(e.target.value as SourceKind)}
               aria-label="Source type"
@@ -812,7 +812,7 @@ function SourceEditor({ scenario, current }: { scenario: ScenarioEntry; current:
               {KINDS.map((k) => (
                 <option key={k.key} value={k.key}>{k.label}</option>
               ))}
-            </select>
+            </Select>
             <Button variant="primary" className="h-8 px-3 text-xs" disabled={saveM.isPending} onClick={() => saveM.mutate()}>
               {saveM.isPending ? '…' : 'Save'}
             </Button>
