@@ -3,8 +3,8 @@ import { Button } from './ui'
 /**
  * Общий экран «нет доступа». Используется двумя гейтами:
  *  - `AppAccessGuard` — у роли нет самой апки (`applications`);
- *  - гейт внутри апки — апка есть, но ни один её вид роли не назначен
- *    (напр. Task Planner: ни Planner Admin, ни Team Lead — см. App Settings → Roles).
+ *  - гейт внутри апки — апка есть, но ролей внутри неё пользователю не назначено
+ *    либо их не хватает для экрана (напр. Task Planner — см. App Settings → Roles).
  */
 export function AccessDenied({ reason }: { reason?: string }) {
   return (

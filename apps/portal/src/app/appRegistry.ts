@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 import { BadgeCheck, BookUser, CalendarDays, ClipboardCheck, ListChecks, Plus } from 'lucide-react'
+import { rolesFor, TP_ROLES } from '../domain/task-planner/permissions'
 
 /**
  * Реестр приложений портала для app-settings: настройки (вебхуки) и справка о ресурсах
@@ -28,22 +29,16 @@ export interface AppResources {
 }
 
 /**
- * «Внутренняя роль» приложения — вид, который апка показывает пользователю
- * (напр. у Task Planner: планировщик ↔ бригадир). Сама роль нигде не хранится:
- * админ на `/settings/:appCode` → вкладка Roles сопоставляет ей **портальные роли**,
- * и маппинг ложится в `app_settings` под ключом `roles_<key>` (массив role_id).
- * Так точка настройки — в настройках апки, а реестр ролей остаётся один, портальный
- * (правило 3 платформы).
+ * Внутренняя роль приложения (BAS-1509). Доступ к апке даёт портальная роль, а что человек
+ * может внутри — роли апки: админ портала назначает их пользователям на `/settings/:appCode`
+ * → вкладка Roles, по нескольку на человека. Хранятся в `app_user_roles` (миграция 0028).
  */
 export interface AppRoleSlot {
   key: string
   label: string
+  /** Короткое имя для компактных переключателей (вкладка Roles). */
+  short?: string
   hint?: string
-}
-
-/** Ключ в app_settings, под которым лежат портальные роли для слота. */
-export function appRoleSettingKey(slotKey: string): string {
-  return `roles_${slotKey}`
 }
 
 /** Пункт бургер-меню, показываемый, когда пользователь находится внутри этой апки. */
@@ -54,9 +49,9 @@ export interface AppNavItem {
   /** Виден только админу ПОРТАЛА (`isAdmin`). */
   adminOnly?: boolean
   /**
-   * Виден только этим ВНУТРЕННИМ ролям апки (ключи из `appRoles`). Текущую роль апка
-   * публикует через `AppRoleProvider` (см. `app/AppRoleContext.tsx`) — Layout сам ничего
-   * не знает про её модель ролей. Не задано — пункт виден всем, кто попал в апку.
+   * Виден, если у пользователя есть хоть одна из этих ВНУТРЕННИХ ролей апки (ключи из
+   * `appRoles`). Роли апка публикует через `AppRoleProvider` (см. `app/AppRoleContext.tsx`) —
+   * Layout сам ничего не знает про её модель ролей. Не задано — пункт виден всем, кто попал в апку.
    */
   appRoles?: string[]
 }
@@ -244,28 +239,17 @@ export const APPS: AppConfig[] = [
     // людей от апки до тех пор, пока не поправят базу.
     nameAliases: ['01-Task Planner (Daly Schedule)', '01-Task Planner (Daily Schedule)'],
     routePrefixes: ['/task-planner'],
+    // Пункты меню по ролям модуля (BAS-1509), источник списков — матрица прав
+    // `domain/task-planner/permissions.ts`; те же списки стоят гейтами на роутах (App.tsx).
     nav: [
-      // Планировочные экраны — только вид Planner Admin: у бригадира свой рабочий экран,
-      // а Requested/Proposed — кухня планирования, ему её показывать незачем.
-      { to: '/task-planner', label: 'Tasks', icon: ListChecks, appRoles: ['admin'] },
-      { to: '/task-planner/my-tasks', label: 'My Tasks', icon: ClipboardCheck },
-      { to: '/task-planner/create', label: 'Create Task', icon: Plus, appRoles: ['admin'] },
-      { to: '/task-planner/approvals', label: 'Approvals', icon: BadgeCheck, appRoles: ['admin'] },
-      { to: '/task-planner/availability', label: 'Teams Availability', icon: CalendarDays },
-      { to: '/task-planner/admin', label: 'Directories', icon: BookUser, adminOnly: true },
+      { to: '/task-planner', label: 'Tasks', icon: ListChecks, appRoles: rolesFor('view_schedule') },
+      { to: '/task-planner/my-tasks', label: 'My Tasks', icon: ClipboardCheck, appRoles: rolesFor('complete_task') },
+      { to: '/task-planner/create', label: 'Create Task', icon: Plus, appRoles: rolesFor('create_task') },
+      { to: '/task-planner/approvals', label: 'Approvals', icon: BadgeCheck, appRoles: rolesFor('review_task') },
+      { to: '/task-planner/availability', label: 'Teams Availability', icon: CalendarDays, appRoles: rolesFor('manage_availability') },
+      { to: '/task-planner/admin', label: 'Directories', icon: BookUser, appRoles: rolesFor('manage_directories') },
     ],
-    appRoles: [
-      {
-        key: 'admin',
-        label: 'Planner Admin',
-        hint: 'Full view: every task, Send to AI, directories. Portal admins always get this view, regardless of this setting.',
-      },
-      {
-        key: 'team_lead',
-        label: 'Team Lead (crew PM)',
-        hint: 'Limited view: own crew only. A user whose email matches a row in tp_teams also counts as a team lead, even without a role here.',
-      },
-    ],
+    appRoles: TP_ROLES,
     webhooks: [
       {
         key: 'planner_webhook',
@@ -405,18 +389,18 @@ export const APPS: AppConfig[] = [
  * Пункты меню апки, которые вправе видеть текущий пользователь.
  *  - `adminOnly` — админ ПОРТАЛА (isAdmin);
  *  - `appRoles`  — вид ВНУТРИ апки, который апка публикует через AppRoleProvider.
- * Пока вид не вычислен (`appRole = null`), пункты со списком ролей не показываем: лучше
+ * Пока роли не вычислены (`appRoles = null`), пункты со списком ролей не показываем: лучше
  * дорисовать их через мгновение, чем мигнуть бригадиру планировочными экранами.
  * Это UI-слой; настоящие гейты — на роутах и в RLS.
  */
 export function visibleNavItems(
   app: AppConfig | null,
-  { isAdmin, appRole }: { isAdmin: boolean; appRole: string | null },
+  { isAdmin, appRoles }: { isAdmin: boolean; appRoles: string[] | null },
 ): AppNavItem[] {
   return (app?.nav ?? []).filter(
     (item) =>
       (!item.adminOnly || isAdmin) &&
-      (!item.appRoles || (appRole !== null && item.appRoles.includes(appRole))),
+      (!item.appRoles || (appRoles !== null && item.appRoles.some((r) => appRoles.includes(r)))),
   )
 }
 

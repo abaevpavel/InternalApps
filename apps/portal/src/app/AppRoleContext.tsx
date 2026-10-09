@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 
 /**
- * Внутренняя роль текущей апки — канал «апка → оболочка портала».
+ * Внутренние роли текущей апки — канал «апка → оболочка портала».
  *
  * Портальный Layout не знает и не должен знать ролевую модель конкретной апки: апка сама
- * вычисляет свой вид (напр. Task Planner — `useTaskPlannerRole()`) и публикует его сюда
- * через `usePublishAppRole()`, а Layout лишь фильтрует пункты меню по `AppNavItem.appRoles`.
+ * вычисляет роли пользователя (напр. Task Planner — `useTaskPlannerRoles()`) и публикует их
+ * сюда через `usePublishAppRoles()`, а Layout лишь фильтрует пункты меню по `AppNavItem.appRoles`.
+ * Ролей у человека может быть несколько (BAS-1509) — пункт виден, если совпала хоть одна.
  * Механизм общий — им воспользуется любая апка, у которой появятся свои виды
  * (`AppConfig.appRoles`).
  *
@@ -15,28 +16,30 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
  *
  * Это только UI-слой (что показать в меню). Реальный контур допуска — гейты роутов + RLS.
  */
-const AppRoleValue = createContext<string | null>(null)
-const AppRoleSetter = createContext<(role: string | null) => void>(() => {})
+const AppRoleValue = createContext<string[] | null>(null)
+const AppRoleSetter = createContext<(roles: string[] | null) => void>(() => {})
 
 export function AppRoleProvider({ children }: { children: ReactNode }) {
-  const [role, setRole] = useState<string | null>(null)
+  const [roles, setRoles] = useState<string[] | null>(null)
   return (
-    <AppRoleSetter.Provider value={setRole}>
-      <AppRoleValue.Provider value={role}>{children}</AppRoleValue.Provider>
+    <AppRoleSetter.Provider value={setRoles}>
+      <AppRoleValue.Provider value={roles}>{children}</AppRoleValue.Provider>
     </AppRoleSetter.Provider>
   )
 }
 
-/** Роль внутри текущей апки; `null` — мы вне апки или её вид ещё не вычислен. */
-export function useCurrentAppRole(): string | null {
+/** Роли внутри текущей апки; `null` — мы вне апки или роли ещё не вычислены. */
+export function useCurrentAppRoles(): string[] | null {
   return useContext(AppRoleValue)
 }
 
-/** Апка объявляет свой вид оболочке. При уходе с экранов апки значение сбрасывается. */
-export function usePublishAppRole(role: string | null): void {
+/** Апка объявляет свои роли оболочке. При уходе с экранов апки значение сбрасывается. */
+export function usePublishAppRoles(roles: string[] | null): void {
   const set = useContext(AppRoleSetter)
+  // Ключ по содержимому: новый массив с теми же ролями не должен дёргать оболочку.
+  const key = roles ? roles.join(',') : null
   useEffect(() => {
-    set(role)
+    set(key === null ? null : key ? key.split(',') : [])
     return () => set(null)
-  }, [role, set])
+  }, [key, set])
 }

@@ -19,7 +19,7 @@ import {
   addTaskNote, completeTask, describeTaskEvent, EXECUTION_LABEL, EXECUTION_TONE,
   fetchTaskEvents, fetchTaskPhotos, fetchTasksForDay, uploadTaskPhoto,
 } from '../../services/task-planner/execution'
-import { useTaskPlannerRole } from './useTaskPlannerRole'
+import { useTaskPlannerRoles } from './useTaskPlannerRole'
 
 /* ---------------- Даты ---------------- */
 
@@ -42,7 +42,7 @@ function longDate(iso: string): string {
 /* ---------------- Экран ---------------- */
 
 export function MyTasksPage() {
-  const { role, teamName } = useTaskPlannerRole()
+  const { teamName } = useTaskPlannerRoles()
   const today = todayISO()
   const [date, setDate] = useState(today)
   const [openTask, setOpenTask] = useState<Task | null>(null)
@@ -59,11 +59,9 @@ export function MyTasksPage() {
       <PageTitle
         title="My Tasks"
         subtitle={
-          role === 'admin'
-            ? 'Approved schedule for the selected day. As a portal admin you see every crew.'
-            : teamName
-              ? `Approved schedule for ${teamName}.`
-              : 'Approved schedule for your crew.'
+          teamName
+            ? `Approved schedule for ${teamName}.`
+            : 'No crew is linked to your email, so there are no tasks to show.'
         }
       />
 

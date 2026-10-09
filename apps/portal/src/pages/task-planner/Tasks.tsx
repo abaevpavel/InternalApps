@@ -28,6 +28,7 @@ import { buildTravelMatrix, matrixProvider, edgeKey, type MatrixPoint } from '..
 import { recomputeTeamDay, type Point } from '../../domain/task-planner/scheduling-engine'
 import { minToAmPm, hhmmToMin, minToHm, minToHoursLabel } from '../../lib/task-planner-time'
 import type { ScheduledTask, TeamDay, Task } from '../../domain/task-planner/types'
+import { useTaskPlannerRoles } from './useTaskPlannerRole'
 
 /** Простой генератор request_ID для запуска планировщика. */
 function newRequestId(): string {
@@ -116,6 +117,8 @@ function priorityTone(p: number): { label: string; tone: 'danger' | 'warning' | 
 
 function Requested({ goProposed }: { goProposed: () => void }) {
   const qc = useQueryClient()
+  // Кнопки — по ролям модуля (BAS-1509): Send to AI — Schedule Manager, удаление — PM.
+  const { can } = useTaskPlannerRoles()
   const { data: tasks } = useQuery({ queryKey: ['tasks', 'requested'], queryFn: () => fetchTasks('requested') })
   const [error, setError] = useState<string | null>(null)
 
@@ -215,16 +218,18 @@ function Requested({ goProposed }: { goProposed: () => void }) {
           <span className="text-sm text-gray-500">
             {busy ? 'Sending tasks & waiting for AI…' : `${tasks?.length ?? 0} tasks will be analyzed`}
           </span>
-          <div className="flex gap-2">
-            <Button variant="primary" disabled={busy || !tasks?.length} onClick={() => send.mutate()}>
-              {busy ? <span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Working…</span> : 'Send to AI'}
-            </Button>
-          </div>
+          {can('send_to_ai') && (
+            <div className="flex gap-2">
+              <Button variant="primary" disabled={busy || !tasks?.length} onClick={() => send.mutate()}>
+                {busy ? <span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Working…</span> : 'Send to AI'}
+              </Button>
+            </div>
+          )}
         </div>
         {error && <p className="mt-3 text-sm text-red-600">⚠ {error}</p>}
       </Card>
 
-      {pendingId && !send.isPending && (
+      {pendingId && !send.isPending && can('send_to_ai') && (
         <Card className="flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50 p-4">
           <AlertTriangle size={18} className="text-amber-600" />
           <span className="text-sm text-amber-800">
@@ -245,7 +250,9 @@ function Requested({ goProposed }: { goProposed: () => void }) {
         <div className="grid gap-3 md:grid-cols-2">
           {tasks?.map((t) => (
             <TaskCardCompact key={t.id} t={t}
-              onDelete={() => { if (confirm(`Delete task “${t.title ?? t.description}”?`)) del.mutate(t.id) }} />
+              onDelete={can('delete_task')
+                ? () => { if (confirm(`Delete task “${t.title ?? t.description}”?`)) del.mutate(t.id) }
+                : undefined} />
           ))}
         </div>
       </div>
@@ -271,7 +278,9 @@ function TaskCardCompact({ t, onDelete }: { t: Task; onDelete?: () => void }) {
             {[t.project_name, t.task_address, t.project_manager ? `PM: ${t.project_manager}` : null].filter(Boolean).join(' · ')}
           </div>
         </div>
-        <button onClick={onDelete} className="shrink-0 text-gray-400 hover:text-red-600" aria-label="delete"><Trash2 size={16} /></button>
+        {onDelete && (
+          <button onClick={onDelete} className="shrink-0 text-gray-400 hover:text-red-600" aria-label="delete"><Trash2 size={16} /></button>
+        )}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-600">
@@ -402,6 +411,9 @@ function TaskEditModal({ task, onClose, onSaved }: {
 /* ---------------- Proposed (реальные tasks со status=proposed + движок) ---------------- */
 function Proposed({ goScheduled }: { goScheduled: () => void }) {
   const qc = useQueryClient()
+  // Раскладка и утверждение — Schedule Manager (BAS-1509); остальным доска только для просмотра.
+  const { can } = useTaskPlannerRoles()
+  const canArrange = can('rearrange_proposed')
   // источник — реальные tasks (status=proposed), материализованные из AI при Send to AI
   const { data: tasks, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['tasks', 'proposed'], queryFn: () => fetchTasks('proposed'),
@@ -470,9 +482,11 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
   if (!days.length) return (
     <div className="space-y-3">
       <p className="text-gray-500">No proposed tasks. Run Send to AI on the Requested tab.</p>
-      <Button variant="outline" className="text-blue-600" disabled={pull.isPending} onClick={() => pull.mutate()}>
-        {pull.isPending ? 'Pulling…' : 'Pull AI result'}
-      </Button>
+      {can('send_to_ai') && (
+        <Button variant="outline" className="text-blue-600" disabled={pull.isPending} onClick={() => pull.mutate()}>
+          {pull.isPending ? 'Pulling…' : 'Pull AI result'}
+        </Button>
+      )}
       {error && <p className="text-sm text-red-600">⚠ {error}</p>}
     </div>
   )
@@ -490,25 +504,33 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
         <Button variant="outline" className="text-blue-600" disabled={isFetching} onClick={() => refetch()}>
           {isFetching ? 'Refreshing…' : 'Fetch AI Data'}
         </Button>
-        <Button variant="outline" className="text-blue-600" disabled={pull.isPending} onClick={() => pull.mutate()}>
-          {pull.isPending ? 'Pulling…' : 'Pull AI result'}
-        </Button>
-        <Button variant="outline" className="text-blue-600" disabled={save.isPending}
-          onClick={() => save.mutate()}>
-          {save.isPending ? 'Saving…' : saved ? '✓ Saved' : 'Save changes'}
-        </Button>
-        <Button variant="green" disabled={approve.isPending} onClick={() => approve.mutate()}>
-          {approve.isPending ? 'Approving…' : 'Approve All'}
-        </Button>
+        {can('send_to_ai') && (
+          <Button variant="outline" className="text-blue-600" disabled={pull.isPending} onClick={() => pull.mutate()}>
+            {pull.isPending ? 'Pulling…' : 'Pull AI result'}
+          </Button>
+        )}
+        {canArrange && (
+          <Button variant="outline" className="text-blue-600" disabled={save.isPending}
+            onClick={() => save.mutate()}>
+            {save.isPending ? 'Saving…' : saved ? '✓ Saved' : 'Save changes'}
+          </Button>
+        )}
+        {can('approve_schedule') && (
+          <Button variant="green" disabled={approve.isPending} onClick={() => approve.mutate()}>
+            {approve.isPending ? 'Approving…' : 'Approve All'}
+          </Button>
+        )}
         <Button variant="outline" onClick={() => setExplainOpen(true)}>💬 Explain Yourself</Button>
-        <Button variant="outline" className="ml-auto border-red-200 text-red-600"
-          disabled={wipe.isPending}
-          onClick={() => { if (confirm(`Delete all ${total} tasks from Proposed? Requested is not affected.`)) wipe.mutate() }}>
-          {wipe.isPending ? 'Deleting…' : '🗑 Delete all'}
-        </Button>
+        {canArrange && (
+          <Button variant="outline" className="ml-auto border-red-200 text-red-600"
+            disabled={wipe.isPending}
+            onClick={() => { if (confirm(`Delete all ${total} tasks from Proposed? Requested is not affected.`)) wipe.mutate() }}>
+            {wipe.isPending ? 'Deleting…' : '🗑 Delete all'}
+          </Button>
+        )}
         {error && <span className="text-sm text-red-600">⚠ {error}</span>}
       </Card>
-      <EditableBoard days={days} onComputed={(d) => { editedRef.current = d }} />
+      <EditableBoard days={days} readOnly={!canArrange} onComputed={(d) => { editedRef.current = d }} />
 
       <Modal open={explainOpen} title="AI reasoning — how the schedule was built" onClose={() => setExplainOpen(false)} size="lg"
         footer={<Button variant="ghost" onClick={() => setExplainOpen(false)}>Close</Button>}>
@@ -626,7 +648,12 @@ interface TaskProv {
   orderChanged: boolean
 }
 
-function EditableBoard({ days, onComputed }: { days: TeamDay[]; onComputed?: (computed: TeamDay[]) => void }) {
+function EditableBoard({ days, readOnly = false, onComputed }: {
+  days: TeamDay[]
+  /** Без права раскладки (BAS-1509): перетаскивание выключено. */
+  readOnly?: boolean
+  onComputed?: (computed: TeamDay[]) => void
+}) {
   const allTasks = useMemo(() => days.flatMap((d) => d.tasks), [days])
   const byId = useMemo(() => Object.fromEntries(allTasks.map((t) => [t.task_id, t])), [allTasks])
   const meta = useMemo(() => Object.fromEntries(days.map((d) => [d.team_id, d])), [days])
@@ -764,7 +791,8 @@ function EditableBoard({ days, onComputed }: { days: TeamDay[]; onComputed?: (co
 
   const googleActive = useMemo(() => [...provByTask.values()].some((p) => p.source === 'google'), [provByTask])
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const pointer = useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  const sensors = useSensors(...(readOnly ? [] : [pointer]))
 
   const findContainer = useCallback((id: string): string | undefined => {
     if (cols[id]) return id
@@ -1314,6 +1342,8 @@ function SortableTaskRow({
 
 /* ---------------- Scheduled (реальные задачи, read-only) ---------------- */
 function Scheduled() {
+  // Send Tasks (рассылка в Slack) — Schedule Manager (BAS-1509).
+  const { can } = useTaskPlannerRoles()
   const { data: tasks, isLoading } = useQuery({ queryKey: ['tasks', 'scheduled'], queryFn: () => fetchTasks('scheduled') })
   const days = useMemo(() => buildTeamDays(tasks ?? []), [tasks])
   const [sent, setSent] = useState(false)
@@ -1332,9 +1362,11 @@ function Scheduled() {
         <div className="flex items-center gap-2">
           {error && <span className="text-sm text-red-600">⚠ {error}</span>}
           {sent && <span className="flex items-center gap-1 text-sm text-green-600"><CheckCircle2 size={14} /> Sent</span>}
-          <Button variant="primary" disabled={send.isPending} onClick={() => send.mutate()}>
-            {send.isPending ? 'Sending…' : 'Send tasks'}
-          </Button>
+          {can('send_tasks') && (
+            <Button variant="primary" disabled={send.isPending} onClick={() => send.mutate()}>
+              {send.isPending ? 'Sending…' : 'Send tasks'}
+            </Button>
+          )}
           <Badge className="bg-gray-100 text-gray-600">{days.reduce((s, d) => s + d.tasks.length, 0)} tasks</Badge>
         </div>
       </Card>

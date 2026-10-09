@@ -4,7 +4,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, LogOut, Menu, Settings, SlidersHorizontal, UserRound } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
 import { currentAppForPath, visibleNavItems } from './appRegistry'
-import { useCurrentAppRole } from './AppRoleContext'
+import { useCurrentAppRoles } from './AppRoleContext'
 import { useUnsavedRegistry } from './UnsavedChangesContext'
 import { Button, Modal } from '../components/ui'
 
@@ -53,8 +53,8 @@ export function Layout() {
   const menuRef = useRef<HTMLDivElement>(null)
   const nav = useNavigate()
   const { pathname } = useLocation()
-  // Вид внутри текущей апки (её публикует сама апка) — по нему фильтруются пункты её меню.
-  const appRole = useCurrentAppRole()
+  // Роли внутри текущей апки (их публикует сама апка) — по ним фильтруются пункты её меню.
+  const appRoles = useCurrentAppRoles()
   // Апка контекста — включая её экран настроек (`/settings/:appCode`), см. currentAppForPath.
   const currentApp = currentAppForPath(pathname)
   // Имя апки — из базы (его правит админ, BAS-1681); реестр — запасной вариант.
@@ -117,7 +117,7 @@ export function Layout() {
               {currentApp && (
                 <>
                   <SectionLabel>{currentAppName}</SectionLabel>
-                  {visibleNavItems(currentApp, { isAdmin, appRole })
+                  {visibleNavItems(currentApp, { isAdmin, appRoles })
                     .map((item) => (
                       <MenuItem
                         key={item.to}

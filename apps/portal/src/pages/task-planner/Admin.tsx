@@ -94,8 +94,9 @@ export function AdminPage() {
           <p className="text-sm text-gray-500">
             Crew directory (synced from Airtable). Portal access is not granted here — invite
             these people in <span className="font-medium">Portal Settings → Users</span> using
-            their work Google account, with a role that has access to Task Planner. Inside the
-            app, a user counts as a team lead when their email matches a row below.
+            their work Google account, with a role that has access to Task Planner. Then give
+            them the Lead Carpenter role in the app settings (Roles): their crew is the row below
+            whose email matches theirs.
           </p>
           <Card><DataTable columns={teamCols} rows={team.data ?? []} getRowKey={(t) => t.id} empty="No team accounts." /></Card>
         </div>

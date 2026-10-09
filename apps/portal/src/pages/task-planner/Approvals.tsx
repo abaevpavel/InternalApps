@@ -3,9 +3,9 @@
  * Апрувер подтверждает (`approved` — задача закрыта) или возвращает на доработку
  * (`rework` — обязательно с комментарием, иначе бригадир не поймёт, что переделывать).
  *
- * Кто апрувит — решает БД (`tp_can_approve_task()`, сейчас портальный админ), UI лишь
- * зеркалит это гейтом роута. Когда заказчик определится (PM задачи / Planner Admin /
- * отдельная роль) — правится функция в БД и гейт здесь. См. docs/TASK-PLANNER-ROLES.md §5.4.
+ * Кто апрувит — роль модуля Project Manager (BAS-1509): в БД `tp_can_approve_task()`
+ * (миграция 0028), в UI — гейт роута `review_task`. Перенос проверки в списки PM
+ * с Closed / Task Accepted — BAS-1431.
  */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'

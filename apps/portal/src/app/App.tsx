@@ -35,7 +35,7 @@ const CreateTaskPage = lazy(() => import('../pages/task-planner/CreateTask').the
 const AvailabilityPage = lazy(() => import('../pages/task-planner/Availability').then((m) => ({ default: m.AvailabilityPage })))
 const TaskPlannerAdminPage = lazy(() => import('../pages/task-planner/Admin').then((m) => ({ default: m.AdminPage })))
 const TaskPlannerLayout = lazy(() => import('../pages/task-planner/TaskPlannerLayout').then((m) => ({ default: m.TaskPlannerLayout })))
-const PlannerAdminOnly = lazy(() => import('../pages/task-planner/TaskPlannerLayout').then((m) => ({ default: m.PlannerAdminOnly })))
+const RequireTpCapability = lazy(() => import('../pages/task-planner/TaskPlannerLayout').then((m) => ({ default: m.RequireTpCapability })))
 const PlannerHome = lazy(() => import('../pages/task-planner/TaskPlannerLayout').then((m) => ({ default: m.PlannerHome })))
 const MyTasksPage = lazy(() => import('../pages/task-planner/MyTasks').then((m) => ({ default: m.MyTasksPage })))
 const ApprovalsPage = lazy(() => import('../pages/task-planner/Approvals').then((m) => ({ default: m.ApprovalsPage })))
@@ -140,18 +140,16 @@ function Shell() {
           <Route path="/commission-app" element={<CommissionAppPage />} />
           {/* Task Planner — роуты портала, общая БД (таблицы tp_*) */}
           <Route path="/task-planner" element={<TaskPlannerLayout />}>
-            {/* Корень апки: планировщику — список задач, бригадиру — его My Tasks
+            {/* Корень апки: кто видит общее расписание — Tasks, Lead Carpenter — его My Tasks
                 (карточка на «My Applications» ведёт сюда всех). */}
-            <Route index element={<PlannerHome adminScreen={<TasksPage />} />} />
-            <Route path="my-tasks" element={<MyTasksPage />} />
-            {/* Планировочные экраны — вид Planner Admin (не только админ портала):
-                в БД тому же условию соответствует tp_is_planner_admin(), миграция 0008. */}
-            <Route path="create" element={<PlannerAdminOnly><CreateTaskPage /></PlannerAdminOnly>} />
-            <Route path="approvals" element={<PlannerAdminOnly><ApprovalsPage /></PlannerAdminOnly>} />
-            <Route path="availability" element={<AvailabilityPage />} />
-            {/* Directories — админский экран апки: гейт роутом, а не только пунктом меню
-                (AppAccessGuard пускает на апку целиком, внутренние роуты он не различает). */}
-            <Route path="admin" element={<AdminOnly><TaskPlannerAdminPage /></AdminOnly>} />
+            <Route index element={<PlannerHome scheduleScreen={<TasksPage />} />} />
+            {/* Экраны — по правам из матрицы ролей модуля (BAS-1509, domain/task-planner/permissions.ts).
+                В БД тем же ролям соответствует RLS из миграции 0028. */}
+            <Route path="my-tasks" element={<RequireTpCapability cap="complete_task"><MyTasksPage /></RequireTpCapability>} />
+            <Route path="create" element={<RequireTpCapability cap="create_task"><CreateTaskPage /></RequireTpCapability>} />
+            <Route path="approvals" element={<RequireTpCapability cap="review_task"><ApprovalsPage /></RequireTpCapability>} />
+            <Route path="availability" element={<RequireTpCapability cap="manage_availability"><AvailabilityPage /></RequireTpCapability>} />
+            <Route path="admin" element={<RequireTpCapability cap="manage_directories"><TaskPlannerAdminPage /></RequireTpCapability>} />
           </Route>
         </Route>
       </Route>
