@@ -1,0 +1,89 @@
+/**
+ * «Своя сторона» Task Planner (BAS-1510): свои задачи по спискам Uncompleted / Completed /
+ * Closed, сгруппированные по дням.
+ *
+ * Чьи задачи:
+ *  - PM — созданные им (`created_by`); старые задачи без автора показываются всем PM
+ *    с пометкой «no author» (решение Владислава 2026-10-12);
+ *  - Lead Carpenter — задачи его бригады (скоуп держит RLS, здесь фильтра нет).
+ *
+ * Списки по оси исполнения. Пока нет статуса Closed (BAS-1431), соответствие такое:
+ * Uncompleted = pending + rework, Completed = completed, Closed = approved.
+ */
+import type { ExecutionStatus, Task } from './types'
+
+export type OwnList = 'uncompleted' | 'completed' | 'closed'
+export type OwnMode = 'pm' | 'crew'
+
+export const OWN_LISTS: { key: OwnList; label: string }[] = [
+  { key: 'uncompleted', label: 'Uncompleted' },
+  { key: 'completed', label: 'Completed' },
+  { key: 'closed', label: 'Closed' },
+]
+
+const LIST_BY_STATUS: Record<ExecutionStatus, OwnList> = {
+  pending: 'uncompleted',
+  rework: 'uncompleted',
+  completed: 'completed',
+  approved: 'closed',
+}
+
+export function ownListOf(t: Task): OwnList {
+  return LIST_BY_STATUS[t.execution_status] ?? 'uncompleted'
+}
+
+/** Задача без автора — показывается PM с пометкой. */
+export function hasNoAuthor(t: Task): boolean {
+  return !t.created_by
+}
+
+/** Свои задачи для режима. PM: свои + без автора; бригада: всё, что отдал RLS. */
+export function ownTasks(tasks: Task[], mode: OwnMode, userId: string | null): Task[] {
+  if (mode === 'crew') return tasks
+  return tasks.filter((t) => hasNoAuthor(t) || (!!userId && t.created_by === userId))
+}
+
+/** Группировка по дням: дни по возрастанию, внутри дня — по времени начала, затем по порядку. */
+export function groupByDay(tasks: Task[]): { date: string; tasks: Task[] }[] {
+  const byDay = new Map<string, Task[]>()
+  for (const t of tasks) {
+    const d = t.scheduled_date || ''
+    byDay.set(d, [...(byDay.get(d) ?? []), t])
+  }
+  return [...byDay.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, list]) => ({
+      date,
+      tasks: [...list].sort(
+        (a, b) => (a.sched_start ?? '').localeCompare(b.sched_start ?? '') || (a.stop_number ?? 0) - (b.stop_number ?? 0),
+      ),
+    }))
+}
+
+/* ---------------- Диапазон дат ---------------- */
+
+export type RangePreset = 'this_week' | 'next_week' | 'this_month'
+
+export const RANGE_PRESETS: { key: RangePreset; label: string }[] = [
+  { key: 'this_week', label: 'This week' },
+  { key: 'next_week', label: 'Next week' },
+  { key: 'this_month', label: 'This month' },
+]
+
+function shift(iso: string, days: number): string {
+  const d = new Date(`${iso}T12:00:00`) // полдень: сдвиг не срывается на переходе DST
+  d.setDate(d.getDate() + days)
+  return new Intl.DateTimeFormat('en-CA').format(d)
+}
+
+/** Границы периода от «сегодня» (ISO, в таймзоне компании). Неделя — с понедельника. */
+export function presetRange(preset: RangePreset, today: string): { from: string; to: string } {
+  const dow = new Date(`${today}T12:00:00`).getDay() // 0 = вс
+  const monday = shift(today, dow === 0 ? -6 : 1 - dow)
+  if (preset === 'this_week') return { from: monday, to: shift(monday, 6) }
+  if (preset === 'next_week') return { from: shift(monday, 7), to: shift(monday, 13) }
+  const [y, m] = today.split('-').map(Number)
+  const last = new Date(y, m, 0).getDate()
+  const mm = String(m).padStart(2, '0')
+  return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(last).padStart(2, '0')}` }
+}

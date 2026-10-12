@@ -34,6 +34,14 @@ export function fetchTasksForDay(date: string): Promise<Task[]> {
   return fetchTasks('scheduled', { date })
 }
 
+/**
+ * Задачи утверждённого расписания за период (своя сторона, BAS-1510); без границ — за всё
+ * время. Скоуп — тот же RLS.
+ */
+export function fetchTasksInRange(from?: string, to?: string): Promise<Task[]> {
+  return fetchTasks('scheduled', { dateFrom: from, dateTo: to })
+}
+
 /** Очередь апрува: выполненные бригадирами задачи, ждущие подтверждения. */
 export function fetchTasksAwaitingApproval(): Promise<Task[]> {
   return fetchTasks('scheduled', { executionStatus: 'completed' })

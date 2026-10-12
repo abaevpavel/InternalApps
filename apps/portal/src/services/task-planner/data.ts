@@ -8,7 +8,7 @@ import type { ExecutionStatus, Project, ScheduleRun, Skill, Task, Team, TeamAvai
 
 export async function fetchTasks(
   status?: Task['status'],
-  opts?: { date?: string; executionStatus?: ExecutionStatus | ExecutionStatus[] },
+  opts?: { date?: string; dateFrom?: string; dateTo?: string; executionStatus?: ExecutionStatus | ExecutionStatus[] },
 ): Promise<Task[]> {
   if (!supabase) return []
   // ВАЖНО: FK tasks→teams в схеме нет, поэтому embed teams(...) даёт 400.
@@ -22,6 +22,8 @@ export async function fetchTasks(
   // Скоуп «своя бригада» тут НЕ ставим: его держит RLS (миграция 0007), одинаково для
   // любого запроса — фильтр в UI не обходится прямым запросом с anon-ключом.
   if (opts?.date) q = q.eq('scheduled_date', opts.date)
+  if (opts?.dateFrom) q = q.gte('scheduled_date', opts.dateFrom)
+  if (opts?.dateTo) q = q.lte('scheduled_date', opts.dateTo)
   if (opts?.executionStatus) {
     q = Array.isArray(opts.executionStatus)
       ? q.in('execution_status', opts.executionStatus)
@@ -59,6 +61,7 @@ function mapDbTask(r: Record<string, any>, teamInfo?: Map<string, { name: string
     // читаем как 'pending' — legacy-флаг completed backfill'ится миграцией.
     execution_status: r.execution_status ?? 'pending',
     completed_at: r.completed_at ?? null,
+    created_by: r.created_by ?? null,
     task_type: r.task_type ?? 'Project task',
     project_id: r.project_id ?? null,
     project_name: proj?.name,
@@ -499,6 +502,15 @@ export async function materializeProposedCopies(
   days: import('../../domain/task-planner/types').TeamDay[],
 ): Promise<number> {
   if (!supabase) throw new Error('Supabase is not configured')
+  // Автор копии = автор исходной задачи (BAS-1510): по нему PM видит «свои» задачи
+  // и после того, как задача прошла через AI.
+  const sourceIds = [...new Set(days.flatMap((d) => d.tasks.map((t) => t.task_id)).filter(Boolean))]
+  const authorBySource = new Map<string, string | null>()
+  if (sourceIds.length) {
+    const { data: src, error: srcErr } = await supabase.from('tp_tasks').select('id, created_by').in('id', sourceIds)
+    if (srcErr) throw srcErr
+    for (const r of src ?? []) authorBySource.set(r.id as string, (r.created_by as string | null) ?? null)
+  }
   const rows: Record<string, unknown>[] = []
   for (const day of days) {
     for (const t of day.tasks) {
@@ -522,6 +534,7 @@ export async function materializeProposedCopies(
         priority: 5,
         skill_requirements: [],
         request_task_id: t.task_id,
+        created_by: authorBySource.get(t.task_id) ?? null,
       })
     }
   }

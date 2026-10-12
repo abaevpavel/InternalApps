@@ -31,7 +31,7 @@
 | Возможность | Admin | PM | Schedule Manager | Lead Carpenter |
 |---|---|---|---|---|
 | Schedule screen (Tasks) | ✓ | ✓ | ✓ | |
-| Своя сторона (My Tasks) | | (BAS-1510) | | ✓ |
+| Своя сторона (My Tasks: Uncompleted / Completed / Closed по дням, за период) | | ✓ созданные им + «no author» | | ✓ своя бригада |
 | Создать / править / удалить задачу | | ✓ | | |
 | Сменить дату задачи | | ✓ | ✓ | |
 | Send to AI, раскладка Proposed, Approve, Send Tasks | | | ✓ | |

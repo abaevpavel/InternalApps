@@ -131,6 +131,8 @@ export interface Task {
   status: TaskStatus
   execution_status: ExecutionStatus
   completed_at?: string | null
+  /** auth uid автора (PM, создавший задачу). У старых задач пусто — «без автора» (BAS-1510). */
+  created_by?: string | null
   task_type: string
   project_id: string | null
   project_name?: string
@@ -161,7 +163,6 @@ export interface Task {
   travel_time?: number | null
   anchor?: boolean
   anchor_time?: string | null
-  created_by?: string
   created_at?: string
   updated_at?: string
 }

@@ -1,24 +1,32 @@
 /**
- * Task Planner — **My Tasks**: рабочий экран бригадира (и админа — для проверки).
+ * Task Planner — **My Tasks**: своя сторона (BAS-1510).
  *
- * Показывает утверждённое расписание своей бригады на выбранный день (Yesterday / Today /
- * Tomorrow) и даёт единственное действие исполнения — Complete, плюс заметки и фото.
- * Табов планирования (Requested/Proposed) тут нет намеренно: это кухня планировщика.
+ * Свои задачи утверждённого расписания за период, тремя списками Uncompleted / Completed /
+ * Closed, внутри — по дням. Чьи задачи:
+ *  - Project Manager — созданные им; старые задачи без автора — с пометкой «no author»;
+ *  - Lead Carpenter — своей бригады, и только у него есть действия исполнения
+ *    (Complete, заметки, фото).
+ * У кого обе роли — переключатель «As PM / My crew».
  *
- * Скоуп «своя бригада» держит RLS (`0007_tp_task_execution.sql`), а не фильтр в запросе —
- * иначе ограничение обходилось бы прямым запросом с anon-ключом. Модель — docs/TASK-PLANNER-ROLES.md §5.
+ * Скоуп «своя бригада» держит RLS (миграция 0028), а не фильтр в запросе. Логика списков —
+ * `domain/task-planner/own-side.ts`. Общий вид по всем PM — экран Tasks (Tracking — BAS-1433).
  */
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Calendar, CheckCircle2, Info, Upload } from 'lucide-react'
-import { Button, Card, Input, Modal, PageTitle, StatusBadge, Textarea } from '../../components/ui'
-import { errMsg } from '../../lib/utils'
+import { CheckCircle2, Info, Upload } from 'lucide-react'
+import { Badge, Button, Card, Input, Modal, PageTitle, StatusBadge, Tabs, Textarea } from '../../components/ui'
+import { cn, errMsg } from '../../lib/utils'
 import { hhmmToMin, minToAmPm, TIMEZONE } from '../../lib/task-planner-time'
 import type { Task } from '../../domain/task-planner/types'
 import {
   addTaskNote, completeTask, describeTaskEvent, EXECUTION_LABEL, EXECUTION_TONE,
-  fetchTaskEvents, fetchTaskPhotos, fetchTasksForDay, uploadTaskPhoto,
+  fetchTaskEvents, fetchTaskPhotos, fetchTasksInRange, uploadTaskPhoto,
 } from '../../services/task-planner/execution'
+import {
+  groupByDay, hasNoAuthor, OWN_LISTS, ownListOf, ownTasks, presetRange, RANGE_PRESETS,
+  type OwnList, type OwnMode, type RangePreset,
+} from '../../domain/task-planner/own-side'
+import { useAuth } from '../../auth/AuthProvider'
 import { useTaskPlannerRoles } from './useTaskPlannerRole'
 
 /* ---------------- Даты ---------------- */
@@ -28,91 +36,165 @@ function todayISO(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE }).format(new Date())
 }
 
-function shiftISO(iso: string, days: number): string {
-  const d = new Date(`${iso}T12:00:00`) // полдень: сдвиг не срывается на переходе DST
-  d.setDate(d.getDate() + days)
-  return new Intl.DateTimeFormat('en-CA').format(d)
-}
-
-function longDate(iso: string): string {
+function dayHeading(iso: string, today: string): string {
   const d = new Date(`${iso}T12:00:00`)
-  return new Intl.DateTimeFormat('en-US', { month: 'long', weekday: 'long', day: '2-digit', year: 'numeric' }).format(d)
+  const label = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).format(d)
+  return iso === today ? `${label} · Today` : label
 }
 
 /* ---------------- Экран ---------------- */
 
 export function MyTasksPage() {
-  const { teamName } = useTaskPlannerRoles()
+  const { authUser, profile } = useAuth()
+  const { roles, teamName } = useTaskPlannerRoles()
+  // Чей это вид — в заголовке (имя залогиненного, иначе email).
+  const viewerName =
+    [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim() || authUser?.email || ''
+  const modes: OwnMode[] = [
+    ...(roles.includes('pm') ? (['pm'] as const) : []),
+    ...(roles.includes('lead_carpenter') ? (['crew'] as const) : []),
+  ]
+  const [modeChoice, setModeChoice] = useState<OwnMode | null>(null)
+  const mode: OwnMode = modeChoice && modes.includes(modeChoice) ? modeChoice : modes[0] ?? 'crew'
+
   const today = todayISO()
-  const [date, setDate] = useState(today)
+  const [preset, setPreset] = useState<RangePreset | null>('this_week')
+  // null — без фильтра по датам (кнопка All dates).
+  const [range, setRange] = useState<{ from: string; to: string } | null>(() => presetRange('this_week', today))
+  const badRange = !!range && range.from > range.to
+  const [list, setList] = useState<OwnList>('uncompleted')
   const [openTask, setOpenTask] = useState<Task | null>(null)
 
-  const { data: tasks, isLoading, error } = useQuery({
-    queryKey: ['tp-my-tasks', date],
-    queryFn: () => fetchTasksForDay(date),
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['tp-own-tasks', range?.from ?? null, range?.to ?? null],
+    queryFn: () => fetchTasksInRange(range?.from, range?.to),
+    enabled: !badRange,
   })
 
-  const shortcut = date === today ? 'today' : date === shiftISO(today, -1) ? 'yesterday' : date === shiftISO(today, 1) ? 'tomorrow' : null
+  const mine = useMemo(() => ownTasks(data ?? [], mode, authUser?.id ?? null), [data, mode, authUser?.id])
+  const counts = useMemo(() => {
+    const c: Record<OwnList, number> = { uncompleted: 0, completed: 0, closed: 0 }
+    for (const t of mine) c[ownListOf(t)]++
+    return c
+  }, [mine])
+  const days = useMemo(() => groupByDay(mine.filter((t) => ownListOf(t) === list)), [mine, list])
+
+  function pickPreset(p: RangePreset) {
+    setPreset(p)
+    setRange(presetRange(p, today))
+  }
+  function setBound(key: 'from' | 'to', v: string) {
+    if (!v) return
+    setPreset(null)
+    setRange((r) => ({ ...(r ?? { from: v, to: v }), [key]: v }))
+  }
+  function clearDates() {
+    setPreset(null)
+    setRange(null)
+  }
+
+  const subtitle =
+    mode === 'pm'
+      ? 'Tasks you created, from the approved schedule. Older tasks without an author are shown to every PM.'
+      : teamName
+        ? `Approved schedule for ${teamName}.`
+        : 'No crew is linked to your email, so there are no tasks to show.'
 
   return (
     <>
-      <PageTitle
-        title="My Tasks"
-        subtitle={
-          teamName
-            ? `Approved schedule for ${teamName}.`
-            : 'No crew is linked to your email, so there are no tasks to show.'
-        }
-      />
+      <PageTitle title={viewerName ? `My Tasks (${viewerName})` : 'My Tasks'} subtitle={subtitle} />
 
-      <div className="mb-6 flex flex-col items-center gap-3">
-        <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800">
-          <Calendar size={16} className="text-gray-500" />
-          <span className="hidden sm:inline">{longDate(date)}</span>
-          <Input
-            type="date"
-            className="w-40 border-0 py-0 focus:ring-0"
-            value={date}
-            onChange={(e) => setDate(e.target.value || today)}
+      <div className="mb-4 flex flex-col gap-3">
+        {modes.length > 1 && (
+          <Tabs
+            className="max-w-xs"
+            tabs={[
+              { key: 'pm' as OwnMode, label: 'As PM' },
+              { key: 'crew' as OwnMode, label: 'My crew' },
+            ]}
+            value={mode}
+            onChange={setModeChoice}
           />
-        </label>
-        <div className="flex overflow-hidden rounded-lg border border-gray-200">
-          {([
-            ['yesterday', shiftISO(today, -1), 'Yesterday'],
-            ['today', today, 'Today'],
-            ['tomorrow', shiftISO(today, 1), 'Tomorrow'],
-          ] as const).map(([key, iso, label]) => (
+        )}
+
+        {/* Период: быстрые варианты или свои границы. */}
+        <div className="flex flex-wrap items-center gap-2">
+          {RANGE_PRESETS.map((p) => (
             <button
-              key={key}
-              onClick={() => setDate(iso)}
-              className={`px-5 py-2 text-sm font-medium transition ${
-                shortcut === key ? 'bg-brand-amber text-black' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-              }`}
+              key={p.key}
+              type="button"
+              onClick={() => pickPreset(p.key)}
+              className={cn(
+                'rounded-full border px-3 py-1 text-xs font-medium transition',
+                preset === p.key
+                  ? 'border-brand-blue bg-brand-blue text-white'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300',
+              )}
             >
-              {label}
+              {p.label}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={clearDates}
+            className={cn(
+              'rounded-full border px-3 py-1 text-xs font-medium transition',
+              range === null
+                ? 'border-brand-blue bg-brand-blue text-white'
+                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300',
+            )}
+          >
+            All dates
+          </button>
+          <div className="flex items-center gap-1.5 text-sm text-gray-500">
+            <Input type="date" className="w-36 py-1" value={range?.from ?? ''} onChange={(e) => setBound('from', e.target.value)} />
+            <span>–</span>
+            <Input type="date" className="w-36 py-1" value={range?.to ?? ''} onChange={(e) => setBound('to', e.target.value)} />
+          </div>
         </div>
+
+        <Tabs
+          className="max-w-md"
+          tabs={OWN_LISTS.map((l) => ({
+            key: l.key,
+            label: (
+              <span>
+                {l.label} <span className="text-gray-400">{counts[l.key]}</span>
+              </span>
+            ),
+          }))}
+          value={list}
+          onChange={setList}
+        />
       </div>
 
+      {badRange && <Card className="p-4 text-sm text-red-600">The start date is after the end date.</Card>}
       {error && <Card className="p-4 text-sm text-red-600">⚠ {errMsg(error)}</Card>}
       {isLoading && <Card className="p-8 text-center text-gray-500">Loading…</Card>}
-      {!isLoading && !error && (tasks ?? []).length === 0 && (
-        <Card className="p-8 text-center text-gray-500">No scheduled tasks found for {date}</Card>
+      {!isLoading && !error && days.length === 0 && !badRange && (
+        <Card className="p-8 text-center text-gray-500">
+          No {list} tasks {range ? 'in this period' : 'yet'}.
+        </Card>
       )}
 
-      <div className="space-y-3">
-        {(tasks ?? []).map((t, i) => (
-          <TaskRow key={t.id} task={t} index={i + 1} onOpen={() => setOpenTask(t)} />
+      <div className="space-y-5">
+        {days.map((day) => (
+          <section key={day.date}>
+            <h3 className="mb-2 text-sm font-semibold text-gray-700">
+              {day.date ? dayHeading(day.date, today) : 'No date'}{' '}
+              <span className="font-normal text-gray-400">· {day.tasks.length}</span>
+            </h3>
+            <div className="space-y-2">
+              {day.tasks.map((t, i) => (
+                <TaskRow key={t.id} task={t} index={i + 1} mode={mode} onOpen={() => setOpenTask(t)} />
+              ))}
+            </div>
+          </section>
         ))}
       </div>
 
       {openTask && (
-        <TaskDetailsModal
-          task={openTask}
-          date={date}
-          onClose={() => setOpenTask(null)}
-        />
+        <TaskDetailsModal task={openTask} canAct={mode === 'crew'} onClose={() => setOpenTask(null)} />
       )}
     </>
   )
@@ -120,11 +202,13 @@ export function MyTasksPage() {
 
 /* ---------------- Карточка задачи ---------------- */
 
-function TaskRow({ task, index, onOpen }: { task: Task; index: number; onOpen: () => void }) {
+function TaskRow({ task, index, mode, onOpen }: { task: Task; index: number; mode: OwnMode; onOpen: () => void }) {
   const time = task.sched_start && task.sched_end
     ? `${minToAmPm(hhmmToMin(task.sched_start))} – ${minToAmPm(hhmmToMin(task.sched_end))}`
     : '—'
   const done = task.execution_status === 'approved' || task.execution_status === 'completed'
+  // Complete — действие Lead Carpenter; PM на своей стороне задачу только смотрит.
+  const actionLabel = mode === 'crew' && !done ? 'Complete' : 'Details'
 
   return (
     <Card className="p-4">
@@ -137,6 +221,8 @@ function TaskRow({ task, index, onOpen }: { task: Task; index: number; onOpen: (
             <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
               <span className="rounded bg-amber-50 px-2 py-0.5 font-medium text-amber-700">{task.task_type}</span>
               {task.project_manager && <span>PM: {task.project_manager}</span>}
+              {mode === 'pm' && task.assigned_team_name && <span>Crew: {task.assigned_team_name}</span>}
+              {mode === 'pm' && hasNoAuthor(task) && <Badge className="bg-gray-100 text-gray-500">no author</Badge>}
               <StatusBadge tone={EXECUTION_TONE[task.execution_status]}>
                 {EXECUTION_LABEL[task.execution_status]}
               </StatusBadge>
@@ -169,8 +255,8 @@ function TaskRow({ task, index, onOpen }: { task: Task; index: number; onOpen: (
             </div>
           </div>
         </div>
-        <Button variant={done ? 'subtle' : 'amber'} onClick={onOpen}>
-          {done ? 'Details' : 'Complete'}
+        <Button variant={actionLabel === 'Complete' ? 'amber' : 'subtle'} onClick={onOpen}>
+          {actionLabel}
         </Button>
       </div>
     </Card>
@@ -179,7 +265,11 @@ function TaskRow({ task, index, onOpen }: { task: Task; index: number; onOpen: (
 
 /* ---------------- Модалка задачи ---------------- */
 
-function TaskDetailsModal({ task, date, onClose }: { task: Task; date: string; onClose: () => void }) {
+/**
+ * Детали задачи. `canAct` — действия исполнения (Complete, заметка, фото): только Lead Carpenter
+ * своей бригады. PM видит описание, фото и историю. Окончательный запрет — в функциях БД.
+ */
+function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boolean; onClose: () => void }) {
   const qc = useQueryClient()
   const [note, setNote] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -188,7 +278,7 @@ function TaskDetailsModal({ task, date, onClose }: { task: Task; date: string; o
   const { data: photos } = useQuery({ queryKey: ['tp-task-photos', task.id], queryFn: () => fetchTaskPhotos(task.id) })
 
   const invalidate = () => {
-    void qc.invalidateQueries({ queryKey: ['tp-my-tasks', date] })
+    void qc.invalidateQueries({ queryKey: ['tp-own-tasks'] })
     void qc.invalidateQueries({ queryKey: ['tp-task-events', task.id] })
     void qc.invalidateQueries({ queryKey: ['tp-task-photos', task.id] })
   }
@@ -210,7 +300,7 @@ function TaskDetailsModal({ task, date, onClose }: { task: Task; date: string; o
     onError,
   })
 
-  const canComplete = task.execution_status === 'pending' || task.execution_status === 'rework'
+  const canComplete = canAct && (task.execution_status === 'pending' || task.execution_status === 'rework')
 
   return (
     <>
@@ -244,6 +334,7 @@ function TaskDetailsModal({ task, date, onClose }: { task: Task; date: string; o
 
           {task.description && <p className="whitespace-pre-line text-gray-700">{task.description}</p>}
 
+          {canAct && (
           <div>
             <h4 className="mb-2 font-semibold text-gray-900">Notes</h4>
             <Textarea rows={3} placeholder="Add a note…" value={note} onChange={(e) => setNote(e.target.value)} />
@@ -256,9 +347,11 @@ function TaskDetailsModal({ task, date, onClose }: { task: Task; date: string; o
               {addNote.isPending ? 'Saving…' : 'Add Note'}
             </Button>
           </div>
+          )}
 
           <div>
             <h4 className="mb-2 font-semibold text-gray-900">Photos</h4>
+            {canAct && (
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-brand-amber px-3.5 py-2 text-sm font-medium text-black transition hover:brightness-95">
               <Upload size={16} />
               {upload.isPending ? 'Uploading…' : 'Upload Photos'}
@@ -271,6 +364,7 @@ function TaskDetailsModal({ task, date, onClose }: { task: Task; date: string; o
                 onChange={(e) => { if (e.target.files?.length) upload.mutate(e.target.files); e.target.value = '' }}
               />
             </label>
+            )}
             {(photos ?? []).length === 0 ? (
               <p className="mt-2 text-sm text-gray-500">No photos yet</p>
             ) : (

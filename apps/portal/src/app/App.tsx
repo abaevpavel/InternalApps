@@ -145,7 +145,7 @@ function Shell() {
             <Route index element={<PlannerHome scheduleScreen={<TasksPage />} />} />
             {/* Экраны — по правам из матрицы ролей модуля (BAS-1509, domain/task-planner/permissions.ts).
                 В БД тем же ролям соответствует RLS из миграции 0028. */}
-            <Route path="my-tasks" element={<RequireTpCapability cap="complete_task"><MyTasksPage /></RequireTpCapability>} />
+            <Route path="my-tasks" element={<RequireTpCapability cap="view_own_side"><MyTasksPage /></RequireTpCapability>} />
             <Route path="create" element={<RequireTpCapability cap="create_task"><CreateTaskPage /></RequireTpCapability>} />
             <Route path="approvals" element={<RequireTpCapability cap="review_task"><ApprovalsPage /></RequireTpCapability>} />
             <Route path="availability" element={<RequireTpCapability cap="manage_availability"><AvailabilityPage /></RequireTpCapability>} />

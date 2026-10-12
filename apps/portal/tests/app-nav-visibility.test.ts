@@ -16,9 +16,9 @@ describe('visibleNavItems — Task Planner', () => {
     expect(labels({ isAdmin: false, appRoles: ['lead_carpenter'] })).toEqual(['My Tasks'])
   })
 
-  it('project manager: schedule, task creation, review, availability', () => {
+  it('project manager: schedule, own side, task creation, review, availability', () => {
     expect(labels({ isAdmin: false, appRoles: ['pm'] })).toEqual([
-      'Tasks', 'Create Task', 'Approvals', 'Teams Availability',
+      'Tasks', 'My Tasks', 'Create Task', 'Approvals', 'Teams Availability',
     ])
   })
 
