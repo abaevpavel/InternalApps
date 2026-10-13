@@ -5,6 +5,7 @@ import { ArrowLeft, LogOut, Menu, Settings, SlidersHorizontal, UserRound } from 
 import { useAuth } from '../auth/AuthProvider'
 import { currentAppForPath, visibleNavItems } from './appRegistry'
 import { useCurrentAppRoles } from './AppRoleContext'
+import { ReleasesBell } from '../components/ReleasesBell'
 import { useUnsavedRegistry } from './UnsavedChangesContext'
 import { Button, Modal } from '../components/ui'
 
@@ -96,6 +97,9 @@ export function Layout() {
           <img src="/logo.png" alt="Basement Remodeling" className="h-9 w-auto" />
         </button>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold tracking-wide">{title}</h1>
+        <div className="flex items-center gap-2">
+        {/* Обновления приложений — только роль Developer (компонент сам скрывается для остальных). */}
+        <ReleasesBell />
         <div ref={menuRef}>
           <button
             onClick={() => setOpen((v) => !v)}
@@ -153,6 +157,7 @@ export function Layout() {
               />
             </div>
           )}
+        </div>
         </div>
       </header>
 
