@@ -137,6 +137,8 @@ export interface Task {
   completed_at?: string | null
   /** auth uid автора (PM, создавший задачу). У старых задач пусто — «без автора» (BAS-1510). */
   created_by?: string | null
+  /** Email PM задачи: проектная — PM проекта, Other — автор, или выбран вручную (0032). */
+  pm_email?: string | null
   task_type: string
   project_id: string | null
   project_name?: string

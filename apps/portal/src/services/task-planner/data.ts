@@ -63,6 +63,7 @@ function mapDbTask(r: Record<string, any>, teamInfo?: Map<string, { name: string
     execution_status: r.execution_status ?? 'pending',
     completed_at: r.completed_at ?? null,
     created_by: r.created_by ?? null,
+    pm_email: r.pm_email ?? null,
     task_type: r.task_type ?? 'Project task',
     project_id: r.project_id ?? null,
     project_name: proj?.name,
@@ -366,6 +367,7 @@ export interface CreateTaskInput {
   schedule_prompt?: string | null
   additional_stop?: Record<string, unknown> | null
   created_by?: string | null
+  pm_email?: string | null
 }
 
 /** INSERT новой задачи (status=requested). Возвращает id. */
@@ -390,6 +392,7 @@ export async function createTask(input: CreateTaskInput): Promise<string> {
     schedule_prompt: input.schedule_prompt ?? null,
     additional_stop: input.additional_stop ?? null,
     created_by: input.created_by ?? null,
+    pm_email: input.pm_email ? input.pm_email.toLowerCase() : null,
   }
   const { data, error } = await supabase.from('tp_tasks').insert(row).select('id').single()
   if (error) throw error
@@ -491,7 +494,7 @@ export async function applyScheduleToTasks(
 const ORIGINAL_FIELDS = [
   'title', 'description', 'task_type', 'project_id', 'project_manager', 'address',
   'priority', 'skill_requirements', 'required_skills', 'skills_from_ia', 'schedule_prompt',
-  'additional_stop', 'additional_stop_duration', 'created_by',
+  'additional_stop', 'additional_stop_duration', 'created_by', 'pm_email',
 ] as const
 
 /**
@@ -559,6 +562,17 @@ export async function materializeProposedCopies(
   const { error } = await supabase.from('tp_tasks').insert(rows)
   if (error) throw error
   return rows.length
+}
+
+/**
+ * Люди для выбора PM задачи — Contacts Directory «All employees» через функцию tp_people()
+ * (миграция 0032): имя и email.
+ */
+export async function fetchPeople(): Promise<{ full_name: string; email: string }[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase.rpc('tp_people')
+  if (error) throw error
+  return (data ?? []) as { full_name: string; email: string }[]
 }
 
 /** Удалить все задачи заданного статуса (для кнопки «Удалить все» в Proposed). */

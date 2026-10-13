@@ -17,6 +17,14 @@ describe('ownTasks', () => {
     expect(ownTasks(list, 'pm', 'u1').map((t) => t.id)).toEqual(['mine', 'noauthor'])
   })
 
+  it('PM by pm_email: assigned PM sees the task, the author does not', () => {
+    const withPm = [
+      task({ id: 'assigned', created_by: 'u2', pm_email: 'me@x.com' }),
+      task({ id: 'authoredByMe', created_by: 'u1', pm_email: 'other@x.com' }),
+    ]
+    expect(ownTasks(withPm, 'pm', 'u1', 'Me@X.com').map((t) => t.id)).toEqual(['assigned'])
+  })
+
   it('crew mode keeps everything the database returned (scope is RLS)', () => {
     expect(ownTasks(list, 'crew', 'u1')).toHaveLength(3)
   })

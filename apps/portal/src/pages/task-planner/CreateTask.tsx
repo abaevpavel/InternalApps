@@ -5,7 +5,7 @@ import { ChevronDown, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Input, Textarea, Field, Select, Tabs } from '../../components/task-planner-ui'
 import { cn, errMsg } from '../../lib/utils'
-import { fetchProjects, fetchSkills, fetchTeams, fetchTaskTypes, createTask } from '../../services/task-planner/data'
+import { fetchPeople, fetchProjects, fetchSkills, fetchTeams, fetchTaskTypes, createTask } from '../../services/task-planner/data'
 import { useAuth } from '../../auth/AuthProvider'
 import type { Skill, TimeType } from '../../domain/task-planner/types'
 
@@ -31,6 +31,7 @@ export function CreateTaskPage() {
   const teams = useQuery({ queryKey: ['teams'], queryFn: fetchTeams })
   const skills = useQuery({ queryKey: ['skills'], queryFn: fetchSkills })
   const taskTypes = useQuery({ queryKey: ['taskTypes'], queryFn: fetchTaskTypes })
+  const people = useQuery({ queryKey: ['tp-people'], queryFn: fetchPeople, staleTime: 5 * 60_000 })
 
   // поля формы
   const [projectId, setProjectId] = useState('')
@@ -48,7 +49,24 @@ export function CreateTaskPage() {
   // BAS-1429: у Other Task нет проекта — адрес задаётся вручную, иначе бригада не знает, куда ехать.
   const [taskAddress, setTaskAddress] = useState('')
   const [stopDuration, setStopDuration] = useState(30)
+  // PM задачи (решение 13.10.2026): по умолчанию — PM проекта (проектная) или автор (Other);
+  // выбранный вручную PM имеет приоритет. По нему считаются «свои задачи» PM.
+  const [pmChoice, setPmChoice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const selectedProject = projects.data?.find((p) => p.id === projectId)
+  const myEmail = authUser?.email?.toLowerCase() ?? ''
+  const projectPmEmail = selectedProject?.project_manager
+    ? people.data?.find((p) => p.full_name.trim().toLowerCase() === selectedProject.project_manager.trim().toLowerCase())?.email ?? ''
+    : ''
+  const defaultPm = mode === 'project' ? projectPmEmail : myEmail
+  const pmEmail = pmChoice ?? defaultPm
+  const pmOptions = useMemo(() => {
+    const list = (people.data ?? []).map((p) => ({ email: p.email, label: `${p.full_name} — ${p.email}` }))
+    if (myEmail && !list.some((o) => o.email === myEmail)) list.unshift({ email: myEmail, label: `Me — ${myEmail}` })
+    return list
+  }, [people.data, myEmail])
+  const pmName = (people.data ?? []).find((p) => p.email === pmEmail)?.full_name
 
   function buildScheduledTime(): Record<string, unknown> | null {
     if (timeType === 'exact' && exactTime) return { type: 'exact', anchor: true, anchor_time: exactTime, start: exactTime }
@@ -74,7 +92,8 @@ export function CreateTaskPage() {
         estimated_duration_min: Math.round(hours * 60),
         // Адрес уходит в AI тем же полем, что и адрес проекта (project_address в n8n.ts).
         address: mode === 'other' ? taskAddress.trim() : proj?.address ?? '',
-        project_manager: proj?.project_manager,
+        project_manager: pmName ?? proj?.project_manager,
+        pm_email: pmEmail || null,
         team_id: teamId || null,
         priority,
         skill_requirements: skillIds,
@@ -98,7 +117,7 @@ export function CreateTaskPage() {
       <Tabs<'project' | 'other'>
         className="mb-6"
         value={mode}
-        onChange={setMode}
+        onChange={(m) => { setMode(m); setPmChoice(null) }}
         tabs={[
           { key: 'project', label: '📁 New Project Task' },
           { key: 'other', label: '＋ New Other Task' },
@@ -164,6 +183,16 @@ export function CreateTaskPage() {
             <Select value={teamId} onChange={(e) => setTeamId(e.target.value)}>
               <option value="">No preference</option>
               {teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Project Manager" hint={pmChoice === null
+            ? (mode === 'project'
+              ? (selectedProject?.project_manager ? `Project PM: ${selectedProject.project_manager}` : 'Pick a project — its PM is set by default')
+              : 'You by default')
+            : undefined}>
+            <Select value={pmEmail} onChange={(e) => setPmChoice(e.target.value)}>
+              <option value="">No PM</option>
+              {pmOptions.map((o) => <option key={o.email} value={o.email}>{o.label}</option>)}
             </Select>
           </Field>
           <Field label="Priority">

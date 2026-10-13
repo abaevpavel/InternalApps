@@ -71,7 +71,10 @@ export function MyTasksPage() {
     enabled: !badRange,
   })
 
-  const mine = useMemo(() => ownTasks(data ?? [], mode, authUser?.id ?? null), [data, mode, authUser?.id])
+  const mine = useMemo(
+    () => ownTasks(data ?? [], mode, authUser?.id ?? null, authUser?.email ?? null),
+    [data, mode, authUser?.id, authUser?.email],
+  )
   // BAS-1513: у задачи с комментарием Lead Carpenter — маркер в списке.
   const mineIds = mine.map((t) => t.id).sort().join(',')
   const commentsQ = useQuery({
@@ -102,7 +105,7 @@ export function MyTasksPage() {
 
   const subtitle =
     mode === 'pm'
-      ? 'Tasks you created, from the approved schedule. Older tasks without an author are shown to every PM.'
+      ? 'Tasks where you are the PM, from the approved schedule. Older tasks without a PM or author are shown to every PM.'
       : teamName
         ? `Approved schedule for ${teamName}.`
         : 'No crew is linked to your email, so there are no tasks to show.'
@@ -237,7 +240,7 @@ function TaskRow({ task, index, mode, comments, onOpen }: {
               <span className="rounded bg-amber-50 px-2 py-0.5 font-medium text-amber-700">{task.task_type}</span>
               {task.project_manager && <span>PM: {task.project_manager}</span>}
               {mode === 'pm' && task.assigned_team_name && <span>Crew: {task.assigned_team_name}</span>}
-              {mode === 'pm' && hasNoAuthor(task) && <Badge className="bg-gray-100 text-gray-500">no author</Badge>}
+              {mode === 'pm' && !task.pm_email && hasNoAuthor(task) && <Badge className="bg-gray-100 text-gray-500">no author</Badge>}
               <StatusBadge tone={EXECUTION_TONE[task.execution_status]}>
                 {EXECUTION_LABEL[task.execution_status]}
               </StatusBadge>

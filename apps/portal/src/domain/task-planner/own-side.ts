@@ -3,8 +3,9 @@
  * Closed, сгруппированные по дням.
  *
  * Чьи задачи:
- *  - PM — созданные им (`created_by`); старые задачи без автора показываются всем PM
- *    с пометкой «no author» (решение Владислава 2026-10-12);
+ *  - PM — где он PM задачи (`pm_email`: проектная — PM проекта, Other — автор, или выбран
+ *    вручную, решение 13.10.2026). У задач без pm_email — по автору (`created_by`); старые
+ *    задачи без автора и без PM показываются всем PM с пометкой «no author»;
  *  - Lead Carpenter — задачи его бригады (скоуп держит RLS, здесь фильтра нет).
  *
  * Списки по оси исполнения. Пока нет статуса Closed (BAS-1431), соответствие такое:
@@ -37,10 +38,14 @@ export function hasNoAuthor(t: Task): boolean {
   return !t.created_by
 }
 
-/** Свои задачи для режима. PM: свои + без автора; бригада: всё, что отдал RLS. */
-export function ownTasks(tasks: Task[], mode: OwnMode, userId: string | null): Task[] {
+/** Свои задачи для режима. PM: по pm_email, иначе по автору, плюс старые без автора; бригада: всё, что отдал RLS. */
+export function ownTasks(tasks: Task[], mode: OwnMode, userId: string | null, userEmail: string | null = null): Task[] {
   if (mode === 'crew') return tasks
-  return tasks.filter((t) => hasNoAuthor(t) || (!!userId && t.created_by === userId))
+  const email = userEmail?.toLowerCase() ?? null
+  return tasks.filter((t) => {
+    if (t.pm_email) return !!email && t.pm_email.toLowerCase() === email
+    return hasNoAuthor(t) || (!!userId && t.created_by === userId)
+  })
 }
 
 /** Группировка по дням: дни по возрастанию, внутри дня — по времени начала, затем по порядку. */
