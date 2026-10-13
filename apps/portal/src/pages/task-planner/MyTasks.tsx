@@ -13,14 +13,14 @@
  */
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Info, MessageSquare, Upload } from 'lucide-react'
+import { CheckCircle2, Info, MessageSquare, Upload, X } from 'lucide-react'
 import { Badge, Button, Card, Input, Modal, PageTitle, StatusBadge, Tabs, Textarea } from '../../components/ui'
 import { cn, errMsg } from '../../lib/utils'
 import { hhmmToMin, minToAmPm, TIMEZONE } from '../../lib/task-planner-time'
 import type { Task } from '../../domain/task-planner/types'
 import {
   actorRoleLabel, addTaskNote, completeTask, describeTaskEvent, EXECUTION_LABEL, EXECUTION_TONE,
-  fetchCrewCommentCounts, fetchTaskEvents, fetchTaskPhotos, fetchTasksInRange, uploadTaskPhoto,
+  fetchCrewCommentCounts, fetchTaskEvents, removeTaskPhoto, fetchTaskPhotos, fetchTasksInRange, uploadTaskPhoto,
 } from '../../services/task-planner/execution'
 import {
   groupByDay, hasNoAuthor, OWN_LISTS, ownListOf, ownTasks, presetRange, RANGE_PRESETS,
@@ -314,7 +314,14 @@ function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boole
     onError,
   })
   const upload = useMutation({
-    mutationFn: (files: FileList) => Promise.all(Array.from(files).map((f) => uploadTaskPhoto(task.id, f))).then(() => undefined),
+    mutationFn: (files: File[]) => Promise.all(files.map((f) => uploadTaskPhoto(task.id, f))).then(() => undefined),
+    onSuccess: () => { setErr(null); invalidate() },
+    onError,
+  })
+  // Удалить фото — бригада, пока задача не закрыта (approved); проверка ещё и в БД (0031).
+  const canRemovePhotos = canAct && task.execution_status !== 'approved'
+  const removePhoto = useMutation({
+    mutationFn: (photoId: string) => removeTaskPhoto(photoId),
     onSuccess: () => { setErr(null); invalidate() },
     onError,
   })
@@ -407,7 +414,13 @@ function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boole
                 multiple
                 className="hidden"
                 disabled={upload.isPending}
-                onChange={(e) => { if (e.target.files?.length) upload.mutate(e.target.files); e.target.value = '' }}
+                onChange={(e) => {
+                  // Копия до очистки поля: FileList «живой» и обнуляется вместе с value, а загрузка
+                  // читает его уже после — раньше уходило 0 файлов без ошибки.
+                  const files = Array.from(e.target.files ?? [])
+                  e.target.value = ''
+                  if (files.length) upload.mutate(files)
+                }}
               />
             </label>
             )}
@@ -416,11 +429,25 @@ function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boole
             ) : (
               <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
                 {(photos ?? []).map((p) => (
-                  <a key={p.id} href={p.url ?? undefined} target="_blank" rel="noreferrer">
-                    {p.url
-                      ? <img src={p.url} alt="" className="h-24 w-full rounded-lg object-cover" />
-                      : <div className="flex h-24 w-full items-center justify-center rounded-lg bg-gray-100 text-xs text-gray-500">no preview</div>}
-                  </a>
+                  <div key={p.id} className="relative">
+                    <a href={p.url ?? undefined} target="_blank" rel="noreferrer">
+                      {p.url
+                        ? <img src={p.url} alt="" className="h-24 w-full rounded-lg object-cover" />
+                        : <div className="flex h-24 w-full items-center justify-center rounded-lg bg-gray-100 text-xs text-gray-500">no preview</div>}
+                    </a>
+                    {canRemovePhotos && (
+                      <button
+                        type="button"
+                        aria-label="Remove photo"
+                        title="Remove photo"
+                        disabled={removePhoto.isPending}
+                        onClick={() => { if (confirm('Remove this photo?')) removePhoto.mutate(p.id) }}
+                        className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white text-gray-600 shadow ring-1 ring-gray-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             )}

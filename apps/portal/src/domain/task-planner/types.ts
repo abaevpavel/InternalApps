@@ -19,7 +19,7 @@ export interface TaskEvent {
   actor_email: string | null
   // admin / team_lead — роли старых записей (до 0028).
   actor_role: 'admin' | 'team_lead' | 'pm' | 'schedule_manager' | 'lead_carpenter'
-  event_type: 'completed' | 'approved' | 'rework' | 'note' | 'photo'
+  event_type: 'completed' | 'approved' | 'rework' | 'note' | 'photo' | 'photo_removed'
   from_value: ExecutionStatus | null
   to_value: ExecutionStatus | null
   comment: string | null

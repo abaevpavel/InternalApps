@@ -146,12 +146,13 @@ export async function addTaskNote(taskId: string, comment: string): Promise<void
 }
 
 /**
- * Загрузка фото: жмём в JPEG (бригадиры снимают с телефона — исходники по 5 МБ),
- * кладём в приватный бакет, затем регистрируем путь через RPC (она же пишет событие).
+ * Загрузка фото: перед загрузкой каждое фото сжимается в JPEG — длинная сторона до 1600 px,
+ * размер до ~400 КБ (бригадиры снимают с телефона, исходники по 3–8 МБ). Затем файл кладётся
+ * в приватный бакет, а путь регистрируется через RPC (она же пишет событие в журнал).
  */
 export async function uploadTaskPhoto(taskId: string, file: File): Promise<void> {
   const sb = requireSupabase()
-  const body = await compressToJpeg(file, 600, 2000)
+  const body = await compressToJpeg(file, 400, 1600)
   const path = `${taskId}/${crypto.randomUUID()}.jpg`
   const { error: upErr } = await sb.storage
     .from(PHOTO_BUCKET)
@@ -160,6 +161,20 @@ export async function uploadTaskPhoto(taskId: string, file: File): Promise<void>
 
   const { error } = await sb.rpc('tp_add_task_photo', { p_task_id: taskId, p_path: path })
   if (error) throw error
+}
+
+/**
+ * Удалить фото с задачи: функция в БД проверяет права, убирает запись и пишет событие
+ * photo_removed в журнал; затем удаляем сам файл из бакета (миграция 0031).
+ */
+export async function removeTaskPhoto(photoId: string): Promise<void> {
+  const sb = requireSupabase()
+  const { data: path, error } = await sb.rpc('tp_remove_task_photo', { p_photo_id: photoId })
+  if (error) throw error
+  if (typeof path === 'string' && path) {
+    // Запись уже удалена; если файл не удалился, он просто останется в бакете невидимым.
+    await sb.storage.from(PHOTO_BUCKET).remove([path])
+  }
 }
 
 /* ---------------- Представление ---------------- */
@@ -191,6 +206,8 @@ export function describeTaskEvent(e: TaskEvent): string {
       return 'Sent back for rework'
     case 'note':
       return 'Note added'
+    case 'photo_removed':
+      return 'Photo removed'
     case 'photo':
       return 'Photo uploaded'
     default:
