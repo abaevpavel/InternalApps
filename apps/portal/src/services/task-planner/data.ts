@@ -4,6 +4,7 @@
  * позже без изменения UI (фаза 2).
  */
 import { supabase } from '../../lib/supabase'
+import { TP_ROLES } from '../../domain/task-planner/permissions'
 import type { ExecutionStatus, Project, ScheduleRun, Skill, Task, Team, TeamAvailability, TeamSkill } from '../../domain/task-planner/types'
 
 export async function fetchTasks(
@@ -163,58 +164,36 @@ export async function fetchTeamAccounts(): Promise<import('../../domain/task-pla
   }))
 }
 
-/** app_role → читаемая подпись. */
-function prettyRole(r: string): string {
-  const m: Record<string, string> = { super_admin: 'Super Admin', pm: 'PM', team_lead: 'Team Lead' }
-  return m[r] ?? (r || '')
-}
-
 /**
- * Члены команды для Admin → Team: профиль + роль + адрес/статус.
- * Источник — profiles + user_roles (роли) + teams (адрес/статус), мерж в JS.
- * profiles/user_roles под RLS — видны под залогиненным админом; иначе фолбэк на teams.
- * Защитно к именам колонок (first_name/last_name | full_name | name; user_id | id).
+ * Бригады для Directories → Team (BAS-1441): строка tp_teams + роли модуля того, кто входит
+ * в портал с email бригады. Роли — из app_user_roles через `tp_team_roles()` (миграция 0029,
+ * только Admin модуля); старые роли Lovable из tp_user_roles больше не показываются.
+ * Если функции ещё нет или нет прав — роли пустые, список бригад всё равно отдаётся.
  */
 export async function fetchTeamMembers(): Promise<import('../../domain/task-planner/types').TeamMember[]> {
   if (!supabase) return []
-  const [pRes, rRes, tRes] = await Promise.all([
-    supabase.from('tp_profiles').select('*'),
-    supabase.from('tp_user_roles').select('*'),
-    supabase.from('tp_teams').select('id, name, email, address, account_status'),
+  const [tRes, rRes] = await Promise.all([
+    supabase.from('tp_teams').select('id, name, email, address, account_status').order('name'),
+    supabase.rpc('tp_team_roles'),
   ])
-  const teams = (tRes.data ?? []) as Record<string, any>[]
-  const teamByEmail = new Map<string, Record<string, any>>()
-  for (const t of teams) if (t.email) teamByEmail.set(String(t.email).toLowerCase(), t)
-  // явные роли из user_roles (Super Admin / PM / Team Lead) — приоритет
-  const roleByUser = new Map<string, string>()
-  for (const r of ((rRes.data ?? []) as Record<string, any>[])) {
-    const k = String(r.user_id ?? r.id ?? '')
-    if (k) roleByUser.set(k, prettyRole(String(r.role ?? '')))
+  if (tRes.error) throw tRes.error
+  const rolesByTeam = new Map<string, { hasAccount: boolean; roles: string[] }>()
+  for (const r of ((rRes.error ? [] : rRes.data) ?? []) as { team_id: string; has_account: boolean; roles: string[] | null }[]) {
+    rolesByTeam.set(r.team_id, { hasAccount: r.has_account, roles: r.roles ?? [] })
   }
-  // роль из user_roles ищем по ОБОИМ ключам (profiles.user_id — auth uid, либо id) →
-  // иначе член бригады (есть в teams) = Team Lead → иначе «—»
-  const roleFor = (ids: (string | null | undefined)[], email: string | null): string | null => {
-    for (const id of ids) {
-      const explicit = id != null && roleByUser.get(String(id))
-      if (explicit) return explicit
+  const label = (key: string) => TP_ROLES.find((r) => r.key === key)?.label ?? key
+  return ((tRes.data ?? []) as Record<string, any>[]).map((t): import('../../domain/task-planner/types').TeamMember => {
+    const info = rolesByTeam.get(t.id)
+    return {
+      id: t.id,
+      name: t.name,
+      email: t.email ?? null,
+      address: t.address ?? null,
+      role: info?.roles.length ? info.roles.map(label).join(', ') : null,
+      hasAccount: info ? info.hasAccount : null,
+      status: t.account_status ?? null,
     }
-    if (email && teamByEmail.has(email.toLowerCase())) return 'Team Lead'
-    return null
-  }
-  const profiles = (pRes.data ?? []) as Record<string, any>[]
-  if (profiles.length) {
-    return profiles.map((p): import('../../domain/task-planner/types').TeamMember => {
-      const email = p.email ?? ''
-      const t = email ? teamByEmail.get(String(email).toLowerCase()) : null
-      const name = [p.first_name, p.last_name].filter(Boolean).join(' ').trim() || p.full_name || p.name || email || p.id
-      return { id: p.id, name, email: email || null, address: t?.address ?? p.address ?? null, role: roleFor([p.user_id, p.id], email || null), status: t?.account_status ?? null }
-    }).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-  }
-  // фолбэк: только teams (если profiles закрыты RLS) — все они бригады = Team Lead
-  return teams.map((t): import('../../domain/task-planner/types').TeamMember => ({
-    id: t.id ?? t.email ?? t.name, name: t.name, email: t.email ?? null,
-    address: t.address ?? null, role: roleFor([t.id], t.email ?? null), status: t.account_status ?? null,
-  }))
+  })
 }
 
 /**
@@ -466,12 +445,24 @@ export async function applyScheduleToTasks(
   status: 'proposed' | 'scheduled' = 'scheduled',
 ): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured')
+  // Окно времени оригинала (`scheduled_time.requested`) не затираем — переносим как было.
+  const ids = days.flatMap((d) => d.tasks.map((t) => t.task_id))
+  const requestedById = new Map<string, unknown>()
+  if (ids.length) {
+    const { data: cur, error: curErr } = await supabase.from('tp_tasks').select('id, scheduled_time').in('id', ids)
+    if (curErr) throw curErr
+    for (const r of cur ?? []) {
+      const req = (r.scheduled_time as Record<string, unknown> | null)?.requested
+      if (req) requestedById.set(r.id as string, req)
+    }
+  }
   const updates: Promise<void>[] = []
   for (const day of days) {
     for (const t of day.tasks) {
-      const scheduled_time = t.anchor
+      const scheduled_time: Record<string, unknown> = t.anchor
         ? { start: t.start_time, end: t.end_time, anchor: true, anchor_time: t.anchor_time }
         : { start: t.start_time, end: t.end_time }
+      if (requestedById.has(t.task_id)) scheduled_time.requested = requestedById.get(t.task_id)
       updates.push(
         (async () => {
           const { error } = await supabase!
@@ -494,47 +485,73 @@ export async function applyScheduleToTasks(
 }
 
 /**
+ * Поля задачи, которые принадлежат ей самой, а не расписанию: при создании копии в Proposed
+ * берутся из оригинала как есть. AI их не решает и затирать их нельзя.
+ */
+const ORIGINAL_FIELDS = [
+  'title', 'description', 'task_type', 'project_id', 'project_manager', 'address',
+  'priority', 'skill_requirements', 'required_skills', 'skills_from_ia', 'schedule_prompt',
+  'additional_stop', 'additional_stop_duration', 'created_by',
+] as const
+
+/**
  * Материализация результата AI как НОВЫХ строк tasks (status=proposed) — копий.
- * Requested-задачи НЕ трогаются (остаются эталонным набором для тестов).
- * `request_task_id` ссылается на исходную задачу. Поля берём из самого расписания.
+ *
+ * Оригинал в Requested не трогается: он остаётся эталоном, к которому можно вернуться,
+ * если на шаге Send to AI что-то пошло не так (сейчас он лежит в Requested, позже будет
+ * уходить в архив). `request_task_id` ссылается на оригинал.
+ *
+ * Копия = оригинал со всеми его полями (`ORIGINAL_FIELDS`) + то, что решил AI: бригада,
+ * дата, время, порядок, длительность, время в пути. Ничего из оригинала не теряется.
+ * Если окно времени оригинала было задано (timeframe / exact), оно сохраняется в
+ * `scheduled_time.requested`, а `start`/`end` — уже время по расписанию.
  */
 export async function materializeProposedCopies(
   days: import('../../domain/task-planner/types').TeamDay[],
 ): Promise<number> {
   if (!supabase) throw new Error('Supabase is not configured')
-  // Автор копии = автор исходной задачи (BAS-1510): по нему PM видит «свои» задачи
-  // и после того, как задача прошла через AI.
   const sourceIds = [...new Set(days.flatMap((d) => d.tasks.map((t) => t.task_id)).filter(Boolean))]
-  const authorBySource = new Map<string, string | null>()
+  const sourceById = new Map<string, Record<string, unknown>>()
   if (sourceIds.length) {
-    const { data: src, error: srcErr } = await supabase.from('tp_tasks').select('id, created_by').in('id', sourceIds)
+    const { data: src, error: srcErr } = await supabase
+      .from('tp_tasks')
+      .select(['id', 'scheduled_time', ...ORIGINAL_FIELDS].join(', '))
+      .in('id', sourceIds)
     if (srcErr) throw srcErr
-    for (const r of src ?? []) authorBySource.set(r.id as string, (r.created_by as string | null) ?? null)
+    for (const r of (src ?? []) as unknown as Record<string, unknown>[]) sourceById.set(r.id as string, r)
   }
   const rows: Record<string, unknown>[] = []
   for (const day of days) {
     for (const t of day.tasks) {
-      const scheduled_time = t.anchor
+      const orig = sourceById.get(t.task_id)
+      const scheduled_time: Record<string, unknown> = t.anchor
         ? { start: t.start_time, end: t.end_time, anchor: true, anchor_time: t.anchor_time }
         : { start: t.start_time, end: t.end_time }
-      const title = (String(t.description ?? '').split('\n')[0] || t.project_name || 'Task').slice(0, 200)
+      if (orig?.scheduled_time) scheduled_time.requested = orig.scheduled_time
+
+      // Поля оригинала; если оригинал не нашёлся (удалён) — то немногое, что вернул AI.
+      const base: Record<string, unknown> = orig
+        ? Object.fromEntries(ORIGINAL_FIELDS.map((f) => [f, orig[f] ?? null]))
+        : {
+            title: (String(t.description ?? '').split('\n')[0] || t.project_name || 'Task').slice(0, 200),
+            description: t.description ?? '',
+            project_id: t.project_id || null,
+            address: t.project_address || null,
+          }
+      if (!base.title) base.title = (String(base.description ?? '').split('\n')[0] || 'Task').slice(0, 200)
+      if (!base.address) base.address = t.project_address || null
+
       rows.push({
+        ...base,
         status: 'proposed',
+        request_task_id: t.task_id,
+        // Решения AI / расписания:
         team_id: day.team_id === 'unassigned' ? null : day.team_id,
-        project_id: t.project_id || null,
-        title,
-        description: t.description ?? '',
-        task_type: 'Project task',
         scheduled_date: day.date || null,
         scheduled_time,
         estimated_duration: t.duration_minutes / 60,
         stop_number: t.scheduled_order,
         travel_time: t.drive_minutes_from_previous,
-        address: t.project_address || null,
-        priority: 5,
-        skill_requirements: [],
-        request_task_id: t.task_id,
-        created_by: authorBySource.get(t.task_id) ?? null,
       })
     }
   }

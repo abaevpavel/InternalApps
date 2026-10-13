@@ -126,7 +126,10 @@ function Requested({ goProposed }: { goProposed: () => void }) {
   // URL вебхука берём из app_settings (Админка), не из хардкода.
   const send = useMutation({
     mutationFn: async () => {
-      const list = tasks ?? []
+      // Requested перечитываем из базы прямо перед отправкой, а не берём из кэша страницы:
+      // иначе в AI уходят устаревшие даты/поля, если задачи поменяли после загрузки экрана
+      // (так 13.10 16 задач ушли на 07.10 вместо 14.10).
+      const list = await fetchTasks('requested')
       if (!list.length) throw new Error('No requested tasks')
       const [teams, skills, unavailable, webhookUrl] = await Promise.all([
         fetchTeams(), fetchSkills(), fetchAvailability(),
@@ -242,20 +245,29 @@ function Requested({ goProposed }: { goProposed: () => void }) {
         </Card>
       )}
 
-      <div>
-        <div className="mb-3 flex items-center gap-2">
-          <StatusBadge tone="info">Unassigned</StatusBadge>
-          <span className="text-sm text-gray-500">{tasks?.length ?? 0} tasks</span>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          {tasks?.map((t) => (
-            <TaskCardCompact key={t.id} t={t}
-              onDelete={can('delete_task')
-                ? () => { if (confirm(`Delete task “${t.title ?? t.description}”?`)) del.mutate(t.id) }
-                : undefined} />
-          ))}
-        </div>
-      </div>
+      {/* Две группы: с бригадой, заданной вручную (AI её не меняет), и без бригады
+          (бригаду подберёт AI). Раньше все задачи шли под одной плашкой «Unassigned». */}
+      {([
+        ['assigned', 'Assigned crew', 'success', (tasks ?? []).filter((t) => t.assigned_team_id)],
+        ['unassigned', 'Unassigned — AI picks the crew', 'info', (tasks ?? []).filter((t) => !t.assigned_team_id)],
+      ] as const).map(([key, label, tone, list]) =>
+        list.length === 0 ? null : (
+          <div key={key}>
+            <div className="mb-3 flex items-center gap-2">
+              <StatusBadge tone={tone}>{label}</StatusBadge>
+              <span className="text-sm text-gray-500">{list.length} tasks</span>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {list.map((t) => (
+                <TaskCardCompact key={t.id} t={t}
+                  onDelete={can('delete_task')
+                    ? () => { if (confirm(`Delete task “${t.title ?? t.description}”?`)) del.mutate(t.id) }
+                    : undefined} />
+              ))}
+            </div>
+          </div>
+        ),
+      )}
     </div>
   )
 }

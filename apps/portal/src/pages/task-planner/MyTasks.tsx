@@ -13,14 +13,14 @@
  */
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Info, Upload } from 'lucide-react'
+import { CheckCircle2, Info, MessageSquare, Upload } from 'lucide-react'
 import { Badge, Button, Card, Input, Modal, PageTitle, StatusBadge, Tabs, Textarea } from '../../components/ui'
 import { cn, errMsg } from '../../lib/utils'
 import { hhmmToMin, minToAmPm, TIMEZONE } from '../../lib/task-planner-time'
 import type { Task } from '../../domain/task-planner/types'
 import {
-  addTaskNote, completeTask, describeTaskEvent, EXECUTION_LABEL, EXECUTION_TONE,
-  fetchTaskEvents, fetchTaskPhotos, fetchTasksInRange, uploadTaskPhoto,
+  actorRoleLabel, addTaskNote, completeTask, describeTaskEvent, EXECUTION_LABEL, EXECUTION_TONE,
+  fetchCrewCommentCounts, fetchTaskEvents, fetchTaskPhotos, fetchTasksInRange, uploadTaskPhoto,
 } from '../../services/task-planner/execution'
 import {
   groupByDay, hasNoAuthor, OWN_LISTS, ownListOf, ownTasks, presetRange, RANGE_PRESETS,
@@ -72,6 +72,13 @@ export function MyTasksPage() {
   })
 
   const mine = useMemo(() => ownTasks(data ?? [], mode, authUser?.id ?? null), [data, mode, authUser?.id])
+  // BAS-1513: у задачи с комментарием Lead Carpenter — маркер в списке.
+  const mineIds = mine.map((t) => t.id).sort().join(',')
+  const commentsQ = useQuery({
+    queryKey: ['tp-task-comments', mineIds],
+    queryFn: () => fetchCrewCommentCounts(mineIds ? mineIds.split(',') : []),
+    enabled: !!mineIds,
+  })
   const counts = useMemo(() => {
     const c: Record<OwnList, number> = { uncompleted: 0, completed: 0, closed: 0 }
     for (const t of mine) c[ownListOf(t)]++
@@ -186,7 +193,8 @@ export function MyTasksPage() {
             </h3>
             <div className="space-y-2">
               {day.tasks.map((t, i) => (
-                <TaskRow key={t.id} task={t} index={i + 1} mode={mode} onOpen={() => setOpenTask(t)} />
+                <TaskRow key={t.id} task={t} index={i + 1} mode={mode}
+                  comments={commentsQ.data?.get(t.id) ?? 0} onOpen={() => setOpenTask(t)} />
               ))}
             </div>
           </section>
@@ -202,7 +210,14 @@ export function MyTasksPage() {
 
 /* ---------------- Карточка задачи ---------------- */
 
-function TaskRow({ task, index, mode, onOpen }: { task: Task; index: number; mode: OwnMode; onOpen: () => void }) {
+function TaskRow({ task, index, mode, comments, onOpen }: {
+  task: Task
+  index: number
+  mode: OwnMode
+  /** Сколько комментариев оставил Lead Carpenter (BAS-1513). */
+  comments: number
+  onOpen: () => void
+}) {
   const time = task.sched_start && task.sched_end
     ? `${minToAmPm(hhmmToMin(task.sched_start))} – ${minToAmPm(hhmmToMin(task.sched_end))}`
     : '—'
@@ -226,6 +241,11 @@ function TaskRow({ task, index, mode, onOpen }: { task: Task; index: number; mod
               <StatusBadge tone={EXECUTION_TONE[task.execution_status]}>
                 {EXECUTION_LABEL[task.execution_status]}
               </StatusBadge>
+              {comments > 0 && (
+                <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
+                  <MessageSquare size={12} /> {comments} {comments === 1 ? 'comment' : 'comments'}
+                </span>
+              )}
             </div>
             <button onClick={onOpen} className="mt-1 block text-left font-semibold text-gray-900 hover:text-accent-700">
               {task.title || task.description || 'Untitled task'}
@@ -276,11 +296,15 @@ function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boole
   const [err, setErr] = useState<string | null>(null)
 
   const { data: photos } = useQuery({ queryKey: ['tp-task-photos', task.id], queryFn: () => fetchTaskPhotos(task.id) })
+  // Комментарии обеих сторон: Lead Carpenter (заметки, комментарий к выполнению) и PM (проверка).
+  const { data: events } = useQuery({ queryKey: ['tp-task-events', task.id], queryFn: () => fetchTaskEvents(task.id, 50) })
+  const comments = (events ?? []).filter((e) => e.comment)
 
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: ['tp-own-tasks'] })
     void qc.invalidateQueries({ queryKey: ['tp-task-events', task.id] })
     void qc.invalidateQueries({ queryKey: ['tp-task-photos', task.id] })
+    void qc.invalidateQueries({ queryKey: ['tp-task-comments'] })
   }
   const onError = (e: unknown) => setErr(errMsg(e))
 
@@ -294,9 +318,10 @@ function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boole
     onSuccess: () => { setErr(null); invalidate() },
     onError,
   })
+  // Комментарий необязателен: если он набран, уходит вместе с отметкой о выполнении.
   const complete = useMutation({
-    mutationFn: () => completeTask(task.id),
-    onSuccess: () => { setErr(null); invalidate(); onClose() },
+    mutationFn: () => completeTask(task.id, note.trim() || undefined),
+    onSuccess: () => { setNote(''); setErr(null); invalidate(); onClose() },
     onError,
   })
 
@@ -334,20 +359,41 @@ function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boole
 
           {task.description && <p className="whitespace-pre-line text-gray-700">{task.description}</p>}
 
-          {canAct && (
           <div>
-            <h4 className="mb-2 font-semibold text-gray-900">Notes</h4>
-            <Textarea rows={3} placeholder="Add a note…" value={note} onChange={(e) => setNote(e.target.value)} />
-            <Button
-              variant="amber"
-              className="mt-2 w-full"
-              disabled={!note.trim() || addNote.isPending}
-              onClick={() => addNote.mutate()}
-            >
-              {addNote.isPending ? 'Saving…' : 'Add Note'}
-            </Button>
+            <h4 className="mb-2 font-semibold text-gray-900">Comments</h4>
+            {comments.length === 0 ? (
+              <p className="text-sm text-gray-500">No comments yet</p>
+            ) : (
+              <ul className="space-y-2">
+                {comments.map((e) => (
+                  <li key={e.id} className="rounded-lg bg-gray-50 px-3 py-2">
+                    <div className="whitespace-pre-line text-sm text-gray-800">{e.comment}</div>
+                    <div className="mt-1 text-xs text-gray-400">
+                      {actorRoleLabel(e.actor_role)} · {e.actor_email ?? 'unknown'} · {describeTaskEvent(e)} ·{' '}
+                      {new Date(e.created_at).toLocaleString('en-US', { timeZone: TIMEZONE })}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {canAct && (
+              <>
+                <Textarea className="mt-3" rows={3} placeholder="Comment for the PM — e.g. why the task is not finished…"
+                  value={note} onChange={(e) => setNote(e.target.value)} />
+                <Button
+                  variant="amber"
+                  className="mt-2 w-full"
+                  disabled={!note.trim() || addNote.isPending}
+                  onClick={() => addNote.mutate()}
+                >
+                  {addNote.isPending ? 'Saving…' : 'Add comment'}
+                </Button>
+                {canComplete && note.trim() && (
+                  <p className="mt-1 text-xs text-gray-500">Or press Complete — the comment is attached to the completion.</p>
+                )}
+              </>
+            )}
           </div>
-          )}
 
           <div>
             <h4 className="mb-2 font-semibold text-gray-900">Photos</h4>

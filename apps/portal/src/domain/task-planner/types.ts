@@ -17,7 +17,8 @@ export interface TaskEvent {
   id: string
   task_id: string
   actor_email: string | null
-  actor_role: 'admin' | 'team_lead'
+  // admin / team_lead — роли старых записей (до 0028).
+  actor_role: 'admin' | 'team_lead' | 'pm' | 'schedule_manager' | 'lead_carpenter'
   event_type: 'completed' | 'approved' | 'rework' | 'note' | 'photo'
   from_value: ExecutionStatus | null
   to_value: ExecutionStatus | null
@@ -81,7 +82,10 @@ export interface TeamMember {
   name: string
   email: string | null
   address: string | null
+  /** Роли модуля через запятую (Lead Carpenter, Project Manager…); null — ролей нет. */
   role: string | null
+  /** Есть ли вход в портал с email бригады; null — неизвестно (нет прав / функции). */
+  hasAccount: boolean | null
   status: string | null
 }
 

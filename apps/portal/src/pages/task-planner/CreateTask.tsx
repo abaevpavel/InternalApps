@@ -45,6 +45,8 @@ export function CreateTaskPage() {
   const [priority, setPriority] = useState(5)
   const [skillIds, setSkillIds] = useState<string[]>([])
   const [stopAddress, setStopAddress] = useState('')
+  // BAS-1429: у Other Task нет проекта — адрес задаётся вручную, иначе бригада не знает, куда ехать.
+  const [taskAddress, setTaskAddress] = useState('')
   const [stopDuration, setStopDuration] = useState(30)
   const [error, setError] = useState<string | null>(null)
 
@@ -59,6 +61,7 @@ export function CreateTaskPage() {
       if (!taskType) throw new Error('Task Type is required')
       if (!description.trim()) throw new Error('Description is required')
       if (!date) throw new Error('Date is required')
+      if (mode === 'other' && !taskAddress.trim()) throw new Error('Task Address is required')
       const hours = parseFloat(durationH)
       if (!hours || hours <= 0) throw new Error('Duration must be > 0')
       const proj = projects.data?.find((p) => p.id === projectId)
@@ -69,7 +72,8 @@ export function CreateTaskPage() {
         scheduled_date: date,
         scheduled_time: buildScheduledTime(),
         estimated_duration_min: Math.round(hours * 60),
-        address: proj?.address ?? '',
+        // Адрес уходит в AI тем же полем, что и адрес проекта (project_address в n8n.ts).
+        address: mode === 'other' ? taskAddress.trim() : proj?.address ?? '',
         project_manager: proj?.project_manager,
         team_id: teamId || null,
         priority,
@@ -118,6 +122,13 @@ export function CreateTaskPage() {
             </Select>
           </Field>
         </div>
+
+        {mode === 'other' && (
+          <Field label="Task Address" required hint="Where the crew has to go — this stop goes into the route.">
+            <AddressAutocomplete value={taskAddress} onChange={setTaskAddress}
+              placeholder="Search for an address or place" />
+          </Field>
+        )}
 
         <Field label="Description" required>
           <Textarea value={description} onChange={(e) => setDescription(e.target.value)}

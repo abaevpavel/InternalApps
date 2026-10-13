@@ -79,6 +79,42 @@ export async function fetchTaskPhotos(taskId: string): Promise<TaskPhoto[]> {
   return rows.map((r) => ({ ...r, url: urlByPath.get(r.path) ?? null }))
 }
 
+/**
+ * Сколько комментариев Lead Carpenter оставил к каждой задаче (BAS-1513) — для маркера
+ * в списках. Считаются события журнала с текстом от бригадира: заметки и комментарий
+ * к выполнению. `team_lead` — роль старых записей журнала (до 0028).
+ */
+export async function fetchCrewCommentCounts(taskIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>()
+  if (!supabase || !taskIds.length) return counts
+  const { data, error } = await supabase
+    .from('tp_task_events')
+    .select('task_id')
+    .in('task_id', taskIds)
+    .in('actor_role', ['lead_carpenter', 'team_lead'])
+    .not('comment', 'is', null)
+  if (error) throw error
+  for (const r of data ?? []) counts.set(r.task_id as string, (counts.get(r.task_id as string) ?? 0) + 1)
+  return counts
+}
+
+/** Подпись роли автора события. */
+export function actorRoleLabel(role: string | null | undefined): string {
+  switch (role) {
+    case 'lead_carpenter':
+    case 'team_lead':
+      return 'Lead Carpenter'
+    case 'pm':
+      return 'PM'
+    case 'schedule_manager':
+      return 'Schedule Manager'
+    case 'admin':
+      return 'Admin'
+    default:
+      return role ?? ''
+  }
+}
+
 /* ---------------- Действия ---------------- */
 
 /** Бригадир (или админ) отмечает задачу выполненной. Комментарий необязателен. */

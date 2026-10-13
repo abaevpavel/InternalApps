@@ -28,7 +28,13 @@ const teamCols: Column<TeamMember>[] = [
   { key: 'name', header: 'Name', render: (t) => <span className="font-medium text-gray-900">{t.name}</span> },
   { key: 'email', header: 'Email', render: (t) => <span className="text-gray-600">{t.email || '—'}</span> },
   { key: 'address', header: 'Address', render: (t) => <span className="text-gray-600">{t.address || '—'}</span> },
-  { key: 'role', header: 'Role', render: (t) => t.role ? <Badge className="bg-accent-50 text-accent-700">{t.role}</Badge> : <span className="text-gray-400">—</span> },
+  {
+    key: 'role', header: 'Role in Task Planner',
+    render: (t) =>
+      t.role ? <Badge className="bg-accent-50 text-accent-700">{t.role}</Badge>
+      : t.hasAccount === false ? <span className="text-xs text-amber-700">no portal account</span>
+      : <span className="text-gray-400">—</span>,
+  },
   {
     key: 'status', header: 'Status', align: 'right',
     render: (t) => <Badge className={t.status === 'active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}>{t.status || '—'}</Badge>,
