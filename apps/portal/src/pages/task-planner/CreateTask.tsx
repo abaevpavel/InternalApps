@@ -1,6 +1,6 @@
 import { AddressAutocomplete } from './AddressAutocomplete'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronDown, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Input, Textarea, Field, Select, Tabs } from '../../components/task-planner-ui'
@@ -24,6 +24,11 @@ export function CreateTaskPage() {
   const nav = useNavigate()
   const qc = useQueryClient()
   const { authUser } = useAuth()
+  // BAS-1431: пришли из закрытия «не принято» — форма пустая, ссылка на исходную задачу
+  // уходит только в БД (origin_task_id), в интерфейсе её нет.
+  const [searchParams] = useSearchParams()
+  const fromParam = searchParams.get('from')
+  const originTaskId = fromParam && /^[0-9a-f-]{36}$/i.test(fromParam) ? fromParam : null
   const [mode, setMode] = useState<'project' | 'other'>('project')
   const [timeType, setTimeType] = useState<TimeType | null>(null)
   const [stopWhen, setStopWhen] = useState<'before' | 'after'>('after')
@@ -101,6 +106,7 @@ export function CreateTaskPage() {
           ? { when: stopWhen, address: stopAddress, duration_min: stopDuration }
           : null,
         created_by: authUser?.id ?? null,
+        origin_task_id: originTaskId,
       })
     },
     onSuccess: () => {

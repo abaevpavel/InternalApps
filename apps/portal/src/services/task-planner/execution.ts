@@ -1,5 +1,5 @@
 /**
- * Task Planner — исполнение задачи (экран My Tasks у бригадира + апрув у админа).
+ * Task Planner — исполнение задачи (экран My Tasks: бригада отмечает, PM закрывает).
  *
  * Ось исполнения (`tp_tasks.execution_status`) НИКОГДА не пишется отсюда напрямую:
  * все переходы идут через security-definer RPC (миграция `0007_tp_task_execution.sql`),
@@ -40,11 +40,6 @@ export function fetchTasksForDay(date: string): Promise<Task[]> {
  */
 export function fetchTasksInRange(from?: string, to?: string): Promise<Task[]> {
   return fetchTasks('scheduled', { dateFrom: from, dateTo: to })
-}
-
-/** Очередь апрува: выполненные бригадирами задачи, ждущие подтверждения. */
-export function fetchTasksAwaitingApproval(): Promise<Task[]> {
-  return fetchTasks('scheduled', { executionStatus: 'completed' })
 }
 
 /** Лента событий задачи, свежие сверху. `limit` — сколько показать (окно info: 3). */
@@ -98,6 +93,21 @@ export async function fetchCrewCommentCounts(taskIds: string[]): Promise<Map<str
   return counts
 }
 
+/** Все события с текстом по набору задач, по возрастанию времени: task_id → события. */
+export async function fetchCommentsForTasks(taskIds: string[]): Promise<Map<string, TaskEvent[]>> {
+  const out = new Map<string, TaskEvent[]>()
+  if (!supabase || !taskIds.length) return out
+  const { data, error } = await supabase
+    .from('tp_task_events')
+    .select('id, task_id, actor_email, actor_role, event_type, from_value, to_value, comment, created_at')
+    .in('task_id', taskIds)
+    .not('comment', 'is', null)
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  for (const e of (data ?? []) as TaskEvent[]) out.set(e.task_id, [...(out.get(e.task_id) ?? []), e])
+  return out
+}
+
 /** Подпись роли автора события. */
 export function actorRoleLabel(role: string | null | undefined): string {
   switch (role) {
@@ -124,17 +134,20 @@ export async function completeTask(taskId: string, comment?: string): Promise<vo
   if (error) throw error
 }
 
-/** Апрувер подтверждает выполнение — задача закрыта. */
-export async function approveTask(taskId: string, comment?: string): Promise<void> {
+/**
+ * PM закрывает задачу (BAS-1431) — из Completed или из Uncompleted. `accepted` — отметка
+ * Task Accepted, комментарий необязателен. Закрытая задача — финал: назад не возвращается.
+ */
+export async function closeTask(taskId: string, accepted: boolean, comment?: string): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.rpc('tp_approve_task', { p_task_id: taskId, p_comment: comment ?? null })
+  const { error } = await sb.rpc('tp_close_task', { p_task_id: taskId, p_accepted: accepted, p_comment: comment ?? null })
   if (error) throw error
 }
 
-/** Возврат на доработку. Комментарий обязателен — иначе бригадир не поймёт, что переделывать. */
-export async function reworkTask(taskId: string, comment: string): Promise<void> {
+/** Комментарий PM к задаче без смены статуса; Lead Carpenter видит его в карточке. */
+export async function addReviewComment(taskId: string, comment: string): Promise<void> {
   const sb = requireSupabase()
-  const { error } = await sb.rpc('tp_rework_task', { p_task_id: taskId, p_comment: comment })
+  const { error } = await sb.rpc('tp_add_review_comment', { p_task_id: taskId, p_comment: comment })
   if (error) throw error
 }
 
@@ -183,16 +196,27 @@ export async function removeTaskPhoto(photoId: string): Promise<void> {
 // бригадира нет, такой статус врал бы) — см. решение Р-6 в docs/TASK-PLANNER-ROLES.md.
 export const EXECUTION_LABEL: Record<ExecutionStatus, string> = {
   pending: 'Open',
-  completed: 'Awaiting approval',
-  approved: 'Approved',
-  rework: 'Needs rework',
+  completed: 'Completed',
+  closed: 'Closed',
 }
 
 export const EXECUTION_TONE: Record<ExecutionStatus, 'neutral' | 'warning' | 'success' | 'danger'> = {
   pending: 'neutral',
   completed: 'warning',
-  approved: 'success',
-  rework: 'danger',
+  closed: 'success',
+}
+
+/** Статус задачи для бейджа: у закрытой — ещё и результат проверки (Task Accepted). */
+export function executionBadge(t: Pick<Task, 'execution_status' | 'task_accepted'>): {
+  label: string
+  tone: 'neutral' | 'warning' | 'success' | 'danger'
+} {
+  if (t.execution_status === 'closed') {
+    return t.task_accepted === false
+      ? { label: 'Closed · Not accepted', tone: 'danger' }
+      : { label: 'Closed · Accepted', tone: 'success' }
+  }
+  return { label: EXECUTION_LABEL[t.execution_status], tone: EXECUTION_TONE[t.execution_status] }
 }
 
 /** Человеческая строка события для ленты истории. */
@@ -200,12 +224,16 @@ export function describeTaskEvent(e: TaskEvent): string {
   switch (e.event_type) {
     case 'completed':
       return 'Marked as complete'
+    case 'closed':
+      return 'Closed'
+    case 'comment':
+    case 'note':
+      return 'Comment added'
+    // Старые события до BAS-1431.
     case 'approved':
       return 'Approved'
     case 'rework':
       return 'Sent back for rework'
-    case 'note':
-      return 'Note added'
     case 'photo_removed':
       return 'Photo removed'
     case 'photo':

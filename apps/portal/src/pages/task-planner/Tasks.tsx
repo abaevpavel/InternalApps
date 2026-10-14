@@ -21,6 +21,7 @@ import {
   updateTask, deleteTask, type UpdateTaskInput,
 } from '../../services/task-planner/data'
 import { sendToAi, sendToSlack, buildSlackPayload } from '../../services/task-planner/n8n'
+import { executionBadge } from '../../services/task-planner/execution'
 import { resolveString } from '../../services/app-settings'
 import { pollScheduleRun } from '../../services/task-planner/aiPoller'
 import { setPendingRequestId, getPendingRequestId, clearPendingRequestId } from '../../services/task-planner/pendingRun'
@@ -1358,6 +1359,8 @@ function Scheduled() {
   const { can } = useTaskPlannerRoles()
   const { data: tasks, isLoading } = useQuery({ queryKey: ['tasks', 'scheduled'], queryFn: () => fetchTasks('scheduled') })
   const days = useMemo(() => buildTeamDays(tasks ?? []), [tasks])
+  // BAS-1431: закрытая PM задача видна закрытой и здесь, на стороне планирования.
+  const byId = useMemo(() => new Map((tasks ?? []).map((t) => [t.id, t])), [tasks])
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const send = useMutation({
@@ -1396,7 +1399,13 @@ function Scheduled() {
             {day.tasks.map((t, i) => (
               <div key={t.task_id} className="flex items-center justify-between rounded-lg border border-gray-200 p-3 text-sm">
                 <div>
-                  <div><span className="font-bold text-accent-600">{i + 1}</span> <b className="text-gray-900">{t.description}</b></div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-accent-600">{i + 1}</span> <b className="text-gray-900">{t.description}</b>
+                    {byId.get(t.task_id)?.execution_status === 'closed' && (() => {
+                      const b = executionBadge(byId.get(t.task_id)!)
+                      return <StatusBadge tone={b.tone}>{b.label}</StatusBadge>
+                    })()}
+                  </div>
                   <div className="text-gray-600">
                     {t.anchor && <span className="text-accent-700">Exact: {t.anchor_time} · </span>}
                     Time: {minToAmPm(hhmmToMin(t.start_time))} – {minToAmPm(hhmmToMin(t.end_time))} · {t.duration_minutes}m

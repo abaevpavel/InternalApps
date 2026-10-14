@@ -36,7 +36,7 @@
 | Сменить дату задачи | | ✓ | ✓ | |
 | Send to AI, раскладка Proposed, Approve, Send Tasks | | | ✓ | |
 | Complete, фото, комментарий | | | | ✓ (своя бригада) |
-| Проверка выполненной (Approvals) | | ✓ | | |
+| Проверка: закрыть задачу с Task Accepted, комментарий (My Tasks → As PM, BAS-1431) | | ✓ | | |
 | Доступность бригад, overtime | ✓ | ✓ | ✓ | |
 | Directories, настройки модуля | ✓ | | | |
 
@@ -121,7 +121,8 @@ Access denied вместо любого экрана планировщика. �
 - [x] Сервис `services/task-planner/execution.ts` — все переходы через RPC, фото по signed URL.
 - [x] Экран **My Tasks** (`/task-planner/my-tasks`) — день + Yesterday/Today/Tomorrow,
       Complete, Notes, Photos, окно истории.
-- [x] Экран **Approvals** (`/task-planner/approvals`) — Approve / Send to rework (комментарий обязателен).
+- [x] ~~Экран **Approvals** (`/task-planner/approvals`) — Approve / Send to rework.~~ Удалён 2026-10-14
+      (BAS-1431): проверка перенесена в My Tasks → As PM, см. §5.
 - [x] Общий механизм «пункт меню виден виду апки»: `AppNavItem.appRoles` + `AppRoleProvider`
       (`app/AppRoleContext.tsx`) + чистая `visibleNavItems()`, покрытая тестом
       `tests/app-nav-visibility.test.ts`. Им же воспользуются HR-Checklists и Production.
@@ -200,7 +201,8 @@ Access denied вместо любого экрана планировщика. �
   (фото отдаются через `createSignedUrl`; публичность бакетов — принятый риск SEC-5, новое
   его не наследует);
 - RPC `tp_complete_task` / `tp_approve_task` / `tp_rework_task` / `tp_add_task_note` /
-  `tp_add_task_photo` — **единственный** способ поменять `execution_status`. Так сделано потому,
+  `tp_add_task_photo` (approve и rework удалены в `0033`, их место занял `tp_close_task`) —
+  **единственный** способ поменять `execution_status`. Так сделано потому,
   что RLS ограничивает строки, а не колонки, а колоночные гранты вешаются на роль
   `authenticated` — то есть заодно урезали бы админа, который ходит под той же ролью;
 - RLS `tp_tasks`: админ — всё, бригадир — **только чтение** задач своей бригады;
@@ -240,7 +242,7 @@ Access denied вместо любого экрана планировщика. �
 | Ось | Поле | Значения |
 |---|---|---|
 | **Планирование** (как есть) | `tp_tasks.status` | `requested → proposed → scheduled` (+ `archived`, объявлен в типах, в UI не используется) |
-| **Исполнение** (новое) | `tp_tasks.execution_status` | `pending → completed → approved`, ветка `rework → pending` |
+| **Исполнение** | `tp_tasks.execution_status` | `pending → completed → closed`; закрыть можно и из `pending` (с `0033`, BAS-1431) |
 
 Ось исполнения живёт **только у `status = 'scheduled'`**: пока расписание не утверждено,
 исполнять нечего. Дефолт при переходе в `scheduled` — `pending`.
@@ -248,9 +250,22 @@ Access denied вместо любого экрана планировщика. �
 | `execution_status` | Что значит | Кто ставит |
 |---|---|---|
 | `pending` | назначена, бригадир ещё не отмечал | система (дефолт) |
-| `completed` | бригадир нажал **Complete** (+ `completed_at`, `completed_by`) | `team_lead` |
-| `approved` | подтверждено сверху, задача закрыта | апрувер (см. 5.4) |
-| `rework` | вернули бригадиру с комментарием; из `rework` задача снова доступна к Complete → `pending` | апрувер |
+| `completed` | бригадир нажал **Complete** (+ `completed_at`, `completed_by`) | Lead Carpenter |
+| `closed` | PM закрыл задачу: финал, назад не возвращается, дату не меняет (+ `task_accepted`, `closed_at`, `closed_by`) | PM (`tp_close_task`) |
+
+**Закрытие (BAS-1431, миграция `0033`, 2026-10-14).** Было `approved` и ветка `rework`
+(возврат бригадиру). Стало: у проверки один исход — задача закрывается. Результат проверки —
+отметка **Task Accepted** (`task_accepted`, по умолчанию стоит). Закрыть можно из Completed
+(основной путь) и из Uncompleted (бригада не отметила, а работа сделана); фото и заметки
+бригады не обязательны. Если работа не принята, PM предлагается создать задачу на другой
+день: форма Create Task пустая, ссылка на исходную задачу пишется только в
+`origin_task_id` и в интерфейсе не показывается. Возврат на доработку убран (BAS-1432 влита
+в BAS-1431). Старые значения перевели: `approved → closed` с `task_accepted = true`,
+`rework → pending` (на 2026-10-14 таких строк в боевой БД не было).
+
+Политика `tp_tasks_update` даёт PM правку строки целиком, поэтому ось сторожит триггер
+`tp_tasks_guard_execution`: `execution_status` меняют только функции исполнения, у `closed`
+нельзя сменить статус и дату. `service_role` триггер пропускает.
 
 **`in_progress` не вводим** (решено 2026-08-13): кнопки «Start» у бригадира нет, а статус без
 явного действия будет врать. Если заказчик потом попросит «вижу, что бригада выехала» —
@@ -264,13 +279,18 @@ Access denied вместо любого экрана планировщика. �
 
 ```
 tp_task_events (append-only, никогда не UPDATE/DELETE)
-  id, task_id, actor_id, actor_role ('admin' | 'team_lead'),
-  event_type ('completed' | 'approved' | 'rework' | 'note' | 'photo' | 'status_change'),
+  id, task_id, actor_id, actor_role ('pm' | 'lead_carpenter'; 'admin' | 'team_lead' — старые записи),
+  event_type ('completed' | 'closed' | 'comment' | 'note' | 'photo' | 'photo_removed';
+              'approved' | 'rework' — старые записи до 0033),
   from_value, to_value,   -- для смен статуса
   comment,                -- текст (комментарий апрувера / заметка)
   created_at
 ```
 Окно «Recent History (Last 3 changes)» = последние N строк по `task_id`, свежие сверху.
+Комментарии — тоже события: `note` пишет Lead Carpenter, `comment` пишет PM
+(`tp_add_review_comment`), плюс комментарий при Complete и при закрытии. Их может быть
+несколько, у каждого видны автор и время; править и удалять их не может никто — журнал
+append-only. Комментарий PM бригада видит в карточке задачи.
 Notes и фото из модалки — тоже события (`note` / `photo`); вложения — `tp_task_photos`
 (`task_id`, `event_id`, `path` в бакете, `created_at`).
 
@@ -280,14 +300,14 @@ Notes и фото из модалки — тоже события (`note` / `pho
   список задач **своей бригады** со `status = 'scheduled'` на выбранный день, кнопка `Complete`
   на карточке. Клик по карточке → `Task Details`: `info` (история), `Notes` + `Add Note`,
   `Photos` + `Upload Photos`, `Complete`.
-- **Approval-вью** (апрувер) — на прототипе его нет, но без него `completed` некуда девать:
-  список задач в `completed`, действия `Approve` и `Send to rework` + комментарий.
-  Комментарий при `rework` — обязателен.
+- **Проверка PM** (BAS-1431) — отдельной вкладки нет (экран Approvals удалён). В My Tasks →
+  As PM у задачи из Uncompleted / Completed кнопка `Review` → карточка → `Close task` →
+  окно с галочкой `Task Accepted` и необязательным комментарием. Окно карточки закрывается
+  крестиком или кликом вне него: кнопки Close рядом с Close task нет, чтобы их не путали.
 
-### 5.4 Кто апрувит
+### 5.4 Кто проверяет
 
-**Пока — портальный админ** (`admin`), это временное решение на время разработки.
-Финальную модель уточняем у Павла — см. §7.
+Роль модуля **Project Manager** (`tp_can_approve_task()` = `tp_has_module_role('pm')`, 0028).
 
 ---
 
@@ -299,7 +319,7 @@ Notes и фото из модалки — тоже события (`note` / `pho
 | My Tasks (Yesterday/Today/Tomorrow) | ✅ (для проверки) | только своя бригада, только `scheduled` |
 | Tasks — Send to AI / Reset / удаление / dnd | ✅ | ❌ |
 | Complete + Notes + Photos на своей задаче | ✅ | ✅ |
-| Approve / Send to rework | ✅ (пока только он, §5.4) | ❌ |
+| Закрыть задачу (Task Accepted), комментарий PM | PM (§5.4) | ❌ |
 | История задачи (info) | ✅ | ✅ (свои задачи) |
 | Create Task | ✅ | ❓ решить (4.3) |
 | Teams Availability | все бригады | только своя |
@@ -312,11 +332,11 @@ Notes и фото из модалки — тоже события (`note` / `pho
 
 ### Уточнить у Павла
 
-- [ ] 🔴 **Кто апрувит выполненную задачу.** Варианты: (а) PM из поля `project_manager` самой
+- [x] **Кто апрувит выполненную задачу** — решено: роль модуля PM (§5.4, 0028). Было: Варианты: (а) PM из поля `project_manager` самой
       задачи, (б) любой Planner Admin, (в) отдельная третья роль «Approver». От ответа зависят
       RLS (`tp_tasks` на запись `execution_status`) и число видов в апке — сейчас их ровно два,
       вариант (а)/(в) добавит третий. **Пока делаем: апрувит портальный админ** (§5.4).
-- [ ] Что происходит с задачей после `approved` — уходит из списков? Пишется ли что-то обратно
+- [ ] Что происходит с задачей после закрытия (`closed`) — в планировщике уходит в Closed (BAS-1431); Пишется ли что-то обратно
       в Airtable / Buildertrend, или закрытие живёт только в планировщике.
 - [ ] Может ли бригадир отметить Complete **задним числом** (вкладка Yesterday) и есть ли лимит
       по времени. Сейчас в прототипе Yesterday доступен, ограничений нет.

@@ -8,8 +8,8 @@
  *    задачи без автора и без PM показываются всем PM с пометкой «no author»;
  *  - Lead Carpenter — задачи его бригады (скоуп держит RLS, здесь фильтра нет).
  *
- * Списки по оси исполнения. Пока нет статуса Closed (BAS-1431), соответствие такое:
- * Uncompleted = pending + rework, Completed = completed, Closed = approved.
+ * Списки по оси исполнения: Uncompleted = pending, Completed = completed, Closed = closed
+ * (BAS-1431).
  */
 import type { ExecutionStatus, Task } from './types'
 
@@ -24,9 +24,8 @@ export const OWN_LISTS: { key: OwnList; label: string }[] = [
 
 const LIST_BY_STATUS: Record<ExecutionStatus, OwnList> = {
   pending: 'uncompleted',
-  rework: 'uncompleted',
   completed: 'completed',
-  approved: 'closed',
+  closed: 'closed',
 }
 
 export function ownListOf(t: Task): OwnList {

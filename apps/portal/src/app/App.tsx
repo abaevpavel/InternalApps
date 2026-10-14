@@ -38,7 +38,6 @@ const TaskPlannerLayout = lazy(() => import('../pages/task-planner/TaskPlannerLa
 const RequireTpCapability = lazy(() => import('../pages/task-planner/TaskPlannerLayout').then((m) => ({ default: m.RequireTpCapability })))
 const PlannerHome = lazy(() => import('../pages/task-planner/TaskPlannerLayout').then((m) => ({ default: m.PlannerHome })))
 const MyTasksPage = lazy(() => import('../pages/task-planner/MyTasks').then((m) => ({ default: m.MyTasksPage })))
-const ApprovalsPage = lazy(() => import('../pages/task-planner/Approvals').then((m) => ({ default: m.ApprovalsPage })))
 
 /**
  * Куда человек шёл до логина. Ссылки из писем ведут глубоко в апку (напр. BAS-1635:
@@ -147,7 +146,6 @@ function Shell() {
                 В БД тем же ролям соответствует RLS из миграции 0028. */}
             <Route path="my-tasks" element={<RequireTpCapability cap="view_own_side"><MyTasksPage /></RequireTpCapability>} />
             <Route path="create" element={<RequireTpCapability cap="create_task"><CreateTaskPage /></RequireTpCapability>} />
-            <Route path="approvals" element={<RequireTpCapability cap="review_task"><ApprovalsPage /></RequireTpCapability>} />
             <Route path="availability" element={<RequireTpCapability cap="manage_availability"><AvailabilityPage /></RequireTpCapability>} />
             <Route path="admin" element={<RequireTpCapability cap="manage_directories"><TaskPlannerAdminPage /></RequireTpCapability>} />
           </Route>

@@ -62,6 +62,8 @@ function mapDbTask(r: Record<string, any>, teamInfo?: Map<string, { name: string
     // читаем как 'pending' — legacy-флаг completed backfill'ится миграцией.
     execution_status: r.execution_status ?? 'pending',
     completed_at: r.completed_at ?? null,
+    task_accepted: r.task_accepted ?? null,
+    closed_at: r.closed_at ?? null,
     created_by: r.created_by ?? null,
     pm_email: r.pm_email ?? null,
     task_type: r.task_type ?? 'Project task',
@@ -368,6 +370,8 @@ export interface CreateTaskInput {
   additional_stop?: Record<string, unknown> | null
   created_by?: string | null
   pm_email?: string | null
+  /** Исходная задача, если эта создана после непринятой работы (BAS-1431). Только бэкенд. */
+  origin_task_id?: string | null
 }
 
 /** INSERT новой задачи (status=requested). Возвращает id. */
@@ -393,6 +397,7 @@ export async function createTask(input: CreateTaskInput): Promise<string> {
     additional_stop: input.additional_stop ?? null,
     created_by: input.created_by ?? null,
     pm_email: input.pm_email ? input.pm_email.toLowerCase() : null,
+    origin_task_id: input.origin_task_id ?? null,
   }
   const { data, error } = await supabase.from('tp_tasks').insert(row).select('id').single()
   if (error) throw error

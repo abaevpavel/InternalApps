@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { BadgeCheck, BookUser, CalendarDays, ClipboardCheck, ListChecks, Plus } from 'lucide-react'
+import { BookUser, CalendarDays, ClipboardCheck, ListChecks, Plus } from 'lucide-react'
 import { rolesFor, TP_ROLES } from '../domain/task-planner/permissions'
 
 /**
@@ -245,7 +245,6 @@ export const APPS: AppConfig[] = [
       { to: '/task-planner', label: 'Tasks', icon: ListChecks, appRoles: rolesFor('view_schedule') },
       { to: '/task-planner/my-tasks', label: 'My Tasks', icon: ClipboardCheck, appRoles: rolesFor('view_own_side') },
       { to: '/task-planner/create', label: 'Create Task', icon: Plus, appRoles: rolesFor('create_task') },
-      { to: '/task-planner/approvals', label: 'Approvals', icon: BadgeCheck, appRoles: rolesFor('review_task') },
       { to: '/task-planner/availability', label: 'Teams Availability', icon: CalendarDays, appRoles: rolesFor('manage_availability') },
       { to: '/task-planner/admin', label: 'Directories', icon: BookUser, appRoles: rolesFor('manage_directories') },
     ],

@@ -33,9 +33,8 @@ describe('ownTasks', () => {
 describe('ownListOf', () => {
   it('maps execution status to the three lists', () => {
     expect(ownListOf(task({ execution_status: 'pending' }))).toBe('uncompleted')
-    expect(ownListOf(task({ execution_status: 'rework' }))).toBe('uncompleted')
     expect(ownListOf(task({ execution_status: 'completed' }))).toBe('completed')
-    expect(ownListOf(task({ execution_status: 'approved' }))).toBe('closed')
+    expect(ownListOf(task({ execution_status: 'closed' }))).toBe('closed')
   })
 })
 

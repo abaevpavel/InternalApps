@@ -25,7 +25,6 @@ const PORTAL_TITLES: [prefix: string, title: string][] = [
 /** Подпись экрана ВНУТРИ апки — то, что реестр знает как пункт её меню. */
 const APP_SCREEN_TITLES: [prefix: string, title: string][] = [
   ['/task-planner/my-tasks', 'MY TASKS'],
-  ['/task-planner/approvals', 'APPROVALS'],
   ['/task-planner/create', 'CREATE TASK'],
   ['/task-planner/availability', 'TEAMS AVAILABILITY'],
   ['/task-planner/admin', 'DIRECTORIES'],

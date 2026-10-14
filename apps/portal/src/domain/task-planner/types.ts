@@ -7,10 +7,11 @@ export type TaskStatus = 'requested' | 'proposed' | 'scheduled' | 'archived'
 /**
  * Ось ИСПОЛНЕНИЯ — независима от `status` (оси планирования): задача остаётся `scheduled`
  * на свою дату и при этом может быть выполнена. Живёт только у `scheduled`.
- * `pending → completed → approved`, ветка `rework → pending` (модель — docs/TASK-PLANNER-ROLES.md §5).
- * Меняется ТОЛЬКО через RPC (`services/task-planner/execution.ts`), прямой UPDATE закрыт RLS.
+ * `pending → completed → closed`; закрыть PM может и из `pending` (BAS-1431). `closed` — финал,
+ * результат проверки — `task_accepted`. Возврата на доработку нет (BAS-1432 влита в BAS-1431).
+ * Меняется ТОЛЬКО через RPC (`services/task-planner/execution.ts`), прочие правки ловит триггер (0033).
  */
-export type ExecutionStatus = 'pending' | 'completed' | 'approved' | 'rework'
+export type ExecutionStatus = 'pending' | 'completed' | 'closed'
 
 /** Событие журнала задачи (append-only `tp_task_events`) — лента в окне Task Details → info. */
 export interface TaskEvent {
@@ -19,9 +20,10 @@ export interface TaskEvent {
   actor_email: string | null
   // admin / team_lead — роли старых записей (до 0028).
   actor_role: 'admin' | 'team_lead' | 'pm' | 'schedule_manager' | 'lead_carpenter'
-  event_type: 'completed' | 'approved' | 'rework' | 'note' | 'photo' | 'photo_removed'
-  from_value: ExecutionStatus | null
-  to_value: ExecutionStatus | null
+  // comment — комментарий PM, note — Lead Carpenter; approved / rework — старые записи (до 0033).
+  event_type: 'completed' | 'closed' | 'comment' | 'note' | 'photo' | 'photo_removed' | 'approved' | 'rework'
+  from_value: string | null
+  to_value: string | null
   comment: string | null
   created_at: string
 }
@@ -135,6 +137,9 @@ export interface Task {
   status: TaskStatus
   execution_status: ExecutionStatus
   completed_at?: string | null
+  /** Результат проверки PM при закрытии (Task Accepted); null — задача не закрыта. */
+  task_accepted?: boolean | null
+  closed_at?: string | null
   /** auth uid автора (PM, создавший задачу). У старых задач пусто — «без автора» (BAS-1510). */
   created_by?: string | null
   /** Email PM задачи: проектная — PM проекта, Other — автор, или выбран вручную (0032). */

@@ -6,12 +6,17 @@
  *  - Project Manager — созданные им; старые задачи без автора — с пометкой «no author»;
  *  - Lead Carpenter — своей бригады, и только у него есть действия исполнения
  *    (Complete, заметки, фото).
+ * PM здесь же проверяет работу (BAS-1431): открывает задачу из Completed или Uncompleted
+ * и закрывает её с отметкой Task Accepted. Закрытие — финал, задача уходит в Closed.
+ * Если работа не принята — предложение создать задачу на другой день (Create Task с
+ * пустой формой; ссылка на исходную задачу пишется только в БД, `origin_task_id`).
  * У кого обе роли — переключатель «As PM / My crew».
  *
  * Скоуп «своя бригада» держит RLS (миграция 0028), а не фильтр в запросе. Логика списков —
  * `domain/task-planner/own-side.ts`. Общий вид по всем PM — экран Tasks (Tracking — BAS-1433).
  */
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Info, MessageSquare, Upload, X } from 'lucide-react'
 import { Badge, Button, Card, Input, Modal, PageTitle, StatusBadge, Tabs, Textarea } from '../../components/ui'
@@ -19,7 +24,7 @@ import { cn, errMsg } from '../../lib/utils'
 import { hhmmToMin, minToAmPm, TIMEZONE } from '../../lib/task-planner-time'
 import type { Task } from '../../domain/task-planner/types'
 import {
-  actorRoleLabel, addTaskNote, completeTask, describeTaskEvent, EXECUTION_LABEL, EXECUTION_TONE,
+  actorRoleLabel, addReviewComment, addTaskNote, closeTask, completeTask, describeTaskEvent, executionBadge,
   fetchCrewCommentCounts, fetchTaskEvents, removeTaskPhoto, fetchTaskPhotos, fetchTasksInRange, uploadTaskPhoto,
 } from '../../services/task-planner/execution'
 import {
@@ -46,7 +51,9 @@ function dayHeading(iso: string, today: string): string {
 
 export function MyTasksPage() {
   const { authUser, profile } = useAuth()
-  const { roles, teamName } = useTaskPlannerRoles()
+  const { roles, teamName, can } = useTaskPlannerRoles()
+  const nav = useNavigate()
+  const qc = useQueryClient()
   // Чей это вид — в заголовке (имя залогиненного, иначе email).
   const viewerName =
     [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim() || authUser?.email || ''
@@ -64,6 +71,10 @@ export function MyTasksPage() {
   const badRange = !!range && range.from > range.to
   const [list, setList] = useState<OwnList>('uncompleted')
   const [openTask, setOpenTask] = useState<Task | null>(null)
+  // Закрытие задачи PM (BAS-1431) и вопрос о задаче на другой день после «не принято».
+  const [closeFor, setCloseFor] = useState<Task | null>(null)
+  const [followUpFor, setFollowUpFor] = useState<Task | null>(null)
+  const canReview = mode === 'pm' && can('review_task')
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['tp-own-tasks', range?.from ?? null, range?.to ?? null],
@@ -196,7 +207,7 @@ export function MyTasksPage() {
             </h3>
             <div className="space-y-2">
               {day.tasks.map((t, i) => (
-                <TaskRow key={t.id} task={t} index={i + 1} mode={mode}
+                <TaskRow key={t.id} task={t} index={i + 1} mode={mode} canReview={canReview}
                   comments={commentsQ.data?.get(t.id) ?? 0} onOpen={() => setOpenTask(t)} />
               ))}
             </div>
@@ -205,7 +216,45 @@ export function MyTasksPage() {
       </div>
 
       {openTask && (
-        <TaskDetailsModal task={openTask} canAct={mode === 'crew'} onClose={() => setOpenTask(null)} />
+        <TaskDetailsModal
+          task={openTask}
+          canAct={mode === 'crew'}
+          canReview={canReview}
+          onClose={() => setOpenTask(null)}
+          onCloseTask={() => { setCloseFor(openTask); setOpenTask(null) }}
+        />
+      )}
+      {closeFor && (
+        <CloseTaskModal
+          task={closeFor}
+          onCancel={() => setCloseFor(null)}
+          onClosed={(accepted) => {
+            void qc.invalidateQueries({ queryKey: ['tp-own-tasks'] })
+            void qc.invalidateQueries({ queryKey: ['tp-task-events', closeFor.id] })
+            void qc.invalidateQueries({ queryKey: ['tasks'] })
+            if (!accepted) setFollowUpFor(closeFor)
+            setCloseFor(null)
+          }}
+        />
+      )}
+      {followUpFor && (
+        <Modal
+          open
+          title="Create a task for another day?"
+          subtitle={followUpFor.title || followUpFor.description}
+          onClose={() => setFollowUpFor(null)}
+          size="sm"
+          footer={
+            <>
+              <Button onClick={() => setFollowUpFor(null)}>Not now</Button>
+              <Button variant="amber" onClick={() => nav(`/task-planner/create?from=${followUpFor.id}`)}>
+                Create task
+              </Button>
+            </>
+          }
+        >
+          <p>The work was not accepted and the task is closed. Create a new task now, while you remember what was wrong?</p>
+        </Modal>
       )}
     </>
   )
@@ -213,10 +262,12 @@ export function MyTasksPage() {
 
 /* ---------------- Карточка задачи ---------------- */
 
-function TaskRow({ task, index, mode, comments, onOpen }: {
+function TaskRow({ task, index, mode, canReview, comments, onOpen }: {
   task: Task
   index: number
   mode: OwnMode
+  /** PM может закрыть задачу (BAS-1431). */
+  canReview: boolean
   /** Сколько комментариев оставил Lead Carpenter (BAS-1513). */
   comments: number
   onOpen: () => void
@@ -224,9 +275,11 @@ function TaskRow({ task, index, mode, comments, onOpen }: {
   const time = task.sched_start && task.sched_end
     ? `${minToAmPm(hhmmToMin(task.sched_start))} – ${minToAmPm(hhmmToMin(task.sched_end))}`
     : '—'
-  const done = task.execution_status === 'approved' || task.execution_status === 'completed'
-  // Complete — действие Lead Carpenter; PM на своей стороне задачу только смотрит.
-  const actionLabel = mode === 'crew' && !done ? 'Complete' : 'Details'
+  const done = task.execution_status === 'closed' || task.execution_status === 'completed'
+  const badge = executionBadge(task)
+  // Complete — действие Lead Carpenter; Review — PM открывает задачу, чтобы проверить и закрыть.
+  const actionLabel =
+    mode === 'crew' && !done ? 'Complete' : canReview && task.execution_status !== 'closed' ? 'Review' : 'Details'
 
   return (
     <Card className="p-4">
@@ -241,9 +294,7 @@ function TaskRow({ task, index, mode, comments, onOpen }: {
               {task.project_manager && <span>PM: {task.project_manager}</span>}
               {mode === 'pm' && task.assigned_team_name && <span>Crew: {task.assigned_team_name}</span>}
               {mode === 'pm' && !task.pm_email && hasNoAuthor(task) && <Badge className="bg-gray-100 text-gray-500">no author</Badge>}
-              <StatusBadge tone={EXECUTION_TONE[task.execution_status]}>
-                {EXECUTION_LABEL[task.execution_status]}
-              </StatusBadge>
+              <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
               {comments > 0 && (
                 <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
                   <MessageSquare size={12} /> {comments} {comments === 1 ? 'comment' : 'comments'}
@@ -278,7 +329,7 @@ function TaskRow({ task, index, mode, comments, onOpen }: {
             </div>
           </div>
         </div>
-        <Button variant={actionLabel === 'Complete' ? 'amber' : 'subtle'} onClick={onOpen}>
+        <Button variant={actionLabel === 'Details' ? 'subtle' : 'amber'} onClick={onOpen}>
           {actionLabel}
         </Button>
       </div>
@@ -290,11 +341,20 @@ function TaskRow({ task, index, mode, comments, onOpen }: {
 
 /**
  * Детали задачи. `canAct` — действия исполнения (Complete, заметка, фото): только Lead Carpenter
- * своей бригады. PM видит описание, фото и историю. Окончательный запрет — в функциях БД.
+ * своей бригады. `canReview` — PM: комментарии и закрытие задачи (BAS-1431). Окончательный
+ * запрет — в функциях БД.
  */
-function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boolean; onClose: () => void }) {
+function TaskDetailsModal({ task, canAct, canReview, onClose, onCloseTask }: {
+  task: Task
+  canAct: boolean
+  canReview: boolean
+  onClose: () => void
+  /** Открыть окно закрытия (Task Accepted). */
+  onCloseTask: () => void
+}) {
   const qc = useQueryClient()
   const [note, setNote] = useState('')
+  const [reviewNote, setReviewNote] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -311,6 +371,12 @@ function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boole
   }
   const onError = (e: unknown) => setErr(errMsg(e))
 
+  // Комментарий PM: отдельной записью журнала, без смены статуса; бригада видит его здесь же.
+  const addReview = useMutation({
+    mutationFn: () => addReviewComment(task.id, reviewNote),
+    onSuccess: () => { setReviewNote(''); setErr(null); invalidate() },
+    onError,
+  })
   const addNote = useMutation({
     mutationFn: () => addTaskNote(task.id, note),
     onSuccess: () => { setNote(''); setErr(null); invalidate() },
@@ -321,8 +387,8 @@ function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boole
     onSuccess: () => { setErr(null); invalidate() },
     onError,
   })
-  // Удалить фото — бригада, пока задача не закрыта (approved); проверка ещё и в БД (0031).
-  const canRemovePhotos = canAct && task.execution_status !== 'approved'
+  // Удалить фото — бригада, пока задача не закрыта; проверка ещё и в БД (0033).
+  const canRemovePhotos = canAct && task.execution_status !== 'closed'
   const removePhoto = useMutation({
     mutationFn: (photoId: string) => removeTaskPhoto(photoId),
     onSuccess: () => { setErr(null); invalidate() },
@@ -335,7 +401,9 @@ function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boole
     onError,
   })
 
-  const canComplete = canAct && (task.execution_status === 'pending' || task.execution_status === 'rework')
+  const canComplete = canAct && task.execution_status === 'pending'
+  const canClose = canReview && task.execution_status !== 'closed'
+  const badge = executionBadge(task)
 
   return (
     <>
@@ -344,15 +412,24 @@ function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boole
         title="Task Details"
         subtitle={task.title || task.description}
         onClose={onClose}
+        // Кнопки «Close» нет: рядом с Close task она путала («закрыть окно» или «закрыть задачу»).
+        // Окно закрывается крестиком или кликом вне него.
+        closeIcon
         footer={
+          canComplete || canClose ? (
           <>
-            <Button onClick={onClose}>Close</Button>
             {canComplete && (
               <Button variant="amber" disabled={complete.isPending} onClick={() => complete.mutate()}>
                 {complete.isPending ? 'Saving…' : 'Complete'}
               </Button>
             )}
+            {canClose && (
+              <Button variant="green" onClick={onCloseTask}>
+                Close task
+              </Button>
+            )}
           </>
+          ) : undefined
         }
       >
         <div className="space-y-5">
@@ -360,9 +437,7 @@ function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boole
             <Button variant="outline" className="text-gray-600" onClick={() => setHistoryOpen(true)}>
               <Info size={16} /> info
             </Button>
-            <StatusBadge tone={EXECUTION_TONE[task.execution_status]}>
-              {EXECUTION_LABEL[task.execution_status]}
-            </StatusBadge>
+            <StatusBadge tone={badge.tone}>{badge.label}</StatusBadge>
           </div>
 
           {err && <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">⚠ {err}</div>}
@@ -401,6 +476,21 @@ function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boole
                 {canComplete && note.trim() && (
                   <p className="mt-1 text-xs text-gray-500">Or press Complete — the comment is attached to the completion.</p>
                 )}
+              </>
+            )}
+            {canReview && (
+              <>
+                <Textarea className="mt-3" rows={3} placeholder="Comment for the crew…"
+                  value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} />
+                <Button
+                  variant="outline"
+                  className="mt-2 w-full"
+                  disabled={!reviewNote.trim() || addReview.isPending}
+                  onClick={() => addReview.mutate()}
+                >
+                  {addReview.isPending ? 'Saving…' : 'Add comment'}
+                </Button>
+                <p className="mt-1 text-xs text-gray-500">Comments cannot be edited or deleted. The crew sees them on the task.</p>
               </>
             )}
           </div>
@@ -463,11 +553,65 @@ function TaskDetailsModal({ task, canAct, onClose }: { task: Task; canAct: boole
   )
 }
 
+/* ---------------- Закрытие задачи (PM) ---------------- */
+
+/**
+ * Закрытие задачи PM (BAS-1431): отметка Task Accepted (по умолчанию стоит) и необязательный
+ * комментарий. Исход один — задача закрыта; «не принято» дальше предлагает новую задачу.
+ */
+function CloseTaskModal({ task, onCancel, onClosed }: {
+  task: Task
+  onCancel: () => void
+  onClosed: (accepted: boolean) => void
+}) {
+  const [accepted, setAccepted] = useState(true)
+  const [comment, setComment] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  const send = useMutation({
+    mutationFn: () => closeTask(task.id, accepted, comment.trim() || undefined),
+    onSuccess: () => onClosed(accepted),
+    onError: (e: unknown) => setErr(errMsg(e)),
+  })
+
+  return (
+    <Modal
+      open
+      title="Close task"
+      subtitle={task.title || task.description}
+      onClose={onCancel}
+      size="sm"
+      footer={
+        <>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button variant="green" disabled={send.isPending} onClick={() => send.mutate()}>
+            {send.isPending ? 'Closing…' : 'Close task'}
+          </Button>
+        </>
+      }
+    >
+      {err && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">⚠ {err}</div>}
+      {task.execution_status === 'pending' && (
+        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-amber-800">
+          The crew has not marked this task as complete.
+        </p>
+      )}
+      <label className="mb-3 flex cursor-pointer items-center gap-2 font-medium text-gray-900">
+        <input type="checkbox" className="h-4 w-4" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
+        Task Accepted
+      </label>
+      <Textarea rows={3} placeholder="Comment for the crew (optional)…" value={comment} onChange={(e) => setComment(e.target.value)} />
+      <p className="mt-2 text-xs text-gray-500">
+        A closed task cannot be reopened.{!accepted && ' Next you can create a task for another day.'}
+      </p>
+    </Modal>
+  )
+}
+
 /* ---------------- История ---------------- */
 
 /**
- * Лента `tp_task_events`: отметка бригадира, комментарий апрувера, возврат на доработку,
- * заметки и фото — в одном месте и в одном порядке.
+ * Лента `tp_task_events`: отметка бригадира, закрытие PM, комментарии обеих сторон и фото —
+ * в одном месте и в одном порядке.
  */
 export function TaskHistoryModal({ taskId, onClose, limit = 3 }: { taskId: string; onClose: () => void; limit?: number }) {
   const [showAll, setShowAll] = useState(false)
