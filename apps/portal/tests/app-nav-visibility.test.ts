@@ -18,21 +18,21 @@ describe('visibleNavItems — Task Planner', () => {
 
   it('project manager: schedule, own side (review is there), task creation, availability', () => {
     expect(labels({ isAdmin: false, appRoles: ['pm'] })).toEqual([
-      'Tasks', 'My Tasks', 'Create Task', 'Teams Availability',
+      'Tasks', 'My Tasks', 'Create Task', 'Teams Availability', 'History',
     ])
   })
 
   it('schedule manager: schedule and availability, no task creation', () => {
-    expect(labels({ isAdmin: false, appRoles: ['schedule_manager'] })).toEqual(['Tasks', 'Teams Availability'])
+    expect(labels({ isAdmin: false, appRoles: ['schedule_manager'] })).toEqual(['Tasks', 'Teams Availability', 'History'])
   })
 
   it('module admin gets Directories without being a portal admin', () => {
-    expect(labels({ isAdmin: false, appRoles: ['admin'] })).toEqual(['Tasks', 'Teams Availability', 'Directories'])
+    expect(labels({ isAdmin: false, appRoles: ['admin'] })).toEqual(['Tasks', 'Teams Availability', 'Directories', 'History'])
   })
 
   it('several roles add up', () => {
     expect(labels({ isAdmin: false, appRoles: ['pm', 'schedule_manager', 'lead_carpenter'] })).toEqual([
-      'Tasks', 'My Tasks', 'Create Task', 'Teams Availability',
+      'Tasks', 'My Tasks', 'Create Task', 'Teams Availability', 'History',
     ])
   })
 

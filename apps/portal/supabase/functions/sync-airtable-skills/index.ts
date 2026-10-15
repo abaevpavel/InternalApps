@@ -7,6 +7,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+/** Значение из Airtable совпадает с тем, что лежит в базе (пустое = null). */
+function sameValue(stored: unknown, incoming: unknown): boolean {
+  const norm = (v: unknown) => (v === undefined || v === null || v === '' ? null : typeof v === 'string' ? v : JSON.stringify(v));
+  return norm(stored) === norm(incoming);
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -98,9 +104,18 @@ serve(async (req) => {
       });
     }
 
-    // Process and sync skills
+    // Пишем только разницу: текущие навыки — одним запросом, навык обновляем, только если
+    // поменялось описание или категория. Сопоставление по названию, как и раньше: ссылки
+    // на запись Airtable в tp_skills нет.
+    const { data: existingRows, error: existingError } = await supabase
+      .from('tp_skills')
+      .select('id, name, description, category');
+    if (existingError) throw existingError;
+    const byName = new Map((existingRows ?? []).map((r) => [r.name, r]));
+
     const syncedSkills = [];
-    
+    let unchanged = 0;
+
     for (const record of allRecords) {
       const fields = record.fields;
       
@@ -139,62 +154,65 @@ serve(async (req) => {
         })(),
       };
 
-      console.log('Processing skill:', skillData.name);
+      const crewsVal = fields['Crews'] ?? fields['crews'] ?? [];
+      const reported = {
+        airtable_id: record.id,
+        name: skillData.name,
+        raw_fields: { Crews: Array.isArray(crewsVal) ? crewsVal : (crewsVal ? [crewsVal] : []) }
+      };
 
-      // Check if skill already exists by name (no airtable_id for skills table)
-      const { data: existingSkill } = await supabase
-        .from('tp_skills')
-        .select('id')
-        .eq('name', skillData.name)
-        .maybeSingle();
+      const existing = byName.get(skillData.name);
 
-      if (existingSkill) {
-        // Update existing skill with ALL fields to ensure changes from Airtable are reflected
-        const { error: updateError } = await supabase
+      if (!existing) {
+        const { data: inserted, error: insertError } = await supabase
           .from('tp_skills')
-          .update({
-            name: skillData.name,
-            description: skillData.description,
-            category: skillData.category,
-          })
-          .eq('id', existingSkill.id);
-
-        if (updateError) {
-          console.error('Error updating skill:', updateError);
-        } else {
-          console.log('Updated skill:', skillData.name);
-          const crewsVal = fields['Crews'] ?? fields['crews'] ?? [];
-          syncedSkills.push({
-            airtable_id: record.id,
-            name: skillData.name,
-            raw_fields: { Crews: Array.isArray(crewsVal) ? crewsVal : (crewsVal ? [crewsVal] : []) }
-          });
-        }
-      } else {
-        // Insert new skill
-        const { error: insertError } = await supabase
-          .from('tp_skills')
-          .insert(skillData);
+          .insert(skillData)
+          .select('id, name, description, category')
+          .single();
 
         if (insertError) {
-          console.error('Error inserting skill:', insertError);
+          console.error('Error inserting skill:', skillData.name, insertError);
         } else {
           console.log('Inserted skill:', skillData.name);
-          const crewsVal = fields['Crews'] ?? fields['crews'] ?? [];
-          syncedSkills.push({
-            airtable_id: record.id,
-            name: skillData.name,
-            raw_fields: { Crews: Array.isArray(crewsVal) ? crewsVal : (crewsVal ? [crewsVal] : []) }
-          });
+          // Дубль названия в Airtable дальше пойдёт как обновление, а не вторая вставка.
+          byName.set(inserted.name, inserted);
+          syncedSkills.push({ ...reported, action: 'created' });
         }
+        continue;
+      }
+
+      const changes: Record<string, unknown> = {};
+      for (const key of ['description', 'category'] as const) {
+        if (sameValue(existing[key], skillData[key])) continue;
+        changes[key] = skillData[key];
+      }
+
+      if (Object.keys(changes).length === 0) {
+        unchanged++;
+        continue;
+      }
+
+      const { error: updateError } = await supabase
+        .from('tp_skills')
+        .update(changes)
+        .eq('id', existing.id);
+
+      if (updateError) {
+        console.error('Error updating skill:', skillData.name, updateError);
+      } else {
+        console.log('Updated skill:', skillData.name, Object.keys(changes).join(', '));
+        Object.assign(existing, changes);
+        syncedSkills.push({ ...reported, action: 'updated', changed: Object.keys(changes) });
       }
     }
 
-    console.log('Sync completed. Skills processed:', syncedSkills.length);
+    console.log('Sync completed. Written:', syncedSkills.length, 'unchanged:', unchanged);
 
     return new Response(JSON.stringify({ 
       message: 'Airtable skills sync completed successfully',
       synced: syncedSkills.length,
+      fetched: allRecords.length,
+      unchanged,
       skills: syncedSkills
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

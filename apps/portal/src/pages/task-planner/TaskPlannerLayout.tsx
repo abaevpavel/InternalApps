@@ -3,6 +3,7 @@ import { AccessDenied } from '../../components/AccessDenied'
 import { usePublishAppRoles } from '../../app/AppRoleContext'
 import type { TpCapability } from '../../domain/task-planner/permissions'
 import { useTaskPlannerRoles } from './useTaskPlannerRole'
+import { useTpAutoSync } from './useTpAutoSync'
 
 /**
  * Контейнер экранов Task Planner. Портальный Layout даёт голый <main>, а страницы
@@ -19,6 +20,8 @@ import { useTaskPlannerRoles } from './useTaskPlannerRole'
 export function TaskPlannerLayout() {
   const { roles, loading } = useTaskPlannerRoles()
   usePublishAppRoles(loading ? null : roles)
+  // Синк с Airtable при входе (не чаще раза в 10 минут) и его время в шапке портала.
+  useTpAutoSync(!loading && roles.length > 0)
 
   if (loading) return <div className="p-10 text-gray-500">Loading…</div>
   if (!roles.length) {

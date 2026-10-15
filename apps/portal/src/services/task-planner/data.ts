@@ -6,6 +6,7 @@
 import { supabase } from '../../lib/supabase'
 import { TP_ROLES } from '../../domain/task-planner/permissions'
 import type { ExecutionStatus, Project, ScheduleRun, Skill, Task, Team, TeamAvailability, TeamSkill } from '../../domain/task-planner/types'
+import { DEFAULT_PRIORITY, toPriority, type TaskPriority } from '../../domain/task-planner/priority'
 
 export async function fetchTasks(
   status?: Task['status'],
@@ -85,7 +86,7 @@ function mapDbTask(r: Record<string, any>, teamInfo?: Map<string, { name: string
     assigned_team_id: r.team_id ?? null,
     assigned_team_name: r.teams?.name ?? (r.team_id ? teamInfo?.get(r.team_id)?.name : undefined),
     assigned_team_home_base: r.team_id ? teamInfo?.get(r.team_id)?.home : undefined,
-    priority: r.priority ?? 5,
+    priority: toPriority(r.priority),
     required_skill_ids: r.skill_requirements ?? r.required_skills ?? [],
     schedule_prompt: r.schedule_prompt ?? null,
     additional_stop: stop,
@@ -104,7 +105,8 @@ export async function fetchTeams(): Promise<Team[]> {
   // скиллы команды связаны через skills.description ("Available teams: recAAA, recBBB").
   // Тянем skills параллельно и инвертируем маппинг скилл→команды в команда→скиллы.
   const [teamsRes, skillsRes] = await Promise.all([
-    supabase.from('tp_teams').select('*'),
+    // Неактивные (пропали из Airtable, миграция 0037) не предлагаются и не уходят в AI.
+    supabase.from('tp_teams').select('*').eq('is_active', true),
     supabase.from('tp_skills').select('name, description'),
   ])
   if (teamsRes.error) throw teamsRes.error
@@ -176,7 +178,7 @@ export async function fetchTeamAccounts(): Promise<import('../../domain/task-pla
 export async function fetchTeamMembers(): Promise<import('../../domain/task-planner/types').TeamMember[]> {
   if (!supabase) return []
   const [tRes, rRes] = await Promise.all([
-    supabase.from('tp_teams').select('id, name, email, address, account_status').order('name'),
+    supabase.from('tp_teams').select('id, name, email, address, account_status, is_active').order('name'),
     supabase.rpc('tp_team_roles'),
   ])
   if (tRes.error) throw tRes.error
@@ -194,7 +196,8 @@ export async function fetchTeamMembers(): Promise<import('../../domain/task-plan
       address: t.address ?? null,
       role: info?.roles.length ? info.roles.map(label).join(', ') : null,
       hasAccount: info ? info.hasAccount : null,
-      status: t.account_status ?? null,
+      // Неактивная (пропала из Airtable) — это важнее статуса аккаунта.
+      status: t.is_active === false ? 'inactive · not in Airtable' : t.account_status ?? null,
     }
   })
 }
@@ -364,7 +367,7 @@ export interface CreateTaskInput {
   address: string
   project_manager?: string
   team_id?: string | null
-  priority?: number
+  priority?: TaskPriority
   skill_requirements?: string[]
   schedule_prompt?: string | null
   additional_stop?: Record<string, unknown> | null
@@ -391,7 +394,7 @@ export async function createTask(input: CreateTaskInput): Promise<string> {
     address: input.address,
     project_manager: input.project_manager ?? null,
     team_id: input.team_id ?? null,
-    priority: input.priority ?? 5,
+    priority: input.priority ?? DEFAULT_PRIORITY,
     skill_requirements: input.skill_requirements ?? [],
     schedule_prompt: input.schedule_prompt ?? null,
     additional_stop: input.additional_stop ?? null,
@@ -409,7 +412,7 @@ export interface UpdateTaskInput {
   title?: string
   description?: string
   estimated_duration_min?: number
-  priority?: number
+  priority?: TaskPriority
   scheduled_date?: string
   address?: string
 }
@@ -578,6 +581,25 @@ export async function fetchPeople(): Promise<{ full_name: string; email: string 
   const { data, error } = await supabase.rpc('tp_people')
   if (error) throw error
   return (data ?? []) as { full_name: string; email: string }[]
+}
+
+/**
+ * Сменить PM задачи (миграция 0034): сама задача и её копии в Proposed / Scheduled.
+ * PM — только из справочника людей; в историю модуля изменение пишет триггер.
+ */
+export async function setTaskPm(taskId: string, email: string): Promise<number> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { data, error } = await supabase.rpc('tp_set_task_pm', { p_task_id: taskId, p_email: email })
+  if (error) throw error
+  return (data ?? 0) as number
+}
+
+/** Люди, добавленные поверх справочника (тестовые аккаунты, миграция 0035): email → пометка. */
+export async function fetchExtraPeopleNotes(): Promise<Map<string, string>> {
+  if (!supabase) return new Map()
+  const { data, error } = await supabase.rpc('tp_people_extra_notes')
+  if (error) throw error
+  return new Map(((data ?? []) as { email: string; note: string | null }[]).map((r) => [r.email, r.note ?? 'added manually']))
 }
 
 /** Удалить все задачи заданного статуса (для кнопки «Удалить все» в Proposed). */

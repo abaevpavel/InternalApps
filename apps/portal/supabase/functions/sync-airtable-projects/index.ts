@@ -7,6 +7,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+/** Значение из Airtable совпадает с тем, что лежит в базе (пустое = null). */
+function sameValue(stored: unknown, incoming: unknown): boolean {
+  const norm = (v: unknown) => (v === undefined || v === null || v === '' ? null : typeof v === 'string' ? v : JSON.stringify(v));
+  return norm(stored) === norm(incoming);
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -115,15 +121,36 @@ serve(async (req) => {
       });
     }
 
-    // Process and sync projects
+    // Пишем только разницу. Текущие проекты — одним запросом; запись трогаем, только если
+    // в Airtable поменялось одно из полей, и геокодим, только если адрес новый/изменился
+    // или координат ещё нет. Раньше каждый прогон перезаписывал и геокодил все проекты.
+    const { data: existingRows, error: existingError } = await supabase
+      .from('tp_projects')
+      .select('id, airtable_id, name, address, project_manager, slack_id, is_active, latitude, longitude');
+    if (existingError) throw existingError;
+    const byAirtableId = new Map((existingRows ?? []).filter((r) => r.airtable_id).map((r) => [r.airtable_id, r]));
+
+    const geocode = async (address: string, label: string) => {
+      try {
+        const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${googleApiKey}`;
+        const geocodeData = await (await fetch(geocodeUrl)).json();
+        if (geocodeData.status === 'OK' && geocodeData.results?.length > 0) {
+          const { lat, lng } = geocodeData.results[0].geometry.location;
+          return { lat, lng };
+        }
+        console.warn('Geocoding returned no result for project:', label, geocodeData.status);
+      } catch (geocodeError) {
+        console.warn('Failed to geocode address for project:', label, geocodeError);
+      }
+      return null;
+    };
+
     const syncedProjects = [];
-    
+    let unchanged = 0;
+
     for (const record of allRecords) {
       const fields = record.fields;
-      
-      // Debug: Log all available field names
-      console.log('Available Airtable fields:', Object.keys(fields).join(', '));
-      
+
       // Map Airtable fields to our database schema
       const projectData = {
         airtable_id: record.id,
@@ -139,120 +166,76 @@ serve(async (req) => {
         slack_id: fields['Slack id'] || fields['Slack Id'] || fields['slack id'] || fields['Slack ID'] || fields['Slack Channel ID'] || fields['SLACK_ID'] || fields.slack_id || null,
       };
 
-      console.log('Project data with slack_id:', projectData.name, 'slack_id:', projectData.slack_id);
+      const existing = byAirtableId.get(record.id);
 
-      // Geocode address if it exists and coordinates are not already set
-      let coordinates = null;
-      if (projectData.address) {
-        try {
-          const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(projectData.address)}&key=${googleApiKey}`;
-          const geocodeResponse = await fetch(geocodeUrl);
-          const geocodeData = await geocodeResponse.json();
-          
-          if (geocodeData.status === 'OK' && geocodeData.results && geocodeData.results.length > 0) {
-            const location = geocodeData.results[0].geometry.location;
-            coordinates = {
-              lat: location.lat,
-              lng: location.lng
-            };
-            console.log('Geocoded address for project:', projectData.name, coordinates);
-          }
-        } catch (geocodeError) {
-          console.warn('Failed to geocode address for project:', projectData.name, geocodeError);
-        }
-      }
-
-      console.log('Processing project:', projectData.name);
-
-      // Check if project already exists
-      const { data: existingProject } = await supabase
-        .from('tp_projects')
-        .select('id, coordinates, latitude, longitude')
-        .eq('airtable_id', record.id)
-        .single();
-
-      if (existingProject) {
-        // Update existing project
-        // Only update coordinates if we got new ones or if project doesn't have coordinates yet
-        const updateData = coordinates && (!existingProject.latitude || !existingProject.longitude)
-          ? { 
-              name: projectData.name,
-              address: projectData.address,
-              coordinates,
-              latitude: coordinates.lat,
-              longitude: coordinates.lng,
-              project_manager: projectData.project_manager,
-              slack_id: projectData.slack_id,
-              is_active: true,
-              updated_at: new Date().toISOString(),
-            }
-          : { 
-              name: projectData.name,
-              address: projectData.address,
-              project_manager: projectData.project_manager,
-              slack_id: projectData.slack_id,
-              is_active: true,
-              updated_at: new Date().toISOString(),
-            };
-            
-        const { error: updateError } = await supabase
-          .from('tp_projects')
-          .update(updateData)
-          .eq('airtable_id', record.id);
-
-        if (updateError) {
-          console.error('Error updating project:', updateError);
-        } else {
-          console.log('Updated project:', projectData.name);
-          syncedProjects.push({ ...projectData, action: 'updated' });
-        }
-      } else {
-        // Insert new project
-        const insertData = coordinates
-          ? { 
-              ...projectData, 
-              coordinates,
-              latitude: coordinates.lat,
-              longitude: coordinates.lng,
-              is_active: true,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            }
-          : { 
-              ...projectData,
-              is_active: true,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            };
-            
+      if (!existing) {
+        const coordinates = projectData.address ? await geocode(projectData.address, projectData.name) : null;
+        const now = new Date().toISOString();
         const { error: insertError } = await supabase
           .from('tp_projects')
-          .insert(insertData);
+          .insert({
+            ...projectData,
+            ...(coordinates ? { coordinates, latitude: coordinates.lat, longitude: coordinates.lng } : {}),
+            is_active: true,
+            created_at: now,
+            updated_at: now,
+          });
 
         if (insertError) {
-          console.error('Error inserting project:', insertError);
+          console.error('Error inserting project:', projectData.name, insertError);
         } else {
           console.log('Inserted project:', projectData.name);
           syncedProjects.push({ ...projectData, action: 'created' });
         }
+        continue;
+      }
+
+      const changes: Record<string, unknown> = {};
+      for (const key of ['name', 'address', 'project_manager', 'slack_id'] as const) {
+        if (sameValue(existing[key], projectData[key])) continue;
+        changes[key] = projectData[key];
+      }
+      if (!existing.is_active) changes.is_active = true;
+
+      if (projectData.address && ('address' in changes || existing.latitude == null || existing.longitude == null)) {
+        const coordinates = await geocode(projectData.address, projectData.name);
+        if (coordinates) Object.assign(changes, { coordinates, latitude: coordinates.lat, longitude: coordinates.lng });
+      }
+
+      if (Object.keys(changes).length === 0) {
+        unchanged++;
+        continue;
+      }
+
+      const { error: updateError } = await supabase
+        .from('tp_projects')
+        .update({ ...changes, updated_at: new Date().toISOString() })
+        .eq('id', existing.id);
+
+      if (updateError) {
+        console.error('Error updating project:', projectData.name, updateError);
+      } else {
+        console.log('Updated project:', projectData.name, Object.keys(changes).join(', '));
+        syncedProjects.push({ ...projectData, action: 'updated', changed: Object.keys(changes) });
       }
     }
 
     // Mark projects as inactive that are no longer in the Airtable view
     const syncedAirtableIds = allRecords.map(record => record.id);
-    const { error: deactivateError } = await supabase
+    const { data: deactivated, error: deactivateError } = await supabase
       .from('tp_projects')
       .update({ is_active: false, updated_at: new Date().toISOString() })
       .not('airtable_id', 'in', `(${syncedAirtableIds.map(id => `"${id}"`).join(',')})`)
-      .eq('is_active', true);
+      .eq('is_active', true)
+      .select('id');
 
     if (deactivateError) {
       console.error('Error deactivating old projects:', deactivateError);
     } else {
-      console.log('Deactivated projects not in current Airtable view');
+      console.log('Deactivated projects not in current Airtable view:', deactivated?.length ?? 0);
     }
 
-    console.log('Sync completed. Projects processed:', syncedProjects.length);
+    console.log('Sync completed. Written:', syncedProjects.length, 'unchanged:', unchanged);
 
     // Update sync log with success
     if (logId) {
@@ -269,6 +252,9 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       message: 'Airtable sync completed successfully',
       synced: syncedProjects.length,
+      fetched: allRecords.length,
+      unchanged,
+      deactivated: deactivated?.length ?? 0,
       projects: syncedProjects
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

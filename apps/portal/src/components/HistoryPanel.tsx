@@ -9,8 +9,8 @@ import { actionWord, actorLabel, formatValue, recordLabel, shownFields, tableLab
  * История изменений приложения — кто, когда и что поменял (миграция 0019). Общая для
  * Receipts Matcher и GMB Agent: приложение различается `appUrl`.
  */
-export function HistoryPanel({ appUrl }: { appUrl: string }) {
-  const [peopleOnly, setPeopleOnly] = useState(false)
+export function HistoryPanel({ appUrl, defaultPeopleOnly = false }: { appUrl: string; defaultPeopleOnly?: boolean }) {
+  const [peopleOnly, setPeopleOnly] = useState(defaultPeopleOnly)
   const q = useInfiniteQuery({
     queryKey: ['portal-history', appUrl, peopleOnly],
     queryFn: ({ pageParam }) => loadHistory(appUrl, { peopleOnly, before: pageParam }),

@@ -10,18 +10,20 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   GripVertical, SquarePen, Clock, Calendar, Users, Wrench, MapPin, Loader2,
-  ArrowRight, AlertTriangle, CheckCircle2, Lock, LockOpen, Trash2, Info, RefreshCw,
+  ArrowRight, AlertTriangle, CheckCircle2, Lock, LockOpen, Trash2, Info, RefreshCw, ChevronDown, Check,
 } from 'lucide-react'
-import { Button, Card, Input, Badge, StatusBadge, Modal, Tabs } from '../../components/task-planner-ui'
+import { createPortal } from 'react-dom'
+import { Button, Card, Input, Badge, StatusBadge, Modal, Tabs, Select } from '../../components/task-planner-ui'
 import { cn, errMsg } from '../../lib/utils'
 import {
   fetchTasks, fetchTeams, fetchSkills, fetchAvailability,
   fetchScheduleRun, applyScheduleToTasks, pullScheduleIntoTasks,
   replaceProposedWithSchedule, deleteTasksByStatus,
-  updateTask, deleteTask, type UpdateTaskInput,
+  updateTask, deleteTask, type UpdateTaskInput, fetchPeople, setTaskPm,
 } from '../../services/task-planner/data'
 import { sendToAi, sendToSlack, buildSlackPayload } from '../../services/task-planner/n8n'
 import { executionBadge } from '../../services/task-planner/execution'
+import { DEFAULT_PRIORITY, PRIORITY_OPTIONS, PRIORITY_RULE, priorityLabel, toPriority, type TaskPriority } from '../../domain/task-planner/priority'
 import { resolveString } from '../../services/app-settings'
 import { pollScheduleRun } from '../../services/task-planner/aiPoller'
 import { setPendingRequestId, getPendingRequestId, clearPendingRequestId } from '../../services/task-planner/pendingRun'
@@ -110,10 +112,9 @@ export function TasksPage() {
 }
 
 /* ---------------- Requested ---------------- */
-function priorityTone(p: number): { label: string; tone: 'danger' | 'warning' | 'neutral' } {
-  if (p <= 3) return { label: 'High', tone: 'danger' }
-  if (p >= 7) return { label: 'Low', tone: 'neutral' }
-  return { label: 'Medium', tone: 'warning' }
+function priorityTone(p: TaskPriority): { label: string; tone: 'danger' | 'warning' | 'neutral' } {
+  const tone = p === 'high' ? 'danger' : p === 'low' ? 'neutral' : 'warning'
+  return { label: priorityLabel(p), tone }
 }
 
 function Requested({ goProposed }: { goProposed: () => void }) {
@@ -132,9 +133,11 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       // (так 13.10 16 задач ушли на 07.10 вместо 14.10).
       const list = await fetchTasks('requested')
       if (!list.length) throw new Error('No requested tasks')
-      const [teams, skills, unavailable, webhookUrl] = await Promise.all([
+      const [teams, skills, unavailable, webhookUrl, priorityRule] = await Promise.all([
         fetchTeams(), fetchSkills(), fetchAvailability(),
         resolveString('task-planner', 'planner_webhook', import.meta.env.VITE_N8N_PLANNER_WEBHOOK as string | undefined),
+        // BAS-1434: правило «High раньше в дне» — в Persistent Prompt (сценарий n8n не меняется).
+        resolveString('task-planner', 'planner_priority_rule', PRIORITY_RULE),
       ])
       const requestId = newRequestId()
       // запоминаем запрос ДО ожидания — если поллинг прервётся (таймаут/refresh),
@@ -144,6 +147,7 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       await sendToAi({
         requestId, date, tasks: list, teams, unavailableTeams: unavailable, skills,
         webhookUrl: webhookUrl ?? undefined,
+        persistentPrompt: priorityRule || PRIORITY_RULE,
       })
       const run = await pollScheduleRun(requestId)
       if (run.status === 'error') throw new Error(run.error || 'AI returned an error')
@@ -260,7 +264,7 @@ function Requested({ goProposed }: { goProposed: () => void }) {
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               {list.map((t) => (
-                <TaskCardCompact key={t.id} t={t}
+                <TaskCardCompact key={t.id} t={t} canChangePm={can('edit_task')}
                   onDelete={can('delete_task')
                     ? () => { if (confirm(`Delete task “${t.title ?? t.description}”?`)) del.mutate(t.id) }
                     : undefined} />
@@ -273,12 +277,12 @@ function Requested({ goProposed }: { goProposed: () => void }) {
   )
 }
 
-/** Компактная карточка задачи (Requested). Только просмотр + удаление (без Edit). */
-function TaskCardCompact({ t, onDelete }: { t: Task; onDelete?: () => void }) {
+/** Компактная карточка задачи (Requested). Просмотр, смена PM (PM модуля) и удаление. */
+function TaskCardCompact({ t, canChangePm, onDelete }: { t: Task; canChangePm: boolean; onDelete?: () => void }) {
   const title = t.title ?? (t.description ?? '').split('\n')[0]
   const skillCount = t.required_skill_ids?.length ?? 0
   const durH = (t.estimated_duration_min ?? 0) / 60
-  const prio = priorityTone(t.priority ?? 5)
+  const prio = priorityTone(t.priority)
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-2">
@@ -287,8 +291,11 @@ function TaskCardCompact({ t, onDelete }: { t: Task; onDelete?: () => void }) {
             <span className="truncate font-semibold text-gray-900">{title}</span>
             <Badge className="shrink-0 bg-accent-50 text-accent-700">{t.task_type}</Badge>
           </div>
-          <div className="truncate text-xs text-gray-500">
-            {[t.project_name, t.task_address, t.project_manager ? `PM: ${t.project_manager}` : null].filter(Boolean).join(' · ')}
+          <div className="flex min-w-0 items-center gap-1 text-xs text-gray-500">
+            <span className="truncate">{[t.project_name, t.task_address].filter(Boolean).join(' · ')}</span>
+            {canChangePm
+              ? <TaskPmPicker t={t} />
+              : <TaskPmName t={t} />}
           </div>
         </div>
         {onDelete && (
@@ -312,6 +319,170 @@ function TaskCardCompact({ t, onDelete }: { t: Task; onDelete?: () => void }) {
           : <span className="flex items-center gap-1 text-accent-600"><MapPin size={13} /> no stop</span>}
       </div>
     </Card>
+  )
+}
+
+/**
+ * PM задачи на карточке: клик — список людей из справочника, выбор — подтверждение.
+ * Меняется и задача, и её копии в расписании (tp_set_task_pm); в историю модуля
+ * изменение пишет триггер в базе.
+ */
+/**
+ * Имя PM задачи. Источник правды — `pm_email` (он решает, в чьём My Tasks задача), имя
+ * берётся по нему из списка людей; `project_manager` — запасной вариант: у части задач
+ * имя не записано (PM не было в списке на момент создания).
+ */
+function usePmName(t: Task): string {
+  const people = useQuery({ queryKey: ['tp-people'], queryFn: fetchPeople, staleTime: 5 * 60_000 })
+  const email = t.pm_email?.toLowerCase()
+  return (email && people.data?.find((p) => p.email === email)?.full_name) || t.project_manager || email || 'not set'
+}
+
+function TaskPmName({ t }: { t: Task }) {
+  const name = usePmName(t)
+  return <span className="shrink-0">· PM: {name}</span>
+}
+
+function TaskPmPicker({ t }: { t: Task }) {
+  const qc = useQueryClient()
+  const btn = useRef<HTMLButtonElement>(null)
+  const menu = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const [query, setQuery] = useState('')
+  const [next, setNext] = useState<{ email: string; name: string } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const open = !!pos
+  const people = useQuery({ queryKey: ['tp-people'], queryFn: fetchPeople, staleTime: 5 * 60_000 })
+  const pmName = usePmName(t)
+  const save = useMutation({
+    mutationFn: (email: string) => setTaskPm(t.id, email),
+    onSuccess: () => {
+      setNext(null)
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+    },
+    onError: (e: unknown) => setError(errMsg(e)),
+  })
+  const current = t.pm_email?.toLowerCase() ?? ''
+  const q = query.trim().toLowerCase()
+  const shown = (people.data ?? []).filter((p) => !q || p.full_name.toLowerCase().includes(q) || p.email.includes(q))
+
+  // Список закрывается кликом мимо, Escape и прокруткой страницы.
+  useEffect(() => {
+    if (!open) return
+    const close = () => { setPos(null); setQuery('') }
+    const onDown = (e: MouseEvent) => {
+      const el = e.target as Node
+      if (!btn.current?.contains(el) && !menu.current?.contains(el)) close()
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close()
+    const onScroll = (e: Event) => { if (!menu.current?.contains(e.target as Node)) close() }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', onScroll, true)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onScroll, true)
+    }
+  }, [open])
+
+  function toggle() {
+    if (open) { setPos(null); return }
+    const r = btn.current?.getBoundingClientRect()
+    if (r) setPos({ top: r.bottom + 4, left: Math.min(r.left, window.innerWidth - 272) })
+  }
+
+  function pick(p: { email: string; full_name: string }) {
+    setPos(null)
+    setQuery('')
+    if (p.email === current) return
+    setError(null)
+    setNext({ email: p.email, name: p.full_name })
+  }
+
+  return (
+    <>
+      <button
+        ref={btn}
+        type="button"
+        title="Change PM"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="flex shrink-0 items-center gap-0.5 rounded px-1 hover:bg-gray-100 hover:text-gray-800"
+        onClick={toggle}
+      >
+        · PM: {pmName}
+        <ChevronDown size={12} className={cn('transition', open && 'rotate-180')} />
+      </button>
+
+      {pos && createPortal(
+        <div
+          ref={menu}
+          role="listbox"
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: 264 }}
+          className="z-[60] flex max-h-72 flex-col overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg"
+        >
+          <div className="border-b border-gray-100 p-2">
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search people…"
+              className="w-full rounded-md border border-gray-200 px-2.5 py-1.5 text-sm outline-none focus:border-accent-500"
+            />
+          </div>
+          <div className="overflow-auto py-1">
+            {people.isLoading && <div className="px-3 py-2 text-sm text-gray-400">Loading…</div>}
+            {people.error && <div className="px-3 py-2 text-sm text-red-600">{errMsg(people.error)}</div>}
+            {!people.isLoading && !people.error && shown.length === 0 && (
+              <div className="px-3 py-2 text-sm text-gray-400">Nothing found</div>
+            )}
+            {shown.map((p) => (
+              <button
+                key={p.email}
+                type="button"
+                role="option"
+                aria-selected={p.email === current}
+                onClick={() => pick(p)}
+                className={cn(
+                  'flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50',
+                  p.email === current ? 'font-medium text-gray-900' : 'text-gray-700',
+                )}
+              >
+                <Check size={14} className={cn('shrink-0', p.email === current ? 'text-accent-600' : 'invisible')} />
+                <span className="truncate">{p.full_name}</span>
+              </button>
+            ))}
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      <Modal
+        open={!!next}
+        title="Change PM?"
+        subtitle={t.title ?? t.description}
+        size="sm"
+        onClose={() => setNext(null)}
+        footer={
+          <>
+            <Button onClick={() => setNext(null)}>Cancel</Button>
+            <Button variant="green" disabled={save.isPending} onClick={() => next && save.mutate(next.email)}>
+              {save.isPending ? 'Saving…' : 'Change PM'}
+            </Button>
+          </>
+        }
+      >
+        {error && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">⚠ {error}</div>}
+        <p>
+          Are you sure you want to change the PM from <b className="text-gray-900">{pmName}</b> to{' '}
+          <b className="text-gray-900">{next?.name}</b>?
+        </p>
+        <p className="mt-2 text-xs text-gray-500">
+          The task moves to the new PM’s My Tasks, including its copy in the schedule. The change is recorded in the history.
+        </p>
+      </Modal>
+    </>
   )
 }
 
@@ -401,9 +572,10 @@ function TaskEditModal({ task, onClose, onSaved }: {
               onChange={(e) => set({ estimated_duration_min: Math.max(0, Number(e.target.value)) })} />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500">Priority (1–10)</label>
-            <Input type="number" value={form.priority ?? 5}
-              onChange={(e) => set({ priority: Number(e.target.value) })} />
+            <label className="mb-1 block text-xs font-medium text-gray-500">Priority</label>
+            <Select value={form.priority ?? DEFAULT_PRIORITY} onChange={(e) => set({ priority: toPriority(e.target.value) })}>
+              {PRIORITY_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+            </Select>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-500">Date</label>

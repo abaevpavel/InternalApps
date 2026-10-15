@@ -37,6 +37,7 @@ const TaskPlannerAdminPage = lazy(() => import('../pages/task-planner/Admin').th
 const TaskPlannerLayout = lazy(() => import('../pages/task-planner/TaskPlannerLayout').then((m) => ({ default: m.TaskPlannerLayout })))
 const RequireTpCapability = lazy(() => import('../pages/task-planner/TaskPlannerLayout').then((m) => ({ default: m.RequireTpCapability })))
 const PlannerHome = lazy(() => import('../pages/task-planner/TaskPlannerLayout').then((m) => ({ default: m.PlannerHome })))
+const TaskPlannerHistoryPage = lazy(() => import('../pages/task-planner/History').then((m) => ({ default: m.HistoryPage })))
 const MyTasksPage = lazy(() => import('../pages/task-planner/MyTasks').then((m) => ({ default: m.MyTasksPage })))
 
 /**
@@ -148,6 +149,7 @@ function Shell() {
             <Route path="create" element={<RequireTpCapability cap="create_task"><CreateTaskPage /></RequireTpCapability>} />
             <Route path="availability" element={<RequireTpCapability cap="manage_availability"><AvailabilityPage /></RequireTpCapability>} />
             <Route path="admin" element={<RequireTpCapability cap="manage_directories"><TaskPlannerAdminPage /></RequireTpCapability>} />
+            <Route path="history" element={<RequireTpCapability cap="view_history"><TaskPlannerHistoryPage /></RequireTpCapability>} />
           </Route>
         </Route>
       </Route>

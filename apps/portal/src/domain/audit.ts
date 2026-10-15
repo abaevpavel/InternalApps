@@ -23,6 +23,14 @@ const TABLE_LABELS: Record<string, string> = {
   receipt_matcher_employees: 'Employee',
   gmb_settings: 'Setting',
   gmb_listings: 'Listing name',
+  tp_tasks: 'Task',
+  tp_task_photos: 'Task photo',
+  tp_teams: 'Crew',
+  tp_team_availability: 'Crew availability',
+  tp_skills: 'Skill',
+  tp_task_types: 'Task type',
+  tp_projects: 'Project',
+  tp_app_settings: 'Planner setting',
 }
 
 export function tableLabel(t: string): string {
@@ -41,6 +49,15 @@ export function recordLabel(e: AuditEntry): string {
     }
     case 'receipt_matcher_employees':
       return (s('full_name') ?? e.rowKey).replace(/\s+/g, ' ').trim()
+    case 'tp_tasks': {
+      const name = s('title') ?? (s('description') ?? '').split('\n')[0]
+      return [name, s('scheduled_date'), s('status')].filter(Boolean).join(' · ') || e.rowKey
+    }
+    case 'tp_teams':
+    case 'tp_skills':
+    case 'tp_task_types':
+    case 'tp_projects':
+      return s('name') ?? e.rowKey
     case 'gmb_listings':
       return [s('store_code'), s('live_title')].filter(Boolean).join(' · ') || e.rowKey
     default:

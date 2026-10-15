@@ -7,7 +7,7 @@ import type { AppConfig } from '../app/appRegistry'
 import { useAppRecord } from '../app/useAppRecord'
 import { listProfiles, listRoles } from '../services/data'
 import { listAppRoleAssignments, setUserAppRoles } from '../services/app-user-roles'
-import { fetchTeamAccounts } from '../services/task-planner/data'
+import { fetchExtraPeopleNotes, fetchTeamAccounts } from '../services/task-planner/data'
 import type { Profile } from '../domain/types'
 
 /**
@@ -32,6 +32,8 @@ export function AppRolesTab({ app }: { app: AppConfig }) {
   // Task Planner: у Lead Carpenter бригада находится по email — показываем, нашлась ли.
   const isPlanner = app.code === 'task-planner'
   const crewsQ = useQuery({ queryKey: ['tp-team-accounts'], queryFn: fetchTeamAccounts, enabled: isPlanner })
+  // Тестовые аккаунты, добавленные в список людей поверх синка из Airtable (миграция 0035).
+  const extraQ = useQuery({ queryKey: ['tp-people-extra'], queryFn: fetchExtraPeopleNotes, enabled: isPlanner })
 
   // Портальные роли, дающие доступ к апке.
   const accessRoleIds = useMemo(() => {
@@ -105,6 +107,7 @@ export function AppRolesTab({ app }: { app: AppConfig }) {
           const current = assignments.get(p.user_id) ?? []
           const pending = saveM.isPending && saveM.variables?.userId === p.user_id
           const crew = crewByEmail.get(p.email.toLowerCase()) ?? null
+          const extraNote = isPlanner ? extraQ.data?.get(p.email.toLowerCase()) ?? null : null
           const name = displayName(p)
           const toggle = (key: string) => {
             const next = current.includes(key) ? current.filter((r) => r !== key) : [...current, key]
@@ -120,6 +123,11 @@ export function AppRolesTab({ app }: { app: AppConfig }) {
                 <div className="flex flex-wrap items-center gap-x-2 text-xs">
                   <span className="truncate text-gray-400 md:hidden">{p.email}</span>
                   {!hasAccess(p) && <span className="text-amber-700">no app access</span>}
+                  {extraNote && (
+                    <span className="text-blue-700" title="Added to the people list on top of the Airtable sync">
+                      {extraNote} · added on top of Airtable
+                    </span>
+                  )}
                   {/* Бригада — только если отличается от имени человека или не найдена. */}
                   {isPlanner && current.includes('lead_carpenter') && !crew && (
                     <span className="inline-flex items-center gap-1 text-amber-700">

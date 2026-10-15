@@ -3,6 +3,7 @@ import type { Task, Team, TeamAvailability, Skill, TeamDay } from '../../domain/
 
 // Фолбэк-дефолт; основной источник URL вебхука — настройка app_settings (Админка).
 import { resolveString } from '../app-settings'
+import { PRIORITY_RANK } from '../../domain/task-planner/priority'
 
 const PLANNER = import.meta.env.VITE_N8N_PLANNER_WEBHOOK as string | undefined
 const SLACK_ENV = import.meta.env.VITE_N8N_SLACK_WEBHOOK as string | undefined
@@ -42,7 +43,9 @@ function toWebhookTask(t: Task, teamsById: Map<string, Team>) {
     id: t.id,
     description: t.description,
     estimated_duration: t.estimated_duration_min / 60, // минуты → часы (контракт)
-    priority: t.priority,
+    // BAS-1434: число «больше — важнее» (так его читает сценарий) + текст для ясности.
+    priority: PRIORITY_RANK[t.priority],
+    priority_label: t.priority,
     task_type: t.task_type,
     scheduled_date: t.scheduled_date,
     scheduled_time: buildScheduledTime(t),

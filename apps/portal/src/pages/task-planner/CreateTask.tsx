@@ -8,6 +8,7 @@ import { cn, errMsg } from '../../lib/utils'
 import { fetchPeople, fetchProjects, fetchSkills, fetchTeams, fetchTaskTypes, createTask } from '../../services/task-planner/data'
 import { useAuth } from '../../auth/AuthProvider'
 import type { Skill, TimeType } from '../../domain/task-planner/types'
+import { DEFAULT_PRIORITY, PRIORITY_OPTIONS, toPriority, type TaskPriority } from '../../domain/task-planner/priority'
 
 /** Следующий рабочий день (пропуская сб/вс) в формате YYYY-MM-DD, по локальному времени. */
 function nextWeekdayISO(): string {
@@ -48,7 +49,7 @@ export function CreateTaskPage() {
   const [tfEnd, setTfEnd] = useState('')
   const [durationH, setDurationH] = useState('')
   const [teamId, setTeamId] = useState('')
-  const [priority, setPriority] = useState(5)
+  const [priority, setPriority] = useState<TaskPriority>(DEFAULT_PRIORITY)
   const [skillIds, setSkillIds] = useState<string[]>([])
   const [stopAddress, setStopAddress] = useState('')
   // BAS-1429: у Other Task нет проекта — адрес задаётся вручную, иначе бригада не знает, куда ехать.
@@ -201,10 +202,11 @@ export function CreateTaskPage() {
               {pmOptions.map((o) => <option key={o.email} value={o.email}>{o.label}</option>)}
             </Select>
           </Field>
+          {/* BAS-1434: три значения, обязательное; High — раньше в дне бригады. */}
           <Field label="Priority">
-            <Select value={priority} onChange={(e) => setPriority(Number(e.target.value))}>
-              {PRIORITIES.map((p) => (
-                <option key={p.value} value={p.value}>{p.value} - {p.label}</option>
+            <Select value={priority} onChange={(e) => setPriority(toPriority(e.target.value))}>
+              {PRIORITY_OPTIONS.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
               ))}
             </Select>
           </Field>
@@ -261,17 +263,6 @@ function SegBtn({ active, onClick, children }: { active: boolean; onClick: () =>
   )
 }
 
-/**
- * Шкала приоритета. Раньше в форме было всего два пункта (5 и 1), хотя остальная апка
- * живёт по 1–10: `priorityTone` в Tasks.tsx считает ≤3 высоким, ≥7 низким, между ними
- * средний, а в редактировании задачи стоит свободный number-input. Подписаны только края
- * и середина — промежуточные значения говорят сами за себя.
- */
-const PRIORITY_LABELS: Record<number, string> = { 1: 'Highest', 3: 'High', 5: 'Normal', 7: 'Low', 10: 'Lowest' }
-const PRIORITIES = Array.from({ length: 10 }, (_, i) => i + 1).map((value) => ({
-  value,
-  label: PRIORITY_LABELS[value] ?? '',
-}))
 
 /**
  * Выбор требуемых навыков: строка поиска с выпадающим списком, выбранные — чипами под ней.

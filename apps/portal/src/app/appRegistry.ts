@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { BookUser, CalendarDays, ClipboardCheck, ListChecks, Plus } from 'lucide-react'
+import { BookUser, CalendarDays, ClipboardCheck, History, ListChecks, Plus } from 'lucide-react'
 import { rolesFor, TP_ROLES } from '../domain/task-planner/permissions'
 
 /**
@@ -221,7 +221,8 @@ export const APPS: AppConfig[] = [
     resources: {
       database: '— no own tables; automatic sync via pg_cron (4 jobs) + pg_net',
       tables: [],
-      edgeFunctions: ['manage-sync-schedules (schedule RPCs not present in DB — Save Schedule is a no-op)'],
+      // manage-sync-schedules (наследие Lovable) удалена из Supabase 15.10.2026: расписание — RPC из 0015.
+      edgeFunctions: [],
       external: [
         { name: 'Make.com — Employees sync', detail: 'POST {action:sync_employees} → Airtable (employee contacts)' },
         { name: 'Make.com — Key Vendors sync', detail: 'POST {action:sync_vendors} → Airtable (vendor contacts)' },
@@ -247,6 +248,7 @@ export const APPS: AppConfig[] = [
       { to: '/task-planner/create', label: 'Create Task', icon: Plus, appRoles: rolesFor('create_task') },
       { to: '/task-planner/availability', label: 'Teams Availability', icon: CalendarDays, appRoles: rolesFor('manage_availability') },
       { to: '/task-planner/admin', label: 'Directories', icon: BookUser, appRoles: rolesFor('manage_directories') },
+      { to: '/task-planner/history', label: 'History', icon: History, appRoles: rolesFor('view_history') },
     ],
     appRoles: TP_ROLES,
     webhooks: [

@@ -7,6 +7,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+/** Значение из Airtable совпадает с тем, что лежит в базе (пустое = null). */
+function sameValue(stored: unknown, incoming: unknown): boolean {
+  const norm = (v: unknown) => (v === undefined || v === null || v === '' ? null : typeof v === 'string' ? v : JSON.stringify(v));
+  return norm(stored) === norm(incoming);
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -27,6 +33,8 @@ serve(async (req) => {
     const airtableViewName = Deno.env.get('AIRTABLE_TEAMS_VIEW');
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    // Раньше ключ не объявлялся: геокодинг падал в catch, и координаты бригад синк не обновлял.
+    const googleApiKey = Deno.env.get('GOOGLE_PLACES_API_KEY');
 
     if (!airtableApiKey) {
       throw new Error('AIRTABLE_API_KEY environment variable is required');
@@ -114,168 +122,142 @@ serve(async (req) => {
       });
     }
 
-    // Process and sync teams
+    // Пишем только разницу (как в sync-airtable-projects): текущие бригады — одним запросом,
+    // запись трогаем, только если поле поменялось, геокодим только новый/изменённый адрес
+    // или бригаду без координат.
+    const { data: existingRows, error: existingError } = await supabase
+      .from('tp_teams')
+      .select('id, airtable_id, name, email, address, slack_id, latitude, longitude, is_active');
+    if (existingError) throw existingError;
+    const byAirtableId = new Map((existingRows ?? []).filter((r) => r.airtable_id).map((r) => [r.airtable_id, r]));
+
+    const geocode = async (address: string, label: string) => {
+      try {
+        const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${googleApiKey}`;
+        const geocodeData = await (await fetch(geocodeUrl)).json();
+        if (geocodeData.status === 'OK' && geocodeData.results?.length > 0) {
+          const { lat, lng } = geocodeData.results[0].geometry.location;
+          return { lat, lng };
+        }
+        console.warn('Geocoding returned no result for team:', label, geocodeData.status);
+      } catch (geocodeError) {
+        console.warn('Failed to geocode address for team:', label, geocodeError);
+      }
+      return null;
+    };
+
     const syncedTeams = [];
-    
+    let unchanged = 0;
+
     for (const record of allRecords) {
       const fields = record.fields;
-      
-      // Log all available fields from the first record to help identify Slack ID field
-      if (allRecords.indexOf(record) === 0) {
-        console.log('First record fields:', JSON.stringify(fields, null, 2));
-        console.log('Available field names:', Object.keys(fields));
-      }
-      
-        // Map Airtable fields to our database schema
-        const teamData = {
-          airtable_id: record.id,
-          name: (() => {
-            // Try single name fields first
-            const singleNameField = fields['Team Name'] || fields['Full Name'] || fields.name || fields.Title || fields.title;
-            if (singleNameField) {
-              if (Array.isArray(singleNameField)) {
-                return singleNameField[0] || 'Unnamed Team';
-              }
-              return singleNameField;
-            }
-            
-            // Try combining two fields (F_name + L_name, etc.)
-            const firstName = fields['F_name'] || fields['First Name'] || fields.firstName || fields['first_name'];
-            const lastName = fields['L_name'] || fields['Last Name'] || fields.lastName || fields['last_name'];
-            
-            if (firstName || lastName) {
-              const combinedName = [firstName, lastName].filter(Boolean).join(' ').trim();
-              return combinedName || 'Unnamed Team';
-            }
-            
-            return 'Unnamed Team';
-          })(),
-          email: fields['Email'] || fields.email || fields['Team Email'] || null,
-          address: fields['Address'] || fields.address || fields['Team Address'] || fields['Location'] || fields.location || null,
-          slack_id: fields['Slack user ID'] || fields['Slack ID'] || fields.slack_id || null,
-        };
 
-        console.log('Team data with slack_id:', teamData.name, 'slack_id:', teamData.slack_id);
-
-        // Geocode address if it exists and coordinates are not already set
-        let coordinates = null;
-        if (teamData.address) {
-          try {
-            const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(teamData.address)}&key=${googleApiKey}`;
-            const geocodeResponse = await fetch(geocodeUrl);
-            const geocodeData = await geocodeResponse.json();
-            
-            if (geocodeData.status === 'OK' && geocodeData.results && geocodeData.results.length > 0) {
-              const location = geocodeData.results[0].geometry.location;
-              coordinates = {
-                lat: location.lat,
-                lng: location.lng
-              };
-              console.log('Geocoded address for team:', teamData.name, coordinates);
+      // Map Airtable fields to our database schema
+      const teamData = {
+        airtable_id: record.id,
+        name: (() => {
+          // Try single name fields first
+          const singleNameField = fields['Team Name'] || fields['Full Name'] || fields.name || fields.Title || fields.title;
+          if (singleNameField) {
+            if (Array.isArray(singleNameField)) {
+              return singleNameField[0] || 'Unnamed Team';
             }
-          } catch (geocodeError) {
-            console.warn('Failed to geocode address for team:', teamData.name, geocodeError);
+            return singleNameField;
           }
-        }
 
-      console.log('Processing team:', teamData.name);
+          // Try combining two fields (F_name + L_name, etc.)
+          const firstName = fields['F_name'] || fields['First Name'] || fields.firstName || fields['first_name'];
+          const lastName = fields['L_name'] || fields['Last Name'] || fields.lastName || fields['last_name'];
 
-      // Check if team already exists
-      const { data: existingTeam } = await supabase
-        .from('tp_teams')
-        .select('id, coordinates, latitude, longitude')
-        .eq('airtable_id', record.id)
-        .single();
+          if (firstName || lastName) {
+            const combinedName = [firstName, lastName].filter(Boolean).join(' ').trim();
+            return combinedName || 'Unnamed Team';
+          }
 
-      if (existingTeam) {
-        // Update existing team
-        // Only update coordinates if we got new ones or if team doesn't have coordinates yet
-        const updateData = coordinates && (!existingTeam.latitude || !existingTeam.longitude)
-          ? { 
-              name: teamData.name,
-              email: teamData.email,
-              address: teamData.address,
-              slack_id: teamData.slack_id,
-              coordinates,
-              latitude: coordinates.lat,
-              longitude: coordinates.lng,
-              updated_at: new Date().toISOString(),
-            }
-          : { 
-              name: teamData.name,
-              email: teamData.email,
-              address: teamData.address,
-              slack_id: teamData.slack_id,
-              updated_at: new Date().toISOString(),
-            };
-            
-        const { error: updateError } = await supabase
-          .from('tp_teams')
-          .update(updateData)
-          .eq('airtable_id', record.id);
+          return 'Unnamed Team';
+        })(),
+        email: fields['Email'] || fields.email || fields['Team Email'] || null,
+        address: fields['Address'] || fields.address || fields['Team Address'] || fields['Location'] || fields.location || null,
+        slack_id: fields['Slack user ID'] || fields['Slack ID'] || fields.slack_id || null,
+      };
 
-        if (updateError) {
-          console.error('Error updating team:', updateError);
-        } else {
-          console.log('Updated team:', teamData.name);
-          syncedTeams.push({ 
-            ...teamData, 
-            latitude: coordinates?.lat || existingTeam.latitude,
-            longitude: coordinates?.lng || existingTeam.longitude,
-            action: 'updated' 
-          });
-        }
-      } else {
-        // Insert new team
-        const insertData = coordinates
-          ? { 
-              ...teamData,
-              slack_id: teamData.slack_id,
-              coordinates,
-              latitude: coordinates.lat,
-              longitude: coordinates.lng,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            }
-          : { 
-              ...teamData,
-              slack_id: teamData.slack_id,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            };
-            
+      const existing = byAirtableId.get(record.id);
+
+      if (!existing) {
+        const coordinates = teamData.address ? await geocode(teamData.address, teamData.name) : null;
+        const now = new Date().toISOString();
         const { error: insertError } = await supabase
           .from('tp_teams')
-          .insert(insertData);
+          .insert({
+            ...teamData,
+            ...(coordinates ? { coordinates, latitude: coordinates.lat, longitude: coordinates.lng } : {}),
+            created_at: now,
+            updated_at: now,
+          });
 
         if (insertError) {
-          console.error('Error inserting team:', insertError);
+          console.error('Error inserting team:', teamData.name, insertError);
         } else {
           console.log('Inserted team:', teamData.name);
-          syncedTeams.push({ 
-            ...teamData, 
-            latitude: coordinates?.lat,
-            longitude: coordinates?.lng,
-            action: 'created' 
-          });
+          syncedTeams.push({ ...teamData, latitude: coordinates?.lat, longitude: coordinates?.lng, action: 'created' });
         }
+        continue;
+      }
+
+      const changes: Record<string, unknown> = {};
+      for (const key of ['name', 'email', 'address', 'slack_id'] as const) {
+        if (sameValue(existing[key], teamData[key])) continue;
+        changes[key] = teamData[key];
+      }
+      // Вернулась в представление Airtable — снова активна.
+      if (existing.is_active === false) changes.is_active = true;
+
+      if (teamData.address && ('address' in changes || existing.latitude == null || existing.longitude == null)) {
+        const coordinates = await geocode(teamData.address, teamData.name);
+        if (coordinates) Object.assign(changes, { coordinates, latitude: coordinates.lat, longitude: coordinates.lng });
+      }
+
+      if (Object.keys(changes).length === 0) {
+        unchanged++;
+        continue;
+      }
+
+      const { error: updateError } = await supabase
+        .from('tp_teams')
+        .update({ ...changes, updated_at: new Date().toISOString() })
+        .eq('id', existing.id);
+
+      if (updateError) {
+        console.error('Error updating team:', teamData.name, updateError);
+      } else {
+        console.log('Updated team:', teamData.name, Object.keys(changes).join(', '));
+        syncedTeams.push({
+          ...teamData,
+          latitude: (changes.latitude as number | undefined) ?? existing.latitude,
+          longitude: (changes.longitude as number | undefined) ?? existing.longitude,
+          action: 'updated',
+          changed: Object.keys(changes),
+        });
       }
     }
 
-    // Clean up teams that are no longer in the Airtable view
+    // Бригады, которых больше нет в представлении Airtable, — неактивны (миграция 0037).
+    // Раньше удалялись: задачи оставались со ссылкой в никуда, доступность пропадала.
     const syncedAirtableIds = allRecords.map(record => record.id);
-    const { error: cleanupError } = await supabase
+    const { data: deactivated, error: deactivateError } = await supabase
       .from('tp_teams')
-      .delete()
-      .not('airtable_id', 'in', `(${syncedAirtableIds.map(id => `"${id}"`).join(',')})`);
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .not('airtable_id', 'in', `(${syncedAirtableIds.map(id => `"${id}"`).join(',')})`)
+      .eq('is_active', true)
+      .select('id');
 
-    if (cleanupError) {
-      console.error('Error cleaning up old teams:', cleanupError);
+    if (deactivateError) {
+      console.error('Error deactivating old teams:', deactivateError);
     } else {
-      console.log('Cleaned up teams not in current Airtable view');
+      console.log('Deactivated teams not in current Airtable view:', deactivated?.length ?? 0);
     }
 
-    console.log('Sync completed. Teams processed:', syncedTeams.length);
+    console.log('Sync completed. Written:', syncedTeams.length, 'unchanged:', unchanged);
 
     // Update sync log with success
     if (logId) {
@@ -292,6 +274,9 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       message: 'Airtable teams sync completed successfully',
       synced: syncedTeams.length,
+      fetched: allRecords.length,
+      unchanged,
+      deactivated: deactivated?.length ?? 0,
       teams: syncedTeams
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

@@ -50,6 +50,7 @@ export type TpCapability =
   | 'manage_availability'
   | 'manage_overtime'
   | 'manage_directories'
+  | 'view_history' // история изменений модуля (portal_audit_log, миграция 0034)
 
 /** Матрица BAS-1509: кому доступна каждая возможность. */
 const MATRIX: Record<TpCapability, TpRole[]> = {
@@ -70,6 +71,7 @@ const MATRIX: Record<TpCapability, TpRole[]> = {
   manage_availability: ['admin', 'pm', 'schedule_manager'],
   manage_overtime: ['admin', 'pm', 'schedule_manager'],
   manage_directories: ['admin'],
+  view_history: ['admin', 'pm', 'schedule_manager'],
 }
 
 export function rolesFor(cap: TpCapability): TpRole[] {

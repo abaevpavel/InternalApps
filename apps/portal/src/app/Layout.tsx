@@ -5,9 +5,11 @@ import { ArrowLeft, LogOut, Menu, Settings, SlidersHorizontal, UserRound } from 
 import { useAuth } from '../auth/AuthProvider'
 import { currentAppForPath, visibleNavItems } from './appRegistry'
 import { useCurrentAppRoles } from './AppRoleContext'
+import { useAppHeaderNote } from './AppHeaderNote'
 import { ReleasesBell } from '../components/ReleasesBell'
 import { useUnsavedRegistry } from './UnsavedChangesContext'
 import { Button, Modal } from '../components/ui'
+import { cn } from '../lib/utils'
 
 /**
  * Заголовок хедера — портальные страницы.
@@ -28,6 +30,7 @@ const APP_SCREEN_TITLES: [prefix: string, title: string][] = [
   ['/task-planner/create', 'CREATE TASK'],
   ['/task-planner/availability', 'TEAMS AVAILABILITY'],
   ['/task-planner/admin', 'DIRECTORIES'],
+  ['/task-planner/history', 'HISTORY'],
   ['/task-planner', 'TASKS'],
 ]
 
@@ -74,6 +77,8 @@ export function Layout() {
     goBack()
   }
   const title = headerTitle(pathname, currentAppName)
+  // Строка состояния апки под заголовком (Task Planner — время синка с Airtable).
+  const headerNote = useAppHeaderNote()
 
   useEffect(() => {
     if (!open) return
@@ -95,7 +100,17 @@ export function Layout() {
         <button onClick={() => nav('/')} aria-label="Go to My Applications" className="rounded transition hover:opacity-80">
           <img src="/logo.png" alt="Basement Remodeling" className="h-9 w-auto" />
         </button>
-        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold tracking-wide">{title}</h1>
+        <div className="absolute left-1/2 flex -translate-x-1/2 flex-col items-center">
+          <h1 className="text-lg font-semibold tracking-wide">{title}</h1>
+          {headerNote && (
+            <span
+              title={headerNote.title}
+              className={cn('text-xs', headerNote.tone === 'warning' ? 'text-amber-300' : 'text-white/60')}
+            >
+              {headerNote.text}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-2">
         {/* Обновления приложений — только роль Developer (компонент сам скрывается для остальных). */}
         <ReleasesBell />

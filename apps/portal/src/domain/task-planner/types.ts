@@ -162,7 +162,7 @@ export interface Task {
   assigned_team_id: string | null
   assigned_team_name?: string
   assigned_team_home_base?: string
-  priority: number
+  priority: import('./priority').TaskPriority
   required_skill_ids: string[]
   schedule_prompt: string | null
   additional_stop: AdditionalStop | null
