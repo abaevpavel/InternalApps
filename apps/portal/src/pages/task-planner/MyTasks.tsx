@@ -70,8 +70,8 @@ export function MyTasksPage() {
   const [preset, setPreset] = useState<RangePreset | null>('this_week')
   // null — без фильтра по датам (кнопка All dates).
   const [range, setRange] = useState<{ from: string; to: string } | null>(() => presetRange('this_week', today))
-  // Бригада (BAS-1511) смотрит один день; по умолчанию завтра.
-  const [day, setDay] = useState(() => defaultCrewDay(today))
+  // Бригада (BAS-1511) смотрит один день; по умолчанию завтра. null — без фильтра (All dates).
+  const [day, setDay] = useState<string | null>(() => defaultCrewDay(today))
   const isCrew = mode === 'crew'
   const badRange = !isCrew && !!range && range.from > range.to
   const [list, setList] = useState<OwnList>('uncompleted')
@@ -83,7 +83,8 @@ export function MyTasksPage() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: isCrew ? ['tp-own-tasks', 'day', day] : ['tp-own-tasks', range?.from ?? null, range?.to ?? null],
-    queryFn: () => (isCrew ? fetchTasksForDay(day) : fetchTasksInRange(range?.from, range?.to)),
+    queryFn: () =>
+      isCrew ? (day ? fetchTasksForDay(day) : fetchTasksInRange()) : fetchTasksInRange(range?.from, range?.to),
     enabled: !badRange,
   })
 
@@ -123,7 +124,9 @@ export function MyTasksPage() {
     mode === 'pm'
       ? 'Tasks where you are the PM, from the approved schedule. Older tasks without a PM or author are shown to every PM.'
       : teamName
-        ? `Tasks of ${teamName} for the selected day.`
+        ? day || !isCrew
+          ? `Tasks of ${teamName} for the selected day.`
+          : `All tasks of ${teamName}.`
         : 'No crew is linked to your email, so there are no tasks to show.'
 
   return (
@@ -203,7 +206,7 @@ export function MyTasksPage() {
       {isLoading && <Card className="p-8 text-center text-gray-500">Loading…</Card>}
       {!isLoading && !error && days.length === 0 && !badRange && (
         <Card className="p-8 text-center text-gray-500">
-          No {list} tasks {isCrew ? 'for this day' : range ? 'in this period' : 'yet'}.
+          No {list} tasks {isCrew ? (day ? 'for this day' : 'yet') : range ? 'in this period' : 'yet'}.
         </Card>
       )}
 
@@ -271,8 +274,12 @@ export function MyTasksPage() {
 
 /* ---------------- День бригады ---------------- */
 
-/** Календарь бригады (BAS-1511): стрелки на день назад / вперёд, дата, быстрые Yesterday / Today / Tomorrow. */
-function DayPicker({ day, today, onChange }: { day: string; today: string; onChange: (d: string) => void }) {
+/**
+ * Календарь бригады (BAS-1511): стрелки на день назад / вперёд, дата, быстрые Yesterday / Today /
+ * Tomorrow и All dates — сбросить фильтр (`null`). Стрелки без выбранного дня считают от завтра.
+ */
+function DayPicker({ day, today, onChange }: { day: string | null; today: string; onChange: (d: string | null) => void }) {
+  const base = day ?? shiftDay(today, 1)
   const quick = [
     { label: 'Yesterday', value: shiftDay(today, -1) },
     { label: 'Today', value: today },
@@ -281,11 +288,11 @@ function DayPicker({ day, today, onChange }: { day: string; today: string; onCha
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex items-center gap-1">
-        <Button variant="outline" className="px-2 py-1" aria-label="Previous day" onClick={() => onChange(shiftDay(day, -1))}>
+        <Button variant="outline" className="px-2 py-1" aria-label="Previous day" onClick={() => onChange(shiftDay(base, -1))}>
           <ChevronLeft size={16} />
         </Button>
-        <Input type="date" className="w-40 py-1" value={day} onChange={(e) => e.target.value && onChange(e.target.value)} />
-        <Button variant="outline" className="px-2 py-1" aria-label="Next day" onClick={() => onChange(shiftDay(day, 1))}>
+        <Input type="date" className="w-40 py-1" value={day ?? ''} onChange={(e) => e.target.value && onChange(e.target.value)} />
+        <Button variant="outline" className="px-2 py-1" aria-label="Next day" onClick={() => onChange(shiftDay(base, 1))}>
           <ChevronRight size={16} />
         </Button>
       </div>
@@ -304,6 +311,18 @@ function DayPicker({ day, today, onChange }: { day: string; today: string; onCha
           {q.label}
         </button>
       ))}
+      <button
+        type="button"
+        onClick={() => onChange(null)}
+        className={cn(
+          'rounded-full border px-3 py-1 text-xs font-medium transition',
+          day === null
+            ? 'border-brand-blue bg-brand-blue text-white'
+            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300',
+        )}
+      >
+        All dates
+      </button>
     </div>
   )
 }
