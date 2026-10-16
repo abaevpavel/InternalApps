@@ -191,7 +191,7 @@ export function MyTasksPage() {
           tabs={OWN_LISTS.map((l) => ({
             key: l.key,
             label: (
-              <span>
+              <span className="whitespace-nowrap">
                 {l.label} <span className="text-gray-400">{counts[l.key]}</span>
               </span>
             ),
@@ -285,8 +285,14 @@ function DayPicker({ day, today, onChange }: { day: string | null; today: string
     { label: 'Today', value: today },
     { label: 'Tomorrow', value: shiftDay(today, 1) },
   ]
+  const chip = (active: boolean) =>
+    cn(
+      'whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-medium transition sm:px-3',
+      active ? 'border-brand-blue bg-brand-blue text-white' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300',
+    )
+  // Две строки: календарь со стрелками, под ним быстрые кнопки одной строкой. На телефоне — по центру.
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col items-center gap-2 sm:items-start">
       <div className="flex items-center gap-1">
         <Button variant="outline" className="px-2 py-1" aria-label="Previous day" onClick={() => onChange(shiftDay(base, -1))}>
           <ChevronLeft size={16} />
@@ -296,33 +302,16 @@ function DayPicker({ day, today, onChange }: { day: string | null; today: string
           <ChevronRight size={16} />
         </Button>
       </div>
-      {quick.map((q) => (
-        <button
-          key={q.label}
-          type="button"
-          onClick={() => onChange(q.value)}
-          className={cn(
-            'rounded-full border px-3 py-1 text-xs font-medium transition',
-            day === q.value
-              ? 'border-brand-blue bg-brand-blue text-white'
-              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300',
-          )}
-        >
-          {q.label}
+      <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2">
+        {quick.map((q) => (
+          <button key={q.label} type="button" onClick={() => onChange(q.value)} className={chip(day === q.value)}>
+            {q.label}
+          </button>
+        ))}
+        <button type="button" onClick={() => onChange(null)} className={chip(day === null)}>
+          All dates
         </button>
-      ))}
-      <button
-        type="button"
-        onClick={() => onChange(null)}
-        className={cn(
-          'rounded-full border px-3 py-1 text-xs font-medium transition',
-          day === null
-            ? 'border-brand-blue bg-brand-blue text-white'
-            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300',
-        )}
-      >
-        All dates
-      </button>
+      </div>
     </div>
   )
 }

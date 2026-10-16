@@ -96,22 +96,23 @@ export function Layout() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <header className="relative z-30 flex items-center justify-between bg-brand-dark px-6 py-4 text-white">
-        <button onClick={() => nav('/')} aria-label="Go to My Applications" className="rounded transition hover:opacity-80">
-          <img src="/logo.png" alt="Basement Remodeling" className="h-9 w-auto" />
+      {/* На телефоне заголовок стоит между логотипом и меню (мельче, с обрезкой), с sm — по центру шапки. */}
+      <header className="relative z-30 flex items-center justify-between gap-2 bg-brand-dark px-4 py-3 text-white sm:px-6 sm:py-4">
+        <button onClick={() => nav('/')} aria-label="Go to My Applications" className="shrink-0 rounded transition hover:opacity-80">
+          <img src="/logo.png" alt="Basement Remodeling" className="h-7 w-auto sm:h-9" />
         </button>
-        <div className="absolute left-1/2 flex -translate-x-1/2 flex-col items-center">
-          <h1 className="text-lg font-semibold tracking-wide">{title}</h1>
+        <div className="flex min-w-0 flex-1 flex-col items-center sm:absolute sm:left-1/2 sm:flex-none sm:-translate-x-1/2">
+          <h1 className="w-full truncate text-center text-xs font-semibold tracking-wide sm:w-auto sm:text-lg">{title}</h1>
           {headerNote && (
             <span
               title={headerNote.title}
-              className={cn('text-xs', headerNote.tone === 'warning' ? 'text-amber-300' : 'text-white/60')}
+              className={cn('max-w-full truncate text-[10px] sm:text-xs', headerNote.tone === 'warning' ? 'text-amber-300' : 'text-white/60')}
             >
               {headerNote.text}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
         {/* Обновления приложений — только роль Developer (компонент сам скрывается для остальных). */}
         <ReleasesBell />
         <div ref={menuRef}>
