@@ -128,7 +128,7 @@ export function ImportTab() {
     <div>
       <p className="mb-6 text-sm text-gray-500">One export into TRANSACTIONS. Matching, employees and projects are filled afterwards.</p>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,460px)_minmax(0,1fr)]">
         <Card className="h-fit space-y-5 p-6">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-base font-semibold text-gray-900">New import</h2>

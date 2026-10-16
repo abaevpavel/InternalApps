@@ -41,7 +41,7 @@ export function CommissionAppPage() {
   const [tab, setTab] = useState<'confirm' | 'history'>(parsed.ids.length ? 'confirm' : 'history')
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto w-full max-w-5xl px-4 sm:px-6">
       <PageTitle
         title="Commission App"
         subtitle="Confirm commission payouts for Change Orders. Every confirmation is saved with the account that confirmed it."

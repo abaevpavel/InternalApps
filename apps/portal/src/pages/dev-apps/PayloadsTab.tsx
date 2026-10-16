@@ -285,7 +285,7 @@ function ScenarioList({
                     )}
                   </div>
                 )}
-                <div className="grid gap-3 xl:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                     <div className="min-w-0">
                       <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">Current — mark what to delete</p>
                       <PayloadTreeView fields={sentFields} filter={filter} scope={scope} marks={scopeMarks} readers={readers.get(scope) ?? new Map()} />

@@ -562,7 +562,7 @@ function ListingRow({
         </div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,260px)]">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,260px)]">
         <Field label="Name this listing should keep" hint={l.registryName ? `Agent keeps it as: ${l.registryName}` : undefined}>
           <Input
             value={l.desiredName ?? ''}

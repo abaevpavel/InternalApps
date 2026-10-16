@@ -38,7 +38,7 @@ export function AvailabilityPage() {
   return (
     <div>
       <PageTitle title="Teams Availability" subtitle="Manage team unavailable dates and periods" />
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card className="p-6">
           <h2 className="mb-1 text-lg font-semibold text-gray-900">Add Unavailable Period</h2>
           <p className="mb-4 text-sm text-gray-500">Select a team and specify when they will be unavailable</p>

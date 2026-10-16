@@ -73,7 +73,7 @@ export function GmailAutoSenderPage() {
 
       {/* instructions */}
       <h2 className="mt-12 text-center text-xl font-bold text-gray-900">What to expect during Gmail authorization</h2>
-      <div className="mt-6 grid gap-5 md:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2">
         <InstructionTile
           n={1}
           tone="amber"

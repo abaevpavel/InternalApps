@@ -262,7 +262,7 @@ function Requested({ goProposed }: { goProposed: () => void }) {
               <StatusBadge tone={tone}>{label}</StatusBadge>
               <span className="text-sm text-gray-500">{list.length} tasks</span>
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {list.map((t) => (
                 <TaskCardCompact key={t.id} t={t} canChangePm={can('edit_task')}
                   onDelete={can('delete_task')
@@ -286,13 +286,13 @@ function TaskCardCompact({ t, canChangePm, onDelete }: { t: Task; canChangePm: b
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="truncate font-semibold text-gray-900">{title}</span>
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate font-semibold text-gray-900">{title}</span>
             <Badge className="shrink-0 bg-accent-50 text-accent-700">{t.task_type}</Badge>
           </div>
-          <div className="flex min-w-0 items-center gap-1 text-xs text-gray-500">
-            <span className="truncate">{[t.project_name, t.task_address].filter(Boolean).join(' · ')}</span>
+          <div className="flex min-w-0 flex-wrap items-center gap-1 text-xs text-gray-500">
+            <span className="min-w-0 truncate">{[t.project_name, t.task_address].filter(Boolean).join(' · ')}</span>
             {canChangePm
               ? <TaskPmPicker t={t} />
               : <TaskPmName t={t} />}
@@ -565,7 +565,7 @@ function TaskEditModal({ task, onClose, onSaved }: {
           <label className="mb-1 block text-xs font-medium text-gray-500">Description</label>
           <Input value={form.description ?? ''} onChange={(e) => set({ description: e.target.value })} />
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-500">Duration (min)</label>
             <Input type="number" value={form.estimated_duration_min ?? 0}

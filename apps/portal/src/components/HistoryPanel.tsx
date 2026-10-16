@@ -83,7 +83,7 @@ function FieldChange({ field, before, after, action }: { field: string; before: 
   const a = formatValue(after)
   const cut = b.cut || a.cut
   return (
-    <div className="grid gap-1 sm:grid-cols-[160px_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 gap-1 sm:grid-cols-[160px_minmax(0,1fr)]">
       <dt className="font-mono text-xs text-gray-500">{field}</dt>
       <dd className="min-w-0 text-xs [overflow-wrap:anywhere]">
         {action !== 'insert' && <span className="whitespace-pre-wrap text-red-700 line-through decoration-red-300">{full ? b.full : b.short}</span>}

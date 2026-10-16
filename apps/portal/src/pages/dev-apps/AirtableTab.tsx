@@ -38,7 +38,7 @@ export function AirtableTab() {
   const junk = current.table.fields.filter((f) => f.junk).length
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
       <nav className="space-y-4 text-sm">
         <p className="text-xs text-gray-400">Schema of {new Date(schema.generatedAt).toLocaleDateString('en-US')} — structure only, no records.</p>
         {schema.bases.map((b) => (

@@ -232,7 +232,7 @@ export function SalesEmailSenderPage() {
           </div>
         </div>
 
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <Field label="Email Subject">
             <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject…" />
           </Field>
@@ -247,7 +247,7 @@ export function SalesEmailSenderPage() {
           </Field>
         </div>
 
-        <div className="mt-5 grid gap-5 md:grid-cols-3">
+        <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-3">
           <Field label="Date 1"><DatePicker value={date1} onChange={setDate1} /></Field>
           <Field label="Date 2"><DatePicker value={date2} onChange={setDate2} /></Field>
           <Field label="Date 3"><DatePicker value={date3} onChange={setDate3} /></Field>
@@ -258,7 +258,7 @@ export function SalesEmailSenderPage() {
           <ReactQuill theme="snow" value={content} onChange={setContent} modules={quillModules} />
         </div>
 
-        <div className="mt-6 grid items-end gap-5 md:grid-cols-3">
+        <div className="mt-6 grid grid-cols-1 items-end gap-5 md:grid-cols-3">
           <Field label="Send Email From">
             <Input
               type="email"

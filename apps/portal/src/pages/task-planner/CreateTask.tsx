@@ -132,7 +132,7 @@ export function CreateTaskPage() {
       />
 
       <Card className="space-y-5 p-6">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {mode === 'project' && (
             <Field label="Select Project" required>
               <Select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
@@ -161,7 +161,7 @@ export function CreateTaskPage() {
             rows={4} placeholder="Please be very specific…" />
         </Field>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field label="Date" required>
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
@@ -185,7 +185,7 @@ export function CreateTaskPage() {
           </Field>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Assigned Team">
             <Select value={teamId} onChange={(e) => setTeamId(e.target.value)}>
               <option value="">No preference</option>

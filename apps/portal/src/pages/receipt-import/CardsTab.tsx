@@ -225,7 +225,7 @@ export function CardsTab() {
           />
         )}
         {/* Две колонки: у человека обычно 1–4 карты, на всю ширину карточка была пустой. */}
-        <div className="grid items-start gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 items-start gap-3 md:grid-cols-2">
           {active.map((e) => (
             <EmployeeBlock key={e.id} employee={e} cards={cardsOf(e.id, cards)} act={act} />
           ))}
@@ -238,7 +238,7 @@ export function CardsTab() {
               {showLeft ? 'Hide' : 'Show'} people no longer in Airtable ({left.length})
             </button>
             {showLeft && (
-              <div className="mt-3 grid items-start gap-3 opacity-80 md:grid-cols-2">
+              <div className="mt-3 grid grid-cols-1 items-start gap-3 opacity-80 md:grid-cols-2">
                 {left.map((e) => (
                   <EmployeeBlock key={e.id} employee={e} cards={cardsOf(e.id, cards)} act={act} />
                 ))}

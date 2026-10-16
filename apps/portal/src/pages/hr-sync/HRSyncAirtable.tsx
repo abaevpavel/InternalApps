@@ -21,7 +21,7 @@ export function HRSyncAirtablePage() {
   return (
     <div className="mx-auto w-full max-w-[1200px] px-4 py-10 sm:px-6">
       <PageTitle title="HR Sync — Airtable Contacts" subtitle="Trigger contact syncs to Airtable via Make.com." />
-      <div className="grid gap-5 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         <SyncCard
           type="employees"
           title="Employee Contacts"

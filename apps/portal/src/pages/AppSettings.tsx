@@ -242,7 +242,7 @@ function AppIdentityCard({ app }: { app: AppConfig }) {
         <p className="text-sm text-gray-400">This app has no row in the applications table yet.</p>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,240px)]">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,240px)]">
             <Field label="App name" hint="Shown with the department in front, e.g. “02-SALES — Send an Offer Email”: on the My Applications card, in the header and in the menu.">
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="App name" />
             </Field>

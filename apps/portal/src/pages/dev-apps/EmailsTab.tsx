@@ -173,7 +173,7 @@ function EmailModal({ scenario, email: e, onClose }: { scenario: ScenarioEntry; 
       }
     >
       <div className="space-y-4">
-        <dl className="grid gap-x-4 gap-y-1.5 text-sm sm:grid-cols-[100px_minmax(0,1fr)]">
+        <dl className="grid grid-cols-1 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-[100px_minmax(0,1fr)]">
           <Row label="Sent when" value={e.condition ?? 'Always, whenever the scenario reaches this module'} />
           <Row label="From" value={e.from} />
           <Row label="To" value={e.to.join(', ')} />
