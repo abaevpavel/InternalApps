@@ -42,14 +42,14 @@ export function MyAccountPage() {
 
   return (
     <div className="mx-auto w-full max-w-[1200px] px-4 py-10 sm:px-6">
-      <Card className="flex items-center gap-8 p-8">
-        <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-purple-100 text-2xl font-semibold text-purple-700">
+      <Card className="flex flex-col items-center gap-4 p-5 text-center sm:flex-row sm:gap-8 sm:p-8 sm:text-left">
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-purple-100 text-2xl sm:h-24 sm:w-24 font-semibold text-purple-700">
           {initials(name, profile.email)}
         </div>
 
-        <div className="min-w-0">
+        <div className="w-full min-w-0 sm:w-auto">
           {editing ? (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
               <Input value={first} onChange={(e) => setFirst(e.target.value)} placeholder="First" className="max-w-[10rem]" autoFocus />
               <Input value={last} onChange={(e) => setLast(e.target.value)} placeholder="Last" className="max-w-[10rem]" />
               <Button variant="primary" onClick={save} disabled={saving} aria-label="save">
@@ -60,8 +60,8 @@ export function MyAccountPage() {
               </Button>
             </div>
           ) : (
-            <div className="flex items-center gap-3">
-              <h2 className="truncate text-3xl font-bold text-gray-900">{name || profile.email}</h2>
+            <div className="flex items-center justify-center gap-3 sm:justify-start">
+              <h2 className="truncate text-2xl sm:text-3xl font-bold text-gray-900">{name || profile.email}</h2>
               <button onClick={startEdit} className="text-gray-400 hover:text-gray-600" aria-label="edit name">
                 <Pencil size={17} />
               </button>
@@ -71,7 +71,7 @@ export function MyAccountPage() {
 
           <p className="mt-1 text-gray-500">{profile.email}</p>
 
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
             {profile.roles.length ? (
               profile.roles.map((r) => (
                 <Badge key={r.id} className="bg-green-50 text-green-700">{r.name}</Badge>

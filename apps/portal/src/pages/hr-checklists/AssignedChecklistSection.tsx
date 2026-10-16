@@ -234,10 +234,10 @@ export function AssignedChecklistSection({
   if (standalone) {
     return (
       <>
-        <Card className="mb-4 p-6">
+        <Card className="mb-4 p-4 sm:p-6">
           <div className="mb-1 flex flex-wrap items-start justify-between gap-4">
             <h1 className="text-2xl font-bold text-gray-900">{checklist?.name ?? 'Checklist'}</h1>
-            <div className="flex items-center gap-5">
+            <div className="flex flex-wrap items-center gap-3 sm:gap-5">
               <Toggle label="Hide N/A Items" icon value={hideNA} onChange={setHideNA} />
               <Toggle label="Hide Checklist" value={hideList} onChange={setHideList} />
               {employee && (

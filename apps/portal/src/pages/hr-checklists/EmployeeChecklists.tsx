@@ -68,7 +68,7 @@ export function EmployeeChecklistsPage() {
             <Plus size={16} /> Add Employee
           </Button>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3">
           <span className="shrink-0 text-sm text-gray-600">Select Employee</span>
           <SearchableCombobox
             className="max-w-md flex-1"
@@ -92,7 +92,7 @@ export function EmployeeChecklistsPage() {
             <Plus size={16} /> Add Checklist
           </Button>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3">
           <span className="shrink-0 text-sm text-gray-600">Select Checklist</span>
           <SearchableCombobox
             className="max-w-md flex-1"
@@ -108,9 +108,9 @@ export function EmployeeChecklistsPage() {
       {/* Assigned checklists for the selected employee */}
       {selectedEmployeeId && employee && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-bold text-gray-900">{fullName(employee)} — assigned checklists</h2>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {(assignmentsQ.data ?? []).length > 0 && (
                 <>
                   <Button variant="blue" onClick={() => nav(`/checklists/${selectedEmployeeId}`)}>

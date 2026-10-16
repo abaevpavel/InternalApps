@@ -32,7 +32,7 @@ export function GmailAutoSenderPage() {
   return (
     <div className="mx-auto w-full max-w-[1200px] px-4 py-10 sm:px-6">
       {/* form card */}
-      <Card className="mx-auto max-w-2xl px-8 py-10">
+      <Card className="mx-auto max-w-2xl px-5 py-8 sm:px-8 sm:py-10">
         <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-brand-blue">
           <Mail size={28} />
         </div>

@@ -95,7 +95,7 @@ export function PayloadsTab({ catalog }: { catalog: CatalogSnapshot }) {
           value={sub}
           onChange={setSub}
         />
-        <div className="ml-auto flex gap-1">
+        <div className="ml-auto flex flex-wrap gap-1">
           {(['all', 'unused', 'missing', 'delete', 'add'] as const).map((k) => (
             <button
               key={k}
@@ -509,7 +509,7 @@ function PayloadTreeView({
                   {own}
                 </span>
               )}
-              <span className="hidden gap-1 group-hover:flex">
+              <span className="flex gap-1 sm:hidden sm:group-hover:flex">
                 {(branch || planned) && (
                   <button type="button" className="rounded border border-green-300 px-1.5 text-[10px] text-green-800 hover:bg-green-100" onClick={() => setAdding(n.path)}>
                     + Add field
@@ -791,7 +791,7 @@ function SourceEditor({ scenario, current }: { scenario: ScenarioEntry; current:
         <Pencil size={11} className="text-gray-400" />
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-20 mt-1 w-80 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
+        <div className="absolute left-0 top-full z-20 mt-1 w-[min(20rem,calc(100vw-2rem))] rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
           <div className="flex items-center gap-1.5">
             <Input
               autoFocus

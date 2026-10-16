@@ -43,8 +43,8 @@ export function LoginPage() {
         <img src="/logo.png" alt="Basement Remodeling" className="h-10 w-auto" />
       </header>
 
-      <main className="flex flex-1 items-center justify-center p-6">
-        <Card className="w-full max-w-md p-8 text-center">
+      <main className="flex flex-1 items-center justify-center p-4 sm:p-6">
+        <Card className="w-full max-w-md p-6 text-center sm:p-8">
           {denied ? (
             <>
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-500">

@@ -112,13 +112,14 @@ export function Tabs<T extends string>({
   tabs, value, onChange, className,
 }: { tabs: { key: T; label: ReactNode }[]; value: T; onChange: (v: T) => void; className?: string }) {
   return (
-    <div className={cn('flex gap-1 rounded-lg bg-gray-100 p-1', className)}>
+    // На узком экране вкладки не переносят подписи, а прокручиваются вбок.
+    <div className={cn('flex gap-1 overflow-x-auto rounded-lg bg-gray-100 p-1', className)}>
       {tabs.map((t) => (
         <button
           key={t.key}
           onClick={() => onChange(t.key)}
           className={cn(
-            'flex-1 rounded-md py-2 text-sm font-medium transition',
+            'flex-1 shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition',
             value === t.key ? 'bg-white text-gray-900 shadow-card' : 'text-gray-500 hover:text-gray-700',
           )}
         >
@@ -232,13 +233,17 @@ export function Modal({
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className={cn('w-full rounded-xl bg-white shadow-xl', modalSizes[size])} onClick={(e) => e.stopPropagation()}>
-        <div className="border-b border-gray-100 px-6 py-4">
+      {/* Высокое окно на телефоне не обрезается: тело прокручивается, шапка и кнопки на месте. */}
+      <div
+        className={cn('flex max-h-[calc(100dvh-2rem)] w-full flex-col rounded-xl bg-white shadow-xl', modalSizes[size])}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="shrink-0 border-b border-gray-100 px-4 py-4 sm:px-6">
           <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
           {subtitle && <p className="mt-0.5 text-sm text-gray-500">{subtitle}</p>}
         </div>
-        <div className="px-6 py-5 text-sm text-gray-600">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t border-gray-100 px-6 py-4">{footer}</div>}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 text-sm text-gray-600 sm:px-6">{children}</div>
+        {footer && <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-gray-100 px-4 py-4 sm:px-6">{footer}</div>}
       </div>
     </div>
   )
@@ -248,12 +253,12 @@ export function Modal({
 
 export function PageTitle({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
   return (
-    <div className="mb-6 flex items-start justify-between gap-4">
+    <div className="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-6">
       <div className="max-w-2xl">
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900">{title}</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">{title}</h1>
         {subtitle && <p className="mt-1.5 text-sm leading-relaxed text-gray-500">{subtitle}</p>}
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   )
 }

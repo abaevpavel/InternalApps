@@ -78,7 +78,7 @@ export function AdminPage() {
     tab === 'projects' ? <SyncBtn fns={['sync-airtable-projects']} label="Sync from Airtable" /> :
     tab === 'skills' ? <SyncBtn fns={['sync-airtable-skills']} label="Sync from Airtable" /> :
     tab === 'team' ? (
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <SyncBtn fns={['sync-airtable-teams']} label="Sync Teams info" />
         <SyncBtn fns={['sync-airtable-teams', 'sync-airtable-skills']} label="Sync Teams & Skills" />
       </div>
@@ -128,9 +128,9 @@ export function AdminPage() {
             >
               <ul className="divide-y divide-gray-100">
                 {list.map((s, i) => (
-                  <li key={s.id} className="flex gap-4 px-4 py-2.5 text-sm">
+                  <li key={s.id} className="flex gap-3 px-4 py-2.5 text-sm sm:gap-4">
                     <span className="w-6 shrink-0 text-gray-400">{i + 1}</span>
-                    <span className="w-64 shrink-0 font-medium text-gray-900">{s.name}</span>
+                    <span className="w-32 shrink-0 font-medium text-gray-900 sm:w-64">{s.name}</span>
                     <span className="text-gray-500">{s.description || '—'}</span>
                   </li>
                 ))}

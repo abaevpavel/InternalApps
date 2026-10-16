@@ -23,14 +23,14 @@ export function SaveBar({
     ) : null
   }
   return (
-    <div className="fixed inset-x-0 bottom-0 border-t border-gray-100 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex max-w-3xl items-center gap-3 px-6 py-3">
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-100 bg-white/95 backdrop-blur">
+      <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
         <span className="text-sm text-gray-600">
           {count} unsaved {count === 1 ? 'change' : 'changes'}
           {blocking > 0 && <span className="text-red-600"> · {blocking} with errors</span>}
         </span>
         <div className="flex-1" />
-        {error && <span className="text-sm text-red-600">{error}</span>}
+        {error && <span className="basis-full text-sm text-red-600 sm:basis-auto">{error}</span>}
         <Button variant="ghost" onClick={onDiscard} disabled={saving}>Discard</Button>
         <Button variant="primary" onClick={onSave} disabled={saving || blocking > 0}>
           {saving ? 'Saving…' : 'Save changes'}

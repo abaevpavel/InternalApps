@@ -217,12 +217,12 @@ export function SalesEmailSenderPage() {
 
   return (
     <div className="mx-auto w-full max-w-[1200px] px-4 py-8 sm:px-6">
-      <Card className="p-8">
+      <Card className="p-4 sm:p-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900">
             <Send size={22} className="text-brand-blue" /> Sales Email Composer
           </h1>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={() => { setSaveName(''); setErr(null); setDialog('save') }}>
               <Save size={16} /> Save as New
             </Button>

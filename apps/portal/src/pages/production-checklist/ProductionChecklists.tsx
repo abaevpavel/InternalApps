@@ -43,9 +43,9 @@ export function ProductionChecklistsPage() {
 
   return (
     <div className="mx-auto w-full max-w-[1200px] px-4 py-10 sm:px-6">
-      <div className="mb-6 flex items-start justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="flex items-center gap-3 text-3xl font-bold tracking-tight text-gray-900">
+          <h1 className="flex flex-wrap items-center gap-3 text-2xl font-bold sm:text-3xl tracking-tight text-gray-900">
             Production Checklist
             {projects.length > 0 && (
               <span
@@ -248,8 +248,8 @@ function UndoBar({ name, onUndo }: { name: string; onUndo: () => void }) {
   }, [])
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-5">
-      <div className="flex items-center gap-4 rounded-lg bg-gray-900 px-5 py-3 text-sm text-white shadow-lg">
-        <span>
+      <div className="flex max-w-full items-center gap-4 rounded-lg bg-gray-900 px-5 py-3 text-sm text-white shadow-lg">
+        <span className="min-w-0">
           Project <span className="font-semibold">{name}</span> will be deleted in {left}s
         </span>
         <button onClick={onUndo} className="font-semibold text-blue-300 underline-offset-2 hover:underline">
@@ -395,12 +395,12 @@ function TemplatesTab() {
       ) : (
         <div className="space-y-3">
           {(templatesQ.data ?? []).map((t) => (
-            <Card key={t.id} className="flex items-center justify-between p-5">
+            <Card key={t.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
               <div className="min-w-0">
                 <div className="font-bold uppercase tracking-wide text-gray-900">{t.name}</div>
                 {t.description && <div className="mt-0.5 truncate text-sm text-gray-500">{t.description}</div>}
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button variant="subtle" onClick={() => nav(`/production-checklist/${t.id}`)}>
                   Edit Items
                 </Button>

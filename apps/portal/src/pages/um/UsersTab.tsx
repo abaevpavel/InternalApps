@@ -192,7 +192,7 @@ export function UsersTab() {
     <div>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">Users</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">Users</h1>
           <p className="mt-1 text-sm text-gray-500">
             Showing {userCount} users{inviteCount > 0 && ` · ${inviteCount} invited`}.
           </p>

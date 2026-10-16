@@ -397,13 +397,14 @@ export function Tabs<T extends string>({
   tabs, value, onChange, className,
 }: { tabs: { key: T; label: ReactNode }[]; value: T; onChange: (v: T) => void; className?: string }) {
   return (
-    <div className={cn('flex gap-1 rounded-lg bg-gray-100 p-1', className)}>
+    // На узком экране вкладки не переносят подписи, а прокручиваются вбок.
+    <div className={cn('flex gap-1 overflow-x-auto rounded-lg bg-gray-100 p-1', className)}>
       {tabs.map((t) => (
         <button
           key={t.key}
           onClick={() => onChange(t.key)}
           className={cn(
-            'flex-1 rounded-md py-2 text-sm font-medium transition',
+            'flex-1 shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition',
             value === t.key ? 'bg-white text-gray-900 shadow-card' : 'text-gray-500 hover:text-gray-700',
           )}
         >
@@ -551,7 +552,7 @@ export function Modal({
           )}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 text-sm text-gray-600">{children}</div>
-        {footer && <div className="flex shrink-0 justify-end gap-2 border-t border-gray-100 px-6 py-4">{footer}</div>}
+        {footer && <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-gray-100 px-6 py-4">{footer}</div>}
       </div>
     </div>
   )
@@ -561,12 +562,12 @@ export function Modal({
 
 export function PageTitle({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
   return (
-    <div className="mb-4 flex items-start justify-between gap-4 sm:mb-6">
+    <div className="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-6">
       <div className="max-w-2xl">
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">{title}</h1>
         {subtitle && <p className="mt-1.5 text-sm leading-relaxed text-gray-500">{subtitle}</p>}
       </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   )
 }

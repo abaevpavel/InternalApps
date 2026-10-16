@@ -547,7 +547,7 @@ function TaskEditModal({ task, onClose, onSaved }: {
     >
       <div className="space-y-3">
         {confirmDel && (
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             <span className="flex items-center gap-2"><AlertTriangle size={16} /> Delete this task permanently?</span>
             <div className="flex gap-2">
               <Button variant="ghost" className="py-1" disabled={busy} onClick={() => setConfirmDel(false)}>No</Button>
@@ -1373,7 +1373,7 @@ function RecalcModal({
           </div>
 
           {/* было/стало по времени задач */}
-          <div className="overflow-hidden rounded-lg border border-gray-100">
+          <div className="overflow-x-auto rounded-lg border border-gray-100">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-xs uppercase tracking-wide text-gray-400">
@@ -1391,10 +1391,10 @@ function RecalcModal({
                       <div className="font-medium text-gray-900">{t.description}</div>
                       {t.anchor && <span className="text-xs text-accent-600">{t.anchor_time}</span>}
                     </td>
-                    <td className="px-3 py-2 text-gray-400">
+                    <td className="whitespace-nowrap px-3 py-2 text-gray-400">
                       {b ? `${tEl(b.start_time)} – ${tEl(b.end_time)}` : '—'}
                     </td>
-                    <td className={cn('px-3 py-2', changed ? 'font-semibold text-gray-900' : 'text-gray-500')}>
+                    <td className={cn('whitespace-nowrap px-3 py-2', changed ? 'font-semibold text-gray-900' : 'text-gray-500')}>
                       <span className="inline-flex items-center gap-1">
                         {changed && <ArrowRight size={12} className="text-accent-500" />}
                         {tEl(t.start_time)} – {tEl(t.end_time)}
@@ -1433,7 +1433,7 @@ function TaskInfo({ prov }: { prov?: TaskProv }) {
   return (
     <div className="group relative shrink-0">
       <button type="button" className="text-gray-300 hover:text-blue-500" aria-label="info"><Info size={15} /></button>
-      <div className="invisible absolute right-0 top-5 z-20 w-64 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg group-hover:visible">
+      <div className="invisible absolute right-0 top-5 z-20 w-64 rounded-lg border border-gray-200 bg-white p-3 text-xs shadow-lg group-focus-within:visible group-hover:visible">
         <div className="mb-1 font-semibold text-gray-700">Travel</div>
         {prov.source === 'first' ? (
           <div className="text-gray-500">First task of the day — travel not counted (0).</div>
@@ -1479,7 +1479,7 @@ function SortableTaskRow({
   return (
     <div ref={setNodeRef} style={style}
       className={cn('rounded-lg border p-3', t.conflict ? 'border-red-300 bg-red-50' : 'border-gray-200', isDragging && 'ring-2 ring-accent-300')}>
-      <div className="flex items-center gap-2 text-sm">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
         <button {...attributes} {...listeners} className="cursor-grab text-gray-400 hover:text-gray-600" aria-label="drag">
           <GripVertical size={16} />
         </button>
@@ -1544,9 +1544,9 @@ function Scheduled() {
   if (!days.length) return <p className="text-gray-500">No approved tasks yet.</p>
   return (
     <div className="space-y-4">
-      <Card className="flex items-center justify-between p-4">
+      <Card className="flex flex-wrap items-center justify-between gap-2 p-4">
         <span className="font-semibold text-gray-900">Scheduled</span>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {error && <span className="text-sm text-red-600">⚠ {error}</span>}
           {sent && <span className="flex items-center gap-1 text-sm text-green-600"><CheckCircle2 size={14} /> Sent</span>}
           {can('send_tasks') && (

@@ -73,7 +73,7 @@ export function DatePicker({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-40 mt-1 w-72 rounded-xl border border-gray-200 bg-white p-3 shadow-lg">
+        <div className="absolute left-0 top-full z-40 mt-1 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-gray-200 bg-white p-3 shadow-lg">
           <div className="mb-2 flex items-center justify-between">
             <button type="button" onClick={() => setMonth(subMonths(month, 1))} className="rounded p-1 text-gray-500 hover:bg-gray-100">
               <ChevronLeft size={16} />
