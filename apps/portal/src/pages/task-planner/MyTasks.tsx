@@ -5,7 +5,8 @@
  * Closed, внутри — по дням. Чьи задачи:
  *  - Project Manager — созданные им; старые задачи без автора — с пометкой «no author»;
  *  - Lead Carpenter — своей бригады, и только у него есть действия исполнения
- *    (Complete, заметки, фото).
+ *    (Complete, заметки, фото). Его вид (BAS-1511) — один день по календарю, по умолчанию
+ *    завтра; ничего со стороны планирования (RLS 0039: только scheduled своей бригады).
  * PM здесь же проверяет работу (BAS-1431): открывает задачу из Completed или Uncompleted
  * и закрывает её с отметкой Task Accepted. Закрытие — финал, задача уходит в Closed.
  * Если работа не принята — предложение создать задачу на другой день (Create Task с
@@ -18,17 +19,18 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Info, MessageSquare, Upload, X } from 'lucide-react'
+import { CheckCircle2, ChevronLeft, ChevronRight, Info, MessageSquare, Upload, X } from 'lucide-react'
 import { Badge, Button, Card, Input, Modal, PageTitle, StatusBadge, Tabs, Textarea } from '../../components/ui'
 import { cn, errMsg } from '../../lib/utils'
 import { hhmmToMin, minToAmPm, TIMEZONE } from '../../lib/task-planner-time'
 import type { Task } from '../../domain/task-planner/types'
 import {
   actorRoleLabel, addReviewComment, addTaskNote, closeTask, completeTask, describeTaskEvent, executionBadge,
-  fetchCrewCommentCounts, fetchTaskEvents, removeTaskPhoto, fetchTaskPhotos, fetchTasksInRange, uploadTaskPhoto,
+  fetchCrewCommentCounts, fetchTaskEvents, removeTaskPhoto, fetchTaskPhotos, fetchTasksForDay, fetchTasksInRange,
+  uploadTaskPhoto,
 } from '../../services/task-planner/execution'
 import {
-  groupByDay, hasNoAuthor, OWN_LISTS, ownListOf, ownTasks, presetRange, RANGE_PRESETS,
+  defaultCrewDay, groupByDay, hasNoAuthor, OWN_LISTS, ownListOf, ownTasks, presetRange, RANGE_PRESETS, shiftDay,
   type OwnList, type OwnMode, type RangePreset,
 } from '../../domain/task-planner/own-side'
 import { useAuth } from '../../auth/AuthProvider'
@@ -68,7 +70,10 @@ export function MyTasksPage() {
   const [preset, setPreset] = useState<RangePreset | null>('this_week')
   // null — без фильтра по датам (кнопка All dates).
   const [range, setRange] = useState<{ from: string; to: string } | null>(() => presetRange('this_week', today))
-  const badRange = !!range && range.from > range.to
+  // Бригада (BAS-1511) смотрит один день; по умолчанию завтра.
+  const [day, setDay] = useState(() => defaultCrewDay(today))
+  const isCrew = mode === 'crew'
+  const badRange = !isCrew && !!range && range.from > range.to
   const [list, setList] = useState<OwnList>('uncompleted')
   const [openTask, setOpenTask] = useState<Task | null>(null)
   // Закрытие задачи PM (BAS-1431) и вопрос о задаче на другой день после «не принято».
@@ -77,8 +82,8 @@ export function MyTasksPage() {
   const canReview = mode === 'pm' && can('review_task')
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['tp-own-tasks', range?.from ?? null, range?.to ?? null],
-    queryFn: () => fetchTasksInRange(range?.from, range?.to),
+    queryKey: isCrew ? ['tp-own-tasks', 'day', day] : ['tp-own-tasks', range?.from ?? null, range?.to ?? null],
+    queryFn: () => (isCrew ? fetchTasksForDay(day) : fetchTasksInRange(range?.from, range?.to)),
     enabled: !badRange,
   })
 
@@ -118,7 +123,7 @@ export function MyTasksPage() {
     mode === 'pm'
       ? 'Tasks where you are the PM, from the approved schedule. Older tasks without a PM or author are shown to every PM.'
       : teamName
-        ? `Approved schedule for ${teamName}.`
+        ? `Tasks of ${teamName} for the selected day.`
         : 'No crew is linked to your email, so there are no tasks to show.'
 
   return (
@@ -138,7 +143,10 @@ export function MyTasksPage() {
           />
         )}
 
-        {/* Период: быстрые варианты или свои границы. */}
+        {/* Бригада — один день по календарю; PM — период: быстрые варианты или свои границы. */}
+        {isCrew ? (
+          <DayPicker day={day} today={today} onChange={setDay} />
+        ) : (
         <div className="flex flex-wrap items-center gap-2">
           {RANGE_PRESETS.map((p) => (
             <button
@@ -173,6 +181,7 @@ export function MyTasksPage() {
             <Input type="date" className="w-36 py-1" value={range?.to ?? ''} onChange={(e) => setBound('to', e.target.value)} />
           </div>
         </div>
+        )}
 
         <Tabs
           className="max-w-md"
@@ -194,7 +203,7 @@ export function MyTasksPage() {
       {isLoading && <Card className="p-8 text-center text-gray-500">Loading…</Card>}
       {!isLoading && !error && days.length === 0 && !badRange && (
         <Card className="p-8 text-center text-gray-500">
-          No {list} tasks {range ? 'in this period' : 'yet'}.
+          No {list} tasks {isCrew ? 'for this day' : range ? 'in this period' : 'yet'}.
         </Card>
       )}
 
@@ -257,6 +266,45 @@ export function MyTasksPage() {
         </Modal>
       )}
     </>
+  )
+}
+
+/* ---------------- День бригады ---------------- */
+
+/** Календарь бригады (BAS-1511): стрелки на день назад / вперёд, дата, быстрые Yesterday / Today / Tomorrow. */
+function DayPicker({ day, today, onChange }: { day: string; today: string; onChange: (d: string) => void }) {
+  const quick = [
+    { label: 'Yesterday', value: shiftDay(today, -1) },
+    { label: 'Today', value: today },
+    { label: 'Tomorrow', value: shiftDay(today, 1) },
+  ]
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-1">
+        <Button variant="outline" className="px-2 py-1" aria-label="Previous day" onClick={() => onChange(shiftDay(day, -1))}>
+          <ChevronLeft size={16} />
+        </Button>
+        <Input type="date" className="w-40 py-1" value={day} onChange={(e) => e.target.value && onChange(e.target.value)} />
+        <Button variant="outline" className="px-2 py-1" aria-label="Next day" onClick={() => onChange(shiftDay(day, 1))}>
+          <ChevronRight size={16} />
+        </Button>
+      </div>
+      {quick.map((q) => (
+        <button
+          key={q.label}
+          type="button"
+          onClick={() => onChange(q.value)}
+          className={cn(
+            'rounded-full border px-3 py-1 text-xs font-medium transition',
+            day === q.value
+              ? 'border-brand-blue bg-brand-blue text-white'
+              : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300',
+          )}
+        >
+          {q.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -497,7 +545,7 @@ function TaskDetailsModal({ task, canAct, canReview, onClose, onCloseTask }: {
 
           <div>
             <h4 className="mb-2 font-semibold text-gray-900">Photos</h4>
-            {canAct && (
+            {canAct && task.execution_status !== 'closed' && (
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-brand-amber px-3.5 py-2 text-sm font-medium text-black transition hover:brightness-95">
               <Upload size={16} />
               {upload.isPending ? 'Uploading…' : 'Upload Photos'}

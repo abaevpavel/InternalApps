@@ -31,7 +31,7 @@
 | Возможность | Admin | PM | Schedule Manager | Lead Carpenter |
 |---|---|---|---|---|
 | Schedule screen (Tasks) | ✓ | ✓ | ✓ | |
-| Своя сторона (My Tasks: Uncompleted / Completed / Closed по дням, за период) | | ✓ созданные им + «no author» | | ✓ своя бригада |
+| Своя сторона (My Tasks: Uncompleted / Completed / Closed) | | ✓ свои задачи, за период | | ✓ своя бригада, один день (LC View, BAS-1511) |
 | Создать / править / удалить задачу | | ✓ | | |
 | Сменить дату задачи | | ✓ | ✓ | |
 | Send to AI, раскладка Proposed, Approve, Send Tasks | | | ✓ | |
@@ -40,8 +40,10 @@
 | Доступность бригад, overtime | ✓ | ✓ | ✓ | |
 | Directories, настройки модуля | ✓ | | | |
 
-RLS `tp_tasks` (0028): читают все задачи Admin/PM/Schedule Manager, Lead Carpenter — своей
-бригады; INSERT — PM (`requested`) и Schedule Manager (`proposed`, копии результата AI);
+RLS `tp_tasks` (0028, 0039): читают все задачи Admin/PM/Schedule Manager, Lead Carpenter — своей
+бригады и только `scheduled` (сторону планирования не видит; журнал, фото и действия — тоже
+только у `scheduled`). Результат AI (`tp_ai_teams_schedule`) и доступность бригад
+(`tp_team_availability`) читают только Admin/PM/Schedule Manager (0039); INSERT — PM (`requested`) и Schedule Manager (`proposed`, копии результата AI);
 UPDATE — PM и Schedule Manager; DELETE — PM (`requested`) и Schedule Manager (`proposed`).
 Правила по статусам тоньше этого — BAS-1514.
 
@@ -296,9 +298,11 @@ Notes и фото из модалки — тоже события (`note` / `pho
 
 ### 5.3 Экраны
 
-- **`My Tasks`** (бригадир, прототип) — дата + переключатель `Yesterday / Today / Tomorrow`,
-  список задач **своей бригады** со `status = 'scheduled'` на выбранный день, кнопка `Complete`
-  на карточке. Клик по карточке → `Task Details`: `info` (история), `Notes` + `Add Note`,
+- **`My Tasks` → LC View** (Lead Carpenter, BAS-1511) — календарь на один день (стрелки,
+  дата, `Yesterday / Today / Tomorrow`), **по умолчанию завтра**; задачи **своей бригады** со
+  `status = 'scheduled'` на этот день, вкладки Uncompleted / Completed / Closed, кнопка `Complete`
+  на карточке. Отказаться от задачи, сменить дату, править задачу или комментарий LC не может.
+  Фото необязательны; в закрытую задачу фото не добавить (0039), комментарий — можно. Клик по карточке → `Task Details`: `info` (история), `Notes` + `Add Note`,
   `Photos` + `Upload Photos`, `Complete`.
 - **Проверка PM** (BAS-1431) — отдельной вкладки нет (экран Approvals удалён). В My Tasks →
   As PM у задачи из Uncompleted / Completed кнопка `Review` → карточка → `Close task` →

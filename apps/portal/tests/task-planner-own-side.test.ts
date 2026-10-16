@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupByDay, ownListOf, ownTasks, presetRange } from '../src/domain/task-planner/own-side'
+import { defaultCrewDay, groupByDay, ownListOf, ownTasks, presetRange, shiftDay } from '../src/domain/task-planner/own-side'
 import type { Task } from '../src/domain/task-planner/types'
 
 /** Своя сторона (BAS-1510): чьи задачи, в каком списке, по каким дням. */
@@ -59,5 +59,19 @@ describe('presetRange', () => {
 
   it('month covers the whole calendar month', () => {
     expect(presetRange('this_month', '2026-02-10')).toEqual({ from: '2026-02-01', to: '2026-02-28' })
+  })
+})
+
+/** LC View (BAS-1511): бригада смотрит один день, по умолчанию завтра. */
+describe('crew day', () => {
+  it('defaults to tomorrow, across month and year ends', () => {
+    expect(defaultCrewDay('2026-10-16')).toBe('2026-10-17')
+    expect(defaultCrewDay('2026-10-31')).toBe('2026-11-01')
+    expect(defaultCrewDay('2026-12-31')).toBe('2027-01-01')
+  })
+
+  it('shifts across the DST change', () => {
+    expect(shiftDay('2026-11-01', 1)).toBe('2026-11-02')
+    expect(shiftDay('2026-03-09', -1)).toBe('2026-03-08')
   })
 })

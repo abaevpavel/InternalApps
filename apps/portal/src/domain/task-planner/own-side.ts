@@ -6,7 +6,8 @@
  *  - PM — где он PM задачи (`pm_email`: проектная — PM проекта, Other — автор, или выбран
  *    вручную, решение 13.10.2026). У задач без pm_email — по автору (`created_by`); старые
  *    задачи без автора и без PM показываются всем PM с пометкой «no author»;
- *  - Lead Carpenter — задачи его бригады (скоуп держит RLS, здесь фильтра нет).
+ *  - Lead Carpenter — задачи его бригады (скоуп держит RLS, здесь фильтра нет), по одному
+ *    дню: календарь, по умолчанию завтра (BAS-1511).
  *
  * Списки по оси исполнения: Uncompleted = pending, Completed = completed, Closed = closed
  * (BAS-1431).
@@ -74,7 +75,8 @@ export const RANGE_PRESETS: { key: RangePreset; label: string }[] = [
   { key: 'this_month', label: 'This month' },
 ]
 
-function shift(iso: string, days: number): string {
+/** Сдвиг ISO-даты на N дней. */
+export function shiftDay(iso: string, days: number): string {
   const d = new Date(`${iso}T12:00:00`) // полдень: сдвиг не срывается на переходе DST
   d.setDate(d.getDate() + days)
   return new Intl.DateTimeFormat('en-CA').format(d)
@@ -83,11 +85,18 @@ function shift(iso: string, days: number): string {
 /** Границы периода от «сегодня» (ISO, в таймзоне компании). Неделя — с понедельника. */
 export function presetRange(preset: RangePreset, today: string): { from: string; to: string } {
   const dow = new Date(`${today}T12:00:00`).getDay() // 0 = вс
-  const monday = shift(today, dow === 0 ? -6 : 1 - dow)
-  if (preset === 'this_week') return { from: monday, to: shift(monday, 6) }
-  if (preset === 'next_week') return { from: shift(monday, 7), to: shift(monday, 13) }
+  const monday = shiftDay(today, dow === 0 ? -6 : 1 - dow)
+  if (preset === 'this_week') return { from: monday, to: shiftDay(monday, 6) }
+  if (preset === 'next_week') return { from: shiftDay(monday, 7), to: shiftDay(monday, 13) }
   const [y, m] = today.split('-').map(Number)
   const last = new Date(y, m, 0).getDate()
   const mm = String(m).padStart(2, '0')
   return { from: `${y}-${mm}-01`, to: `${y}-${mm}-${String(last).padStart(2, '0')}` }
+}
+
+/* ---------------- День бригады (BAS-1511) ---------------- */
+
+/** День, который Lead Carpenter видит при открытии: завтра — смотрит, что предстоит. */
+export function defaultCrewDay(today: string): string {
+  return shiftDay(today, 1)
 }
