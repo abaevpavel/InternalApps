@@ -18,8 +18,9 @@ import { cn, errMsg } from '../../lib/utils'
 import {
   fetchTasks, fetchTeams, fetchSkills, fetchAvailability,
   fetchScheduleRun, applyScheduleToTasks, pullScheduleIntoTasks,
-  replaceProposedWithSchedule, deleteTasksByStatus, returnScheduledToProposed,
+  replaceProposedWithSchedule, returnScheduledToProposed,
   updateTask, deleteTask, type UpdateTaskInput, fetchPeople, setTaskPm,
+  markSentToAi, clearSentToAi,
 } from '../../services/task-planner/data'
 import { sendToAi, sendToSlack, buildSlackPayload } from '../../services/task-planner/n8n'
 import { executionBadge } from '../../services/task-planner/execution'
@@ -36,6 +37,7 @@ import { TaskDetailsModal, dayHeading, todayISO } from './MyTasks'
 import { RangeFilter, useRangeFilter } from './RangeFilter'
 import { planningDay, tasksForView } from '../../domain/task-planner/planning-side'
 import { groupByDay, ownListOf, OWN_LISTS } from '../../domain/task-planner/own-side'
+import { canDeleteTask, canEditTask, editableFields, isWaitingForAi } from '../../domain/task-planner/edit-rules'
 
 /** Простой генератор request_ID для запуска планировщика. */
 function newRequestId(): string {
@@ -130,8 +132,17 @@ function Requested({ goProposed }: { goProposed: () => void }) {
   const qc = useQueryClient()
   // Кнопки — по ролям модуля (BAS-1509): Send to AI — Schedule Manager, удаление — PM.
   const { can } = useTaskPlannerRoles()
-  const { data: tasks } = useQuery({ queryKey: ['tasks', 'requested'], queryFn: () => fetchTasks('requested') })
+  // Пока задачи ждут ответа AI (BAS-1514), список перечитывается: пометку снимает тот, кто отправил,
+  // а видеть, что задачи снова доступны, должны все.
+  const { data: tasks } = useQuery({
+    queryKey: ['tasks', 'requested'], queryFn: () => fetchTasks('requested'),
+    refetchInterval: (q) => ((q.state.data ?? []).some((t) => isWaitingForAi(t)) ? 5000 : false),
+  })
   const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState<Task | null>(null)
+  const waiting = (tasks ?? []).some((t) => isWaitingForAi(t))
+  // request_ID запроса, ответ которого задачи ждут или ждали (для Pull AI result у любого пользователя)
+  const aiRequestId = (tasks ?? []).find((t) => t.ai_request_id)?.ai_request_id ?? null
 
   // Send to AI: отправить задачи планировщику → поллить результат → перевести в proposed.
   // URL вебхука берём из app_settings (Админка), не из хардкода.
@@ -152,23 +163,36 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       // запоминаем запрос ДО ожидания — если поллинг прервётся (таймаут/refresh),
       // результат можно будет подтянуть кнопкой по этому id.
       setPendingRequestId(requestId)
+      // BAS-1514: задачи помечаются «отправлено в AI» — у всех они недоступны до ответа.
+      await markSentToAi(list.map((t) => t.id), requestId)
+      void qc.invalidateQueries({ queryKey: ['tasks', 'requested'] })
       const date = list[0]?.scheduled_date ?? null
-      await sendToAi({
-        requestId, date, tasks: list, teams, unavailableTeams: unavailable, skills,
-        webhookUrl: webhookUrl ?? undefined,
-        persistentPrompt: priorityRule || PRIORITY_RULE,
-      })
-      const run = await pollScheduleRun(requestId)
-      if (run.status === 'error') throw new Error(run.error || 'AI returned an error')
-      // материализуем AI-расписание как НОВЫЕ proposed-копии; requested-эталон
-      // НЕ трогаем (всегда остаётся для повторных тестов).
-      if (run.output_data?.schedule?.length) {
-        await replaceProposedWithSchedule(run.output_data.schedule)
-      } else {
-        throw new Error('AI returned no schedule (empty)')
+      try {
+        await sendToAi({
+          requestId, date, tasks: list, teams, unavailableTeams: unavailable, skills,
+          webhookUrl: webhookUrl ?? undefined,
+          persistentPrompt: priorityRule || PRIORITY_RULE,
+        })
+        const run = await pollScheduleRun(requestId)
+        if (run.status === 'error') throw new Error(run.error || 'AI returned an error')
+        // материализуем AI-расписание как НОВЫЕ proposed-копии; requested-эталон
+        // НЕ трогаем (всегда остаётся для повторных тестов).
+        if (run.output_data?.schedule?.length) {
+          await replaceProposedWithSchedule(run.output_data.schedule)
+        } else {
+          throw new Error('AI returned no schedule (empty)')
+        }
+        await clearSentToAi(requestId)
+        clearPendingRequestId() // результат применён — запрос больше не «висит»
+        return run
+      } catch (e) {
+        // Таймаут: ответ ещё может прийти — пометка истечёт сама, результат подтянет Pull AI result.
+        // Остальное (n8n не принял, AI вернул ошибку или пусто) — ответа не будет, снимаем сразу.
+        if (!(e instanceof Error && e.message.startsWith('Timed out'))) {
+          await clearSentToAi(requestId).catch(() => undefined)
+        }
+        throw e
       }
-      clearPendingRequestId() // результат применён — запрос больше не «висит»
-      return run
     },
     onSuccess: () => {
       setError(null)
@@ -177,14 +201,18 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       goProposed()
     },
     // НЕ чистим pending на ошибке (таймаут и т.п.) — даём шанс подтянуть результат
-    onError: (e: unknown) => setError(errMsg(e)),
+    onError: (e: unknown) => {
+      setError(errMsg(e))
+      void qc.invalidateQueries({ queryKey: ['tasks', 'requested'] })
+    },
   })
 
   // Восстановление: подтянуть результат «висящего» запроса (после таймаута/refresh).
-  const pendingId = getPendingRequestId()
+  // id есть и в браузере отправившего, и в самих задачах — подтянуть может любой Schedule Manager.
+  const pendingId = getPendingRequestId() ?? aiRequestId
   const recover = useMutation({
     mutationFn: async () => {
-      const n = await pullScheduleIntoTasks(getPendingRequestId() ?? undefined)
+      const n = await pullScheduleIntoTasks(getPendingRequestId() ?? aiRequestId ?? undefined)
       if (!n) throw new Error('Result not ready yet or not found in Supabase')
       clearPendingRequestId()
       return n
@@ -206,7 +234,7 @@ function Requested({ goProposed }: { goProposed: () => void }) {
     onError: (e: unknown) => setError(errMsg(e)),
   })
 
-  const busy = send.isPending || recover.isPending
+  const busy = send.isPending || recover.isPending || waiting
   return (
     <div className="space-y-6">
       {/* Режим тестов: Requested — постоянный тестовый набор. Send to AI делает proposed-копии,
@@ -233,7 +261,7 @@ function Requested({ goProposed }: { goProposed: () => void }) {
         </div>
         <div className="mt-4 flex items-center justify-between">
           <span className="text-sm text-gray-500">
-            {busy ? 'Sending tasks & waiting for AI…' : `${tasks?.length ?? 0} tasks will be analyzed`}
+            {busy ? 'Sent to AI, waiting for the answer…' : `${tasks?.length ?? 0} tasks will be analyzed`}
           </span>
           {can('send_to_ai') && (
             <div className="flex gap-2">
@@ -246,7 +274,7 @@ function Requested({ goProposed }: { goProposed: () => void }) {
         {error && <p className="mt-3 text-sm text-red-600">⚠ {error}</p>}
       </Card>
 
-      {pendingId && !send.isPending && can('send_to_ai') && (
+      {pendingId && !send.isPending && !waiting && can('send_to_ai') && (
         <Card className="flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50 p-4">
           <AlertTriangle size={18} className="text-amber-600" />
           <span className="text-sm text-amber-800">
@@ -273,8 +301,10 @@ function Requested({ goProposed }: { goProposed: () => void }) {
             </div>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {list.map((t) => (
-                <TaskCardCompact key={t.id} t={t} canChangePm={can('edit_task')}
-                  onDelete={can('delete_task')
+                <TaskCardCompact key={t.id} t={t} waiting={isWaitingForAi(t)}
+                  canChangePm={can('edit_task') && canEditTask(t)}
+                  onEdit={can('edit_task') && canEditTask(t) ? () => setEditing(t) : undefined}
+                  onDelete={can('delete_task') && canDeleteTask(t)
                     ? () => { if (confirm(`Delete task “${t.title ?? t.description}”?`)) del.mutate(t.id) }
                     : undefined} />
               ))}
@@ -282,18 +312,27 @@ function Requested({ goProposed }: { goProposed: () => void }) {
           </div>
         ),
       )}
+      <TaskEditModal task={editing} onClose={() => setEditing(null)}
+        onSaved={() => { setEditing(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) }} />
     </div>
   )
 }
 
-/** Компактная карточка задачи (Requested). Просмотр, смена PM (PM модуля) и удаление. */
-function TaskCardCompact({ t, canChangePm, onDelete }: { t: Task; canChangePm: boolean; onDelete?: () => void }) {
+/** Компактная карточка задачи (Requested). Просмотр, правка и смена PM (PM модуля), удаление. */
+function TaskCardCompact({ t, waiting, canChangePm, onEdit, onDelete }: {
+  t: Task
+  /** Отправлена в AI и ждёт ответа (BAS-1514): карточка приглушена, действия недоступны. */
+  waiting: boolean
+  canChangePm: boolean
+  onEdit?: () => void
+  onDelete?: () => void
+}) {
   const title = t.title ?? (t.description ?? '').split('\n')[0]
   const skillCount = t.required_skill_ids?.length ?? 0
   const durH = (t.estimated_duration_min ?? 0) / 60
   const prio = priorityTone(t.priority)
   return (
-    <Card className="p-4">
+    <Card className={cn('p-4', waiting && 'pointer-events-none select-none opacity-50')} aria-disabled={waiting}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
@@ -307,10 +346,16 @@ function TaskCardCompact({ t, canChangePm, onDelete }: { t: Task; canChangePm: b
               : <TaskPmName t={t} />}
           </div>
         </div>
-        {onDelete && (
-          <button onClick={onDelete} className="shrink-0 text-gray-400 hover:text-red-600" aria-label="delete"><Trash2 size={16} /></button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {onEdit && (
+            <button onClick={onEdit} className="text-gray-400 hover:text-accent-600" aria-label="edit" title="Edit task"><SquarePen size={16} /></button>
+          )}
+          {onDelete && (
+            <button onClick={onDelete} className="text-gray-400 hover:text-red-600" aria-label="delete" title="Delete task"><Trash2 size={16} /></button>
+          )}
+        </div>
       </div>
+      {waiting && <p className="mt-1 text-xs text-gray-500">Sent to AI, waiting…</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-600">
         <StatusBadge tone={prio.tone}>{prio.label}</StatusBadge>
@@ -495,15 +540,20 @@ function TaskPmPicker({ t }: { t: Task }) {
   )
 }
 
-/** Модалка редактирования / удаления задачи (Requested). */
+/**
+ * Правка задачи PM-ом (BAS-1514): Requested, Proposed, Scheduled, пока бригада её не отметила.
+ * Поля — по статусу (edit-rules): в Proposed и Scheduled без длительности, дата не правится нигде
+ * (перенос — BAS-1437). Правка не меняет план: тайминги не пересчитываются, в Slack ничего не уходит.
+ * Удаления здесь нет — оно только в Requested, иконкой на карточке.
+ */
 function TaskEditModal({ task, onClose, onSaved }: {
   task: Task | null
   onClose: () => void
   onSaved: () => void
 }) {
   const [form, setForm] = useState<UpdateTaskInput>({})
-  const [confirmDel, setConfirmDel] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const fields = task ? editableFields(task) : []
 
   useEffect(() => {
     if (!task) return
@@ -512,24 +562,24 @@ function TaskEditModal({ task, onClose, onSaved }: {
       description: task.description ?? '',
       estimated_duration_min: task.estimated_duration_min,
       priority: task.priority,
-      scheduled_date: task.scheduled_date,
       address: task.task_address,
     })
-    setConfirmDel(false)
     setError(null)
   }, [task])
 
   const save = useMutation({
-    mutationFn: () => updateTask(task!.id, form),
+    mutationFn: () => {
+      // пишем только поля, которые в этом статусе правятся
+      const f = form
+      return updateTask(task!.id, {
+        title: f.title, description: f.description, priority: f.priority, address: f.address,
+        ...(fields.includes('duration') ? { estimated_duration_min: f.estimated_duration_min } : {}),
+      })
+    },
     onSuccess: onSaved,
     onError: (e: unknown) => setError(errMsg(e)),
   })
-  const del = useMutation({
-    mutationFn: () => deleteTask(task!.id),
-    onSuccess: onSaved,
-    onError: (e: unknown) => setError(errMsg(e)),
-  })
-  const busy = save.isPending || del.isPending
+  const busy = save.isPending
 
   const set = (patch: Partial<UpdateTaskInput>) => setForm((f) => ({ ...f, ...patch }))
 
@@ -540,31 +590,19 @@ function TaskEditModal({ task, onClose, onSaved }: {
       title="Edit task"
       onClose={onClose}
       footer={
-        <div className="flex w-full items-center justify-between">
-          <Button variant="ghost" className="text-red-600 hover:bg-red-50"
-            disabled={busy} onClick={() => setConfirmDel(true)}>
-            <span className="flex items-center gap-1"><Trash2 size={15} /> Delete</span>
+        <div className="flex gap-2">
+          <Button variant="ghost" disabled={busy} onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={busy} onClick={() => save.mutate()}>
+            {save.isPending ? 'Saving…' : 'Save'}
           </Button>
-          <div className="flex gap-2">
-            <Button variant="ghost" disabled={busy} onClick={onClose}>Cancel</Button>
-            <Button variant="primary" disabled={busy} onClick={() => save.mutate()}>
-              {save.isPending ? 'Saving…' : 'Save'}
-            </Button>
-          </div>
         </div>
       }
     >
       <div className="space-y-3">
-        {confirmDel && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            <span className="flex items-center gap-2"><AlertTriangle size={16} /> Delete this task permanently?</span>
-            <div className="flex gap-2">
-              <Button variant="ghost" className="py-1" disabled={busy} onClick={() => setConfirmDel(false)}>No</Button>
-              <Button variant="danger" className="py-1" disabled={busy} onClick={() => del.mutate()}>
-                {del.isPending ? 'Deleting…' : 'Yes, delete'}
-              </Button>
-            </div>
-          </div>
+        {task && task.status !== 'requested' && (
+          <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
+            The schedule stays as it is: times are not recalculated and nothing is sent to Slack.
+          </p>
         )}
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-500">Title</label>
@@ -574,22 +612,19 @@ function TaskEditModal({ task, onClose, onSaved }: {
           <label className="mb-1 block text-xs font-medium text-gray-500">Description</label>
           <Input value={form.description ?? ''} onChange={(e) => set({ description: e.target.value })} />
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500">Duration (min)</label>
-            <Input type="number" value={form.estimated_duration_min ?? 0}
-              onChange={(e) => set({ estimated_duration_min: Math.max(0, Number(e.target.value)) })} />
-          </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {fields.includes('duration') && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-500">Duration (min)</label>
+              <Input type="number" value={form.estimated_duration_min ?? 0}
+                onChange={(e) => set({ estimated_duration_min: Math.max(0, Number(e.target.value)) })} />
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-500">Priority</label>
             <Select value={form.priority ?? DEFAULT_PRIORITY} onChange={(e) => set({ priority: toPriority(e.target.value) })}>
               {PRIORITY_OPTIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
             </Select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-gray-500">Date</label>
-            <Input type="date" value={form.scheduled_date ?? ''}
-              onChange={(e) => set({ scheduled_date: e.target.value })} />
           </div>
         </div>
         <div>
@@ -649,16 +684,14 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
     onError: (e: unknown) => setError(errMsg(e)),
   })
 
-  // Удалить ВСЕ proposed-задачи (это копии; requested-эталон не затрагивается).
-  const wipe = useMutation({
-    mutationFn: () => deleteTasksByStatus('proposed'),
-    onSuccess: () => {
-      setError(null)
-      editedRef.current = []
-      qc.invalidateQueries({ queryKey: ['tasks'] })
-    },
-    onError: (e: unknown) => setError(errMsg(e)),
-  })
+  // «Delete all» убран (BAS-1514): задачи из Proposed не удаляются; плохой результат AI
+  // заменяет повторный Send to AI.
+  // Правка задачи PM-ом (BAS-1514): план не меняется.
+  const [editing, setEditing] = useState<Task | null>(null)
+  const byTaskId = useMemo(() => new Map((tasks ?? []).map((t) => [t.id, t])), [tasks])
+  const onEdit = can('edit_task')
+    ? (id: string) => { const t = byTaskId.get(id); if (t && canEditTask(t)) setEditing(t) }
+    : undefined
 
   // Persist current computed schedule (Google travel + manual edits) into the
   // proposed rows, so a page reload keeps recalculated travel and reorder.
@@ -715,16 +748,11 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
           </Button>
         )}
         <Button variant="outline" onClick={() => setExplainOpen(true)}>💬 Explain Yourself</Button>
-        {canArrange && (
-          <Button variant="outline" className="ml-auto border-red-200 text-red-600"
-            disabled={wipe.isPending}
-            onClick={() => { if (confirm(`Delete all ${total} tasks from Proposed? Requested is not affected.`)) wipe.mutate() }}>
-            {wipe.isPending ? 'Deleting…' : '🗑 Delete all'}
-          </Button>
-        )}
         {error && <span className="text-sm text-red-600">⚠ {error}</span>}
       </Card>
-      <EditableBoard days={days} readOnly={!canArrange} onComputed={(d) => { editedRef.current = d }} />
+      <EditableBoard days={days} readOnly={!canArrange} onEdit={onEdit} onComputed={(d) => { editedRef.current = d }} />
+      <TaskEditModal task={editing} onClose={() => setEditing(null)}
+        onSaved={() => { setEditing(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) }} />
 
       <Modal open={explainOpen} title="AI reasoning — how the schedule was built" onClose={() => setExplainOpen(false)} size="lg"
         footer={<Button variant="ghost" onClick={() => setExplainOpen(false)}>Close</Button>}>
@@ -842,10 +870,12 @@ interface TaskProv {
   orderChanged: boolean
 }
 
-function EditableBoard({ days, readOnly = false, onComputed }: {
+function EditableBoard({ days, readOnly = false, onEdit, onComputed }: {
   days: TeamDay[]
   /** Без права раскладки (BAS-1509): перетаскивание выключено. */
   readOnly?: boolean
+  /** Правка полей задачи PM-ом (BAS-1514); без права — нет кнопки. */
+  onEdit?: (taskId: string) => void
   onComputed?: (computed: TeamDay[]) => void
 }) {
   const allTasks = useMemo(() => days.flatMap((d) => d.tasks), [days])
@@ -1064,6 +1094,7 @@ function EditableBoard({ days, readOnly = false, onComputed }: {
             durations={durations}
             overrides={overrides}
             provByTask={provByTask}
+            onEdit={onEdit}
             onDuration={(id, v) => setDurations((d) => ({ ...d, [id]: v }))}
             onOverride={(id, v) => setOverrides((o) => {
               if (v == null) { const { [id]: _drop, ...rest } = o; return rest }
@@ -1085,13 +1116,14 @@ function EditableBoard({ days, readOnly = false, onComputed }: {
 
 /** Колонка одной бригады в доске: droppable-контейнер + сортируемые задачи. */
 function TeamColumn({
-  day, ids, durations, overrides, provByTask, onDuration, onOverride,
+  day, ids, durations, overrides, provByTask, onEdit, onDuration, onOverride,
 }: {
   day: TeamDay
   ids: string[]
   durations: Record<string, number>
   overrides: Record<string, number>
   provByTask: Map<string, TaskProv>
+  onEdit?: (taskId: string) => void
   onDuration: (id: string, v: number) => void
   onOverride: (id: string, v: number | null) => void
 }) {
@@ -1115,6 +1147,7 @@ function TeamColumn({
                 key={t.task_id} t={t} index={i}
                 duration={durations[t.task_id] ?? t.duration_minutes}
                 prov={provByTask.get(t.task_id)}
+                onEdit={onEdit ? () => onEdit(t.task_id) : undefined}
                 onDuration={(v) => onDuration(t.task_id, v)}
                 overridden={overrides[t.task_id] != null}
                 onTravelOverride={(v) => onOverride(t.task_id, v)}
@@ -1472,12 +1505,13 @@ function TaskInfo({ prov }: { prov?: TaskProv }) {
 }
 
 function SortableTaskRow({
-  t, index, duration, prov, onDuration, overridden, onTravelOverride,
+  t, index, duration, prov, onEdit, onDuration, overridden, onTravelOverride,
 }: {
   t: ScheduledTask
   index: number
   duration: number
   prov?: TaskProv
+  onEdit?: () => void
   onDuration: (v: number) => void
   overridden: boolean
   onTravelOverride: (v: number | null) => void
@@ -1497,7 +1531,14 @@ function SortableTaskRow({
         <b className="text-gray-900">{t.description}</b>
         {t.anchor && <StatusBadge tone="danger">anchor</StatusBadge>}
         {(prov?.teamChanged || prov?.orderChanged) && <span className="text-[10px] font-medium text-blue-500">moved</span>}
-        <div className="ml-auto"><TaskInfo prov={prov} /></div>
+        <div className="ml-auto flex items-center gap-2">
+          {onEdit && (
+            <button type="button" onClick={onEdit} className="text-gray-400 hover:text-accent-600" aria-label="edit" title="Edit task">
+              <SquarePen size={15} />
+            </button>
+          )}
+          <TaskInfo prov={prov} />
+        </div>
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
         <span className="text-accent-700">Exact time: {t.anchor ? t.anchor_time : '—'}</span>
@@ -1551,6 +1592,9 @@ function Scheduled({ goProposed }: { goProposed: () => void }) {
   const days = useMemo(() => buildTeamDays(tasks), [tasks])
   const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
   const [openTask, setOpenTask] = useState<Task | null>(null)
+  // Правка PM-ом (BAS-1514): план не меняется, в Slack повторно не уходит.
+  const [editing, setEditing] = useState<Task | null>(null)
+  const canEdit = (t?: Task) => !!t && can('edit_task') && canEditTask(t)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const send = useMutation({
@@ -1597,28 +1641,33 @@ function Scheduled({ goProposed }: { goProposed: () => void }) {
         <Card key={d.team_id} className="p-4">
           <TeamDayHeader day={d} />
           <div className="space-y-2">
-            {d.tasks.map((t, i) => (
-              <button
-                key={t.task_id}
-                type="button"
-                onClick={() => { const full = byId.get(t.task_id); if (full) setOpenTask(full) }}
-                className="flex w-full items-center justify-between rounded-lg border border-gray-200 p-3 text-left text-sm hover:bg-gray-50"
-              >
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-bold text-accent-600">{i + 1}</span> <b className="text-gray-900">{t.description}</b>
-                  </div>
-                  <div className="text-gray-600">
-                    {t.anchor && <span className="text-accent-700">Exact: {t.anchor_time} · </span>}
-                    Time: {minToAmPm(hhmmToMin(t.start_time))} – {minToAmPm(hhmmToMin(t.end_time))} · {t.duration_minutes}m
-                  </div>
+            {d.tasks.map((t, i) => {
+              const full = byId.get(t.task_id)
+              return (
+                <div key={t.task_id} className="flex items-center gap-2 rounded-lg border border-gray-200 hover:bg-gray-50">
+                  <button
+                    type="button"
+                    onClick={() => { if (full) setOpenTask(full) }}
+                    className="min-w-0 flex-1 p-3 text-left text-sm"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-bold text-accent-600">{i + 1}</span> <b className="text-gray-900">{t.description}</b>
+                    </div>
+                    <div className="text-gray-600">
+                      {t.anchor && <span className="text-accent-700">Exact: {t.anchor_time} · </span>}
+                      Time: {minToAmPm(hhmmToMin(t.start_time))} – {minToAmPm(hhmmToMin(t.end_time))} · {t.duration_minutes}m
+                    </div>
+                  </button>
+                  {canEdit(full) && <EditIconButton onClick={() => setEditing(full!)} />}
                 </div>
-              </button>
-            ))}
+              )
+            })}
           </div>
         </Card>
       ))}
       {openTask && <ReadOnlyTask task={openTask} onClose={() => setOpenTask(null)} />}
+      <TaskEditModal task={editing} onClose={() => setEditing(null)}
+        onSaved={() => { setEditing(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) }} />
     </div>
   )
 }
@@ -1636,6 +1685,15 @@ function TeamDayHeader({ day }: { day: TeamDay }) {
   )
 }
 
+/** Кнопка правки задачи в строке списка (BAS-1514). */
+function EditIconButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="shrink-0 px-3 text-gray-400 hover:text-accent-600" aria-label="edit" title="Edit task">
+      <SquarePen size={16} />
+    </button>
+  )
+}
+
 /** Карточка задачи только на чтение: история, комментарии, фото — без действий исполнения и проверки. */
 function ReadOnlyTask({ task, onClose }: { task: Task; onClose: () => void }) {
   return <TaskDetailsModal task={task} canAct={false} canReview={false} onClose={onClose} onCloseTask={() => undefined} />
@@ -1644,10 +1702,12 @@ function ReadOnlyTask({ task, onClose }: { task: Task; onClose: () => void }) {
 const OWN_LABEL = Object.fromEntries(OWN_LISTS.map((l) => [l.key, l.label])) as Record<string, string>
 
 /** Список задач по бригадам: строка — время, задача, проект и бейдж статуса; клик — карточка. */
-function TeamTaskList({ tasks, badge, onOpen }: {
+function TeamTaskList({ tasks, badge, onOpen, onEdit }: {
   tasks: Task[]
   badge: (t: Task) => { label: string; tone: 'neutral' | 'warning' | 'success' | 'danger' }
   onOpen: (t: Task) => void
+  /** Правка (BAS-1514); кнопка только у задач, которые можно править. */
+  onEdit?: (t: Task) => void
 }) {
   const days = useMemo(() => buildTeamDays(tasks), [tasks])
   const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
@@ -1661,11 +1721,11 @@ function TeamTaskList({ tasks, badge, onOpen }: {
               const t = byId.get(st.task_id)!
               const b = badge(t)
               return (
+                <div key={st.task_id} className="flex items-center rounded-lg border border-gray-200 hover:bg-gray-50">
                 <button
-                  key={st.task_id}
                   type="button"
                   onClick={() => onOpen(t)}
-                  className="flex w-full flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 p-3 text-left text-sm hover:bg-gray-50"
+                  className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2 p-3 text-left text-sm"
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -1685,6 +1745,8 @@ function TeamTaskList({ tasks, badge, onOpen }: {
                     )}
                   </div>
                 </button>
+                {onEdit && canEditTask(t) && <EditIconButton onClick={() => onEdit(t)} />}
+                </div>
               )
             })}
           </div>
@@ -1704,6 +1766,10 @@ function Today() {
   })
   const tasks = useMemo(() => tasksForView(data ?? [], 'today', today), [data, today])
   const [openTask, setOpenTask] = useState<Task | null>(null)
+  // Правка PM-ом (BAS-1514) — у задач, которые бригада ещё не отметила.
+  const qc = useQueryClient()
+  const { can } = useTaskPlannerRoles()
+  const [editing, setEditing] = useState<Task | null>(null)
   const done = tasks.filter((t) => t.execution_status === 'completed').length
   return (
     <div className="space-y-4">
@@ -1721,8 +1787,11 @@ function Today() {
         tasks={tasks}
         badge={(t) => ({ label: OWN_LABEL[ownListOf(t)], tone: t.execution_status === 'completed' ? 'warning' : 'neutral' })}
         onOpen={setOpenTask}
+        onEdit={can('edit_task') ? setEditing : undefined}
       />
       {openTask && <ReadOnlyTask task={openTask} onClose={() => setOpenTask(null)} />}
+      <TaskEditModal task={editing} onClose={() => setEditing(null)}
+        onSaved={() => { setEditing(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) }} />
     </div>
   )
 }

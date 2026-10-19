@@ -65,6 +65,8 @@ function mapDbTask(r: Record<string, any>, teamInfo?: Map<string, { name: string
     completed_at: r.completed_at ?? null,
     task_accepted: r.task_accepted ?? null,
     closed_at: r.closed_at ?? null,
+    ai_request_id: r.ai_request_id ?? null,
+    ai_sent_at: r.ai_sent_at ?? null,
     created_by: r.created_by ?? null,
     pm_email: r.pm_email ?? null,
     task_type: r.task_type ?? 'Project task',
@@ -647,7 +649,10 @@ export async function pullScheduleIntoTasks(requestId?: string): Promise<number>
   const run = await fetchScheduleRun(requestId)
   const sched = run?.output_data?.schedule
   if (!sched?.length) return 0
-  return replaceProposedWithSchedule(sched)
+  const n = await replaceProposedWithSchedule(sched)
+  // ответ получен — задачи больше не ждут AI (BAS-1514)
+  if (run?.request_id) await clearSentToAi(run.request_id)
+  return n
 }
 
 export async function fetchScheduleRun(requestId?: string): Promise<ScheduleRun | null> {
@@ -718,4 +723,23 @@ export async function saveTravelCache(entries: { from: string; to: string; minut
   } catch {
     /* нет таблицы / RLS не пускает запись — игнорируем */
   }
+}
+
+/**
+ * Пометка «отправлено в AI» (BAS-1514, 0040): задачи, ушедшие в планировщик, недоступны
+ * у всех пользователей, пока ждут ответа. Снимается при ответе, ошибке или по времени ожидания.
+ */
+export async function markSentToAi(ids: string[], requestId: string): Promise<void> {
+  if (!ids.length) return
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { error } = await supabase.from('tp_tasks')
+    .update({ ai_request_id: requestId, ai_sent_at: new Date().toISOString() }).in('id', ids)
+  if (error) throw error
+}
+
+export async function clearSentToAi(requestId: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { error } = await supabase.from('tp_tasks')
+    .update({ ai_request_id: null, ai_sent_at: null }).eq('ai_request_id', requestId)
+  if (error) throw error
 }

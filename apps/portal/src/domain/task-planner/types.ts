@@ -140,6 +140,9 @@ export interface Task {
   /** Результат проверки PM при закрытии (Task Accepted); null — задача не закрыта. */
   task_accepted?: boolean | null
   closed_at?: string | null
+  /** Задача отправлена в AI и ждёт ответа (BAS-1514, 0040): request_ID запуска и когда отправлена. */
+  ai_request_id?: string | null
+  ai_sent_at?: string | null
   /** auth uid автора (PM, создавший задачу). У старых задач пусто — «без автора» (BAS-1510). */
   created_by?: string | null
   /** Email PM задачи: проектная — PM проекта, Other — автор, или выбран вручную (0032). */
