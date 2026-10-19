@@ -603,6 +603,24 @@ export async function fetchExtraPeopleNotes(): Promise<Map<string, string>> {
 }
 
 /** Удалить все задачи заданного статуса (для кнопки «Удалить все» в Proposed). */
+/**
+ * Вернуть утверждённое расписание дня обратно в Proposed одной пачкой (кнопка Back to Proposed
+ * во вкладке Scheduled). Только задачи, которые бригада ещё не трогала (`pending`): выполненные
+ * и закрытые остаются в Scheduled. Раскладка (бригада, порядок, время) сохраняется как была.
+ */
+export async function returnScheduledToProposed(date: string): Promise<number> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { data, error } = await supabase
+    .from('tp_tasks')
+    .update({ status: 'proposed' })
+    .eq('status', 'scheduled')
+    .eq('execution_status', 'pending')
+    .eq('scheduled_date', date)
+    .select('id')
+  if (error) throw error
+  return (data ?? []).length
+}
+
 export async function deleteTasksByStatus(status: Task['status']): Promise<number> {
   if (!supabase) throw new Error('Supabase is not configured')
   const { data, error } = await supabase.from('tp_tasks').delete().eq('status', status).select('id')

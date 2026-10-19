@@ -18,7 +18,7 @@ import { cn, errMsg } from '../../lib/utils'
 import {
   fetchTasks, fetchTeams, fetchSkills, fetchAvailability,
   fetchScheduleRun, applyScheduleToTasks, pullScheduleIntoTasks,
-  replaceProposedWithSchedule, deleteTasksByStatus,
+  replaceProposedWithSchedule, deleteTasksByStatus, returnScheduledToProposed,
   updateTask, deleteTask, type UpdateTaskInput, fetchPeople, setTaskPm,
 } from '../../services/task-planner/data'
 import { sendToAi, sendToSlack, buildSlackPayload } from '../../services/task-planner/n8n'
@@ -32,6 +32,10 @@ import { recomputeTeamDay, type Point } from '../../domain/task-planner/scheduli
 import { minToAmPm, hhmmToMin, minToHm, minToHoursLabel } from '../../lib/task-planner-time'
 import type { ScheduledTask, TeamDay, Task } from '../../domain/task-planner/types'
 import { useTaskPlannerRoles } from './useTaskPlannerRole'
+import { TaskDetailsModal, dayHeading, todayISO } from './MyTasks'
+import { RangeFilter, useRangeFilter } from './RangeFilter'
+import { planningDay, tasksForView } from '../../domain/task-planner/planning-side'
+import { groupByDay, ownListOf, OWN_LISTS } from '../../domain/task-planner/own-side'
 
 /** Простой генератор request_ID для запуска планировщика. */
 function newRequestId(): string {
@@ -88,7 +92,8 @@ function buildTeamDays(tasks: Task[]): TeamDay[] {
   return days.sort((a, b) => a.team_name.localeCompare(b.team_name))
 }
 
-type Tab = 'requested' | 'proposed' | 'scheduled'
+// Today и Closed — BAS-1435: сегодняшняя работа и закрытые PM задачи на стороне планирования.
+type Tab = 'requested' | 'proposed' | 'scheduled' | 'today' | 'closed'
 
 export function TasksPage() {
   const [tab, setTab] = useState<Tab>('requested')
@@ -102,11 +107,15 @@ export function TasksPage() {
           { key: 'requested', label: 'Requested' },
           { key: 'proposed', label: 'Proposed' },
           { key: 'scheduled', label: 'Scheduled' },
+          { key: 'today', label: 'Today' },
+          { key: 'closed', label: 'Closed' },
         ]}
       />
       {tab === 'requested' && <Requested goProposed={() => setTab('proposed')} />}
       {tab === 'proposed' && <Proposed goScheduled={() => setTab('scheduled')} />}
-      {tab === 'scheduled' && <Scheduled />}
+      {tab === 'scheduled' && <Scheduled goProposed={() => setTab('proposed')} />}
+      {tab === 'today' && <Today />}
+      {tab === 'closed' && <Closed />}
     </div>
   )
 }
@@ -1525,69 +1534,237 @@ function SortableTaskRow({
   )
 }
 
-/* ---------------- Scheduled (реальные задачи, read-only) ---------------- */
-function Scheduled() {
-  // Send Tasks (рассылка в Slack) — Schedule Manager (BAS-1509).
+/* ---------------- Scheduled (утверждённое расписание на завтра, read-only) ---------------- */
+function Scheduled({ goProposed }: { goProposed: () => void }) {
+  const qc = useQueryClient()
+  // Send Tasks (рассылка в Slack) и Back to Proposed — Schedule Manager (BAS-1509).
   const { can } = useTaskPlannerRoles()
-  const { data: tasks, isLoading } = useQuery({ queryKey: ['tasks', 'scheduled'], queryFn: () => fetchTasks('scheduled') })
-  const days = useMemo(() => buildTeamDays(tasks ?? []), [tasks])
-  // BAS-1431: закрытая PM задача видна закрытой и здесь, на стороне планирования.
-  const byId = useMemo(() => new Map((tasks ?? []).map((t) => [t.id, t])), [tasks])
+  // BAS-1435: Planning всегда на завтра (BAS-1433). Сегодняшние задачи — во вкладке Today,
+  // закрытые PM — в Closed, другие даты — в Tracking.
+  const today = todayISO()
+  const day = planningDay(today)
+  const { data, isLoading } = useQuery({
+    queryKey: ['tasks', 'scheduled', day],
+    queryFn: () => fetchTasks('scheduled', { date: day }),
+  })
+  const tasks = useMemo(() => tasksForView(data ?? [], 'scheduled', today), [data, today])
+  const days = useMemo(() => buildTeamDays(tasks), [tasks])
+  const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
+  const [openTask, setOpenTask] = useState<Task | null>(null)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const send = useMutation({
-    mutationFn: () => sendToSlack(buildSlackPayload(days, newRequestId(), days[0]?.date ?? '')),
+    // Дата рассылки — день Planning, а не дата первой бригады.
+    mutationFn: () => sendToSlack(buildSlackPayload(days, newRequestId(), day)),
     onSuccess: () => { setSent(true); setError(null) },
     onError: (e: unknown) => setError(errMsg(e)),
   })
+  // Откат утверждения: задачи дня, которые бригада ещё не трогала, — обратно в Proposed.
+  const backCount = tasks.filter((t) => t.execution_status === 'pending').length
+  const back = useMutation({
+    mutationFn: () => returnScheduledToProposed(day),
+    onSuccess: () => {
+      setError(null)
+      void qc.invalidateQueries({ queryKey: ['tasks'] })
+      goProposed()
+    },
+    onError: (e: unknown) => setError(errMsg(e)),
+  })
   if (isLoading) return <p className="text-gray-500">Loading…</p>
-  if (!days.length) return <p className="text-gray-500">No approved tasks yet.</p>
   return (
     <div className="space-y-4">
       <Card className="flex flex-wrap items-center justify-between gap-2 p-4">
-        <span className="font-semibold text-gray-900">Scheduled</span>
+        <span className="font-semibold text-gray-900">Scheduled · {dayHeading(day, today)}</span>
         <div className="flex flex-wrap items-center gap-2">
           {error && <span className="text-sm text-red-600">⚠ {error}</span>}
           {sent && <span className="flex items-center gap-1 text-sm text-green-600"><CheckCircle2 size={14} /> Sent</span>}
-          {can('send_tasks') && (
+          {can('approve_schedule') && backCount > 0 && (
+            <Button variant="outline" disabled={back.isPending}
+              onClick={() => { if (confirm(`Move all ${backCount} tasks of ${day} back to Proposed?`)) back.mutate() }}>
+              {back.isPending ? 'Moving…' : 'Back to Proposed'}
+            </Button>
+          )}
+          {can('send_tasks') && days.length > 0 && (
             <Button variant="primary" disabled={send.isPending} onClick={() => send.mutate()}>
               {send.isPending ? 'Sending…' : 'Send tasks'}
             </Button>
           )}
-          <Badge className="bg-gray-100 text-gray-600">{days.reduce((s, d) => s + d.tasks.length, 0)} tasks</Badge>
+          <Badge className="bg-gray-100 text-gray-600">{tasks.length} tasks</Badge>
         </div>
       </Card>
-      {days.map((day) => (
-        <Card key={day.team_id} className="p-4">
-          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-accent-50 px-3 py-2">
-            <span className="font-semibold text-accent-700">👥 {day.team_name}</span>
-            <Badge className="bg-gray-800 text-white">{day.tasks.length} tasks</Badge>
-            <Badge className="bg-blue-50 text-blue-700">Total: {minToHm(day.total_working_minutes)}</Badge>
-            {day.total_working_minutes > 480 && (
-              <StatusBadge tone="danger">overtime +{minToHm(day.total_working_minutes - 480)}</StatusBadge>
-            )}
-          </div>
+      {!days.length && <p className="text-gray-500">No approved tasks for tomorrow yet.</p>}
+      {days.map((d) => (
+        <Card key={d.team_id} className="p-4">
+          <TeamDayHeader day={d} />
           <div className="space-y-2">
-            {day.tasks.map((t, i) => (
-              <div key={t.task_id} className="flex items-center justify-between rounded-lg border border-gray-200 p-3 text-sm">
+            {d.tasks.map((t, i) => (
+              <button
+                key={t.task_id}
+                type="button"
+                onClick={() => { const full = byId.get(t.task_id); if (full) setOpenTask(full) }}
+                className="flex w-full items-center justify-between rounded-lg border border-gray-200 p-3 text-left text-sm hover:bg-gray-50"
+              >
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-bold text-accent-600">{i + 1}</span> <b className="text-gray-900">{t.description}</b>
-                    {byId.get(t.task_id)?.execution_status === 'closed' && (() => {
-                      const b = executionBadge(byId.get(t.task_id)!)
-                      return <StatusBadge tone={b.tone}>{b.label}</StatusBadge>
-                    })()}
                   </div>
                   <div className="text-gray-600">
                     {t.anchor && <span className="text-accent-700">Exact: {t.anchor_time} · </span>}
                     Time: {minToAmPm(hhmmToMin(t.start_time))} – {minToAmPm(hhmmToMin(t.end_time))} · {t.duration_minutes}m
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </Card>
       ))}
+      {openTask && <ReadOnlyTask task={openTask} onClose={() => setOpenTask(null)} />}
+    </div>
+  )
+}
+
+function TeamDayHeader({ day }: { day: TeamDay }) {
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-accent-50 px-3 py-2">
+      <span className="font-semibold text-accent-700">👥 {day.team_name}</span>
+      <Badge className="bg-gray-800 text-white">{day.tasks.length} tasks</Badge>
+      <Badge className="bg-blue-50 text-blue-700">Total: {minToHm(day.total_working_minutes)}</Badge>
+      {day.total_working_minutes > 480 && (
+        <StatusBadge tone="danger">overtime +{minToHm(day.total_working_minutes - 480)}</StatusBadge>
+      )}
+    </div>
+  )
+}
+
+/** Карточка задачи только на чтение: история, комментарии, фото — без действий исполнения и проверки. */
+function ReadOnlyTask({ task, onClose }: { task: Task; onClose: () => void }) {
+  return <TaskDetailsModal task={task} canAct={false} canReview={false} onClose={onClose} onCloseTask={() => undefined} />
+}
+
+const OWN_LABEL = Object.fromEntries(OWN_LISTS.map((l) => [l.key, l.label])) as Record<string, string>
+
+/** Список задач по бригадам: строка — время, задача, проект и бейдж статуса; клик — карточка. */
+function TeamTaskList({ tasks, badge, onOpen }: {
+  tasks: Task[]
+  badge: (t: Task) => { label: string; tone: 'neutral' | 'warning' | 'success' | 'danger' }
+  onOpen: (t: Task) => void
+}) {
+  const days = useMemo(() => buildTeamDays(tasks), [tasks])
+  const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
+  return (
+    <div className="space-y-3">
+      {days.map((d) => (
+        <Card key={d.team_id} className="p-4">
+          <TeamDayHeader day={d} />
+          <div className="space-y-2">
+            {d.tasks.map((st, i) => {
+              const t = byId.get(st.task_id)!
+              const b = badge(t)
+              return (
+                <button
+                  key={st.task_id}
+                  type="button"
+                  onClick={() => onOpen(t)}
+                  className="flex w-full flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 p-3 text-left text-sm hover:bg-gray-50"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-bold text-accent-600">{i + 1}</span> <b className="text-gray-900">{st.description}</b>
+                    </div>
+                    <div className="text-gray-600">
+                      {st.start_time && <>Time: {minToAmPm(hhmmToMin(st.start_time))} – {minToAmPm(hhmmToMin(st.end_time))} · </>}
+                      {st.duration_minutes}m{st.project_name ? ` · ${st.project_name}` : ''}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <StatusBadge tone={b.tone}>{b.label}</StatusBadge>
+                    {t.execution_status === 'closed' && t.closed_at && (
+                      <span className="text-xs text-gray-500">
+                        Closed {new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(t.closed_at))}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+/* ---------------- Today (BAS-1435) ---------------- */
+/** Задачи сегодняшнего дня, ещё не закрытые PM: Uncompleted (бригада не отметила) и Completed (ждут PM). */
+function Today() {
+  const today = todayISO()
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['tasks', 'today', today],
+    queryFn: () => fetchTasks('scheduled', { date: today, executionStatus: ['pending', 'completed'] }),
+  })
+  const tasks = useMemo(() => tasksForView(data ?? [], 'today', today), [data, today])
+  const [openTask, setOpenTask] = useState<Task | null>(null)
+  const done = tasks.filter((t) => t.execution_status === 'completed').length
+  return (
+    <div className="space-y-4">
+      <Card className="flex flex-wrap items-center justify-between gap-2 p-4">
+        <span className="font-semibold text-gray-900">Today · {dayHeading(today, today)}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge className="bg-gray-100 text-gray-600">{tasks.length - done} uncompleted</Badge>
+          <Badge className="bg-amber-50 text-amber-700">{done} completed</Badge>
+        </div>
+      </Card>
+      {error && <p className="text-sm text-red-600">⚠ {errMsg(error)}</p>}
+      {isLoading && <p className="text-gray-500">Loading…</p>}
+      {!isLoading && !error && !tasks.length && <p className="text-gray-500">No open tasks for today.</p>}
+      <TeamTaskList
+        tasks={tasks}
+        badge={(t) => ({ label: OWN_LABEL[ownListOf(t)], tone: t.execution_status === 'completed' ? 'warning' : 'neutral' })}
+        onOpen={setOpenTask}
+      />
+      {openTask && <ReadOnlyTask task={openTask} onClose={() => setOpenTask(null)} />}
+    </div>
+  )
+}
+
+/* ---------------- Closed (BAS-1435) ---------------- */
+/** Закрытые PM задачи (принятые и нет) за период по дате задачи — тот же фильтр, что у PM. */
+function Closed() {
+  const today = todayISO()
+  const f = useRangeFilter(today)
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['tasks', 'closed', f.range?.from ?? null, f.range?.to ?? null],
+    queryFn: () => fetchTasks('scheduled', { dateFrom: f.range?.from, dateTo: f.range?.to, executionStatus: 'closed' }),
+    enabled: !f.badRange,
+  })
+  const tasks = useMemo(() => tasksForView(data ?? [], 'closed', today), [data, today])
+  const byDay = useMemo(() => groupByDay(tasks), [tasks])
+  const [openTask, setOpenTask] = useState<Task | null>(null)
+  const notAccepted = tasks.filter((t) => t.task_accepted === false).length
+  return (
+    <div className="space-y-4">
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <RangeFilter f={f} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge className="bg-green-50 text-green-700">{tasks.length - notAccepted} accepted</Badge>
+          <Badge className="bg-red-50 text-red-700">{notAccepted} not accepted</Badge>
+        </div>
+      </Card>
+      {f.badRange && <p className="text-sm text-red-600">The start date is after the end date.</p>}
+      {error && <p className="text-sm text-red-600">⚠ {errMsg(error)}</p>}
+      {isLoading && <p className="text-gray-500">Loading…</p>}
+      {!isLoading && !error && !f.badRange && !tasks.length && (
+        <p className="text-gray-500">No closed tasks {f.range ? 'in this period' : 'yet'}.</p>
+      )}
+      {byDay.map((d) => (
+        <section key={d.date}>
+          <h3 className="mb-2 text-sm font-semibold text-gray-700">
+            {d.date ? dayHeading(d.date, today) : 'No date'} <span className="font-normal text-gray-400">· {d.tasks.length}</span>
+          </h3>
+          <TeamTaskList tasks={d.tasks} badge={executionBadge} onOpen={setOpenTask} />
+        </section>
+      ))}
+      {openTask && <ReadOnlyTask task={openTask} onClose={() => setOpenTask(null)} />}
     </div>
   )
 }

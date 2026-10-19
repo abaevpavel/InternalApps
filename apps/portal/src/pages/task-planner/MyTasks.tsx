@@ -30,20 +30,21 @@ import {
   uploadTaskPhoto,
 } from '../../services/task-planner/execution'
 import {
-  defaultCrewDay, groupByDay, hasNoAuthor, OWN_LISTS, ownListOf, ownTasks, presetRange, RANGE_PRESETS, shiftDay,
-  type OwnList, type OwnMode, type RangePreset,
+  defaultCrewDay, groupByDay, hasNoAuthor, OWN_LISTS, ownListOf, ownTasks, shiftDay,
+  type OwnList, type OwnMode,
 } from '../../domain/task-planner/own-side'
 import { useAuth } from '../../auth/AuthProvider'
 import { useTaskPlannerRoles } from './useTaskPlannerRole'
+import { RangeFilter, useRangeFilter } from './RangeFilter'
 
 /* ---------------- Даты ---------------- */
 
 /** «Сегодня» — по таймзоне компании (America/New_York), а не по часам ноутбука. */
-function todayISO(): string {
+export function todayISO(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE }).format(new Date())
 }
 
-function dayHeading(iso: string, today: string): string {
+export function dayHeading(iso: string, today: string): string {
   const d = new Date(`${iso}T12:00:00`)
   const label = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).format(d)
   return iso === today ? `${label} · Today` : label
@@ -67,13 +68,13 @@ export function MyTasksPage() {
   const mode: OwnMode = modeChoice && modes.includes(modeChoice) ? modeChoice : modes[0] ?? 'crew'
 
   const today = todayISO()
-  const [preset, setPreset] = useState<RangePreset | null>('this_week')
-  // null — без фильтра по датам (кнопка All dates).
-  const [range, setRange] = useState<{ from: string; to: string } | null>(() => presetRange('this_week', today))
+  // Период PM; null — без фильтра по датам (кнопка All dates). Тот же фильтр — во вкладке Closed.
+  const rangeFilter = useRangeFilter(today)
+  const range = rangeFilter.range
   // Бригада (BAS-1511) смотрит один день; по умолчанию завтра. null — без фильтра (All dates).
   const [day, setDay] = useState<string | null>(() => defaultCrewDay(today))
   const isCrew = mode === 'crew'
-  const badRange = !isCrew && !!range && range.from > range.to
+  const badRange = !isCrew && rangeFilter.badRange
   const [list, setList] = useState<OwnList>('uncompleted')
   const [openTask, setOpenTask] = useState<Task | null>(null)
   // Закрытие задачи PM (BAS-1431) и вопрос о задаче на другой день после «не принято».
@@ -106,20 +107,6 @@ export function MyTasksPage() {
   }, [mine])
   const days = useMemo(() => groupByDay(mine.filter((t) => ownListOf(t) === list)), [mine, list])
 
-  function pickPreset(p: RangePreset) {
-    setPreset(p)
-    setRange(presetRange(p, today))
-  }
-  function setBound(key: 'from' | 'to', v: string) {
-    if (!v) return
-    setPreset(null)
-    setRange((r) => ({ ...(r ?? { from: v, to: v }), [key]: v }))
-  }
-  function clearDates() {
-    setPreset(null)
-    setRange(null)
-  }
-
   const subtitle =
     mode === 'pm'
       ? 'Tasks where you are the PM, from the approved schedule. Older tasks without a PM or author are shown to every PM.'
@@ -150,40 +137,7 @@ export function MyTasksPage() {
         {isCrew ? (
           <DayPicker day={day} today={today} onChange={setDay} />
         ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          {RANGE_PRESETS.map((p) => (
-            <button
-              key={p.key}
-              type="button"
-              onClick={() => pickPreset(p.key)}
-              className={cn(
-                'rounded-full border px-3 py-1 text-xs font-medium transition',
-                preset === p.key
-                  ? 'border-brand-blue bg-brand-blue text-white'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300',
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={clearDates}
-            className={cn(
-              'rounded-full border px-3 py-1 text-xs font-medium transition',
-              range === null
-                ? 'border-brand-blue bg-brand-blue text-white'
-                : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300',
-            )}
-          >
-            All dates
-          </button>
-          <div className="flex items-center gap-1.5 text-sm text-gray-500">
-            <Input type="date" className="w-36 py-1" value={range?.from ?? ''} onChange={(e) => setBound('from', e.target.value)} />
-            <span>–</span>
-            <Input type="date" className="w-36 py-1" value={range?.to ?? ''} onChange={(e) => setBound('to', e.target.value)} />
-          </div>
-        </div>
+          <RangeFilter f={rangeFilter} />
         )}
 
         <Tabs
@@ -400,7 +354,7 @@ function TaskRow({ task, index, mode, canReview, comments, onOpen }: {
  * своей бригады. `canReview` — PM: комментарии и закрытие задачи (BAS-1431). Окончательный
  * запрет — в функциях БД.
  */
-function TaskDetailsModal({ task, canAct, canReview, onClose, onCloseTask }: {
+export function TaskDetailsModal({ task, canAct, canReview, onClose, onCloseTask }: {
   task: Task
   canAct: boolean
   canReview: boolean

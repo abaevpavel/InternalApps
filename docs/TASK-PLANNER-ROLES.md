@@ -31,6 +31,7 @@
 | Возможность | Admin | PM | Schedule Manager | Lead Carpenter |
 |---|---|---|---|---|
 | Schedule screen (Tasks) | ✓ | ✓ | ✓ | |
+| Tasks → Scheduled (завтра) / Today (сегодня, не закрытые) / Closed (закрытые PM, за период) — BAS-1435 | ✓ | ✓ | ✓ | |
 | Своя сторона (My Tasks: Uncompleted / Completed / Closed) | | ✓ свои задачи, за период | | ✓ своя бригада, один день (LC View, BAS-1511) |
 | Создать / править / удалить задачу | | ✓ | | |
 | Сменить дату задачи | | ✓ | ✓ | |
