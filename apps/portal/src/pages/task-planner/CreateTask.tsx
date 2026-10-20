@@ -9,17 +9,8 @@ import { fetchPeople, fetchProjects, fetchSkills, fetchTeams, fetchTaskTypes, cr
 import { useAuth } from '../../auth/AuthProvider'
 import type { Skill, TimeType } from '../../domain/task-planner/types'
 import { DEFAULT_PRIORITY, PRIORITY_OPTIONS, toPriority, type TaskPriority } from '../../domain/task-planner/priority'
-
-/** Следующий рабочий день (пропуская сб/вс) в формате YYYY-MM-DD, по локальному времени. */
-function nextWeekdayISO(): string {
-  const d = new Date()
-  d.setDate(d.getDate() + 1)
-  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1) // 0=вс, 6=сб
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
+import { planningDay } from '../../domain/task-planner/planning-side'
+import { todayISO } from './MyTasks'
 
 export function CreateTaskPage() {
   const nav = useNavigate()
@@ -43,7 +34,7 @@ export function CreateTaskPage() {
   const [projectId, setProjectId] = useState('')
   const [taskType, setTaskType] = useState('')
   const [description, setDescription] = useState('')
-  const [date, setDate] = useState(nextWeekdayISO())
+  const [date, setDate] = useState(() => planningDay(todayISO()))
   const [exactTime, setExactTime] = useState('')
   const [tfStart, setTfStart] = useState('')
   const [tfEnd, setTfEnd] = useState('')
@@ -85,6 +76,7 @@ export function CreateTaskPage() {
       if (!taskType) throw new Error('Task Type is required')
       if (!description.trim()) throw new Error('Description is required')
       if (!date) throw new Error('Date is required')
+      if (date < todayISO()) throw new Error('The date cannot be in the past') // BAS-1433
       if (mode === 'other' && !taskAddress.trim()) throw new Error('Task Address is required')
       const hours = parseFloat(durationH)
       if (!hours || hours <= 0) throw new Error('Duration must be > 0')
@@ -163,7 +155,7 @@ export function CreateTaskPage() {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field label="Date" required>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input type="date" value={date} min={todayISO()} onChange={(e) => setDate(e.target.value)} />
           </Field>
           <div>
             <div className="mb-1 flex items-center justify-between">

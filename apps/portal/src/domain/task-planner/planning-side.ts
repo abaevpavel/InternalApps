@@ -12,9 +12,14 @@ import type { Task } from './types'
 
 export type PlanningView = 'scheduled' | 'today' | 'closed'
 
-/** День, на который работает Planning: завтра. */
+/**
+ * День, на который работает Planning: следующий рабочий день — в пятницу и выходные это
+ * понедельник (Vlad 21.10.2026). Официальные праздники штата пока не учитываются — вопрос в роадмапе.
+ */
 export function planningDay(today: string): string {
-  return shiftDay(today, 1)
+  let d = shiftDay(today, 1)
+  while ([0, 6].includes(new Date(`${d}T12:00:00`).getDay())) d = shiftDay(d, 1) // 0 = вс, 6 = сб
+  return d
 }
 
 /** В какую вкладку дня попадает утверждённая задача; null — ни в одну (другая дата). */

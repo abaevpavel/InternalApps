@@ -102,11 +102,25 @@ function buildTeamDays(tasks: Task[]): TeamDay[] {
 
 // Today и Closed — BAS-1435: сегодняшняя работа и закрытые PM задачи на стороне планирования.
 type Tab = 'requested' | 'proposed' | 'scheduled' | 'today' | 'closed'
+// BAS-1433: две вкладки. Planning — рабочий поток, всегда на завтра; Tracking — любая дата, просмотр.
+type Side = 'planning' | 'tracking'
 
 export function TasksPage() {
+  const [side, setSide] = useState<Side>('planning')
   const [tab, setTab] = useState<Tab>('requested')
   return (
     <div>
+      <div className="mb-4 flex gap-6 border-b border-gray-200">
+        {([['planning', 'Planning', 'tomorrow'], ['tracking', 'Tracking', 'any date']] as const).map(([key, label, hint]) => (
+          <button key={key} type="button" onClick={() => setSide(key)}
+            className={cn('-mb-px border-b-2 px-1 pb-2 text-base font-semibold transition',
+              side === key ? 'border-accent-600 text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-600')}>
+            {label} <span className="hidden text-xs font-normal text-gray-400 sm:inline">· {hint}</span>
+          </button>
+        ))}
+      </div>
+      {side === 'tracking' && <Tracking />}
+      {side === 'planning' && <>
       <Tabs<Tab>
         className="mb-6"
         value={tab}
@@ -124,6 +138,7 @@ export function TasksPage() {
       {tab === 'scheduled' && <Scheduled goProposed={() => setTab('proposed')} />}
       {tab === 'today' && <Today />}
       {tab === 'closed' && <Closed />}
+      </>}
     </div>
   )
 }
@@ -146,14 +161,11 @@ function Requested({ goProposed }: { goProposed: () => void }) {
   })
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<Task | null>(null)
-  // День батча (Vlad 20.10.2026): в AI уходят задачи одного дня, по умолчанию — завтра.
-  const [date, setDate] = useState(() => planningDay(todayISO()))
+  // BAS-1433: в AI уходит строго завтрашний батч (следующий рабочий день). Задачи других дат
+  // ждут своего дня в Requested и видны в Tracking.
+  const date = planningDay(todayISO())
   const dayTasks = useMemo(() => (tasks ?? []).filter((t) => t.scheduled_date === date), [tasks, date])
-  const otherDates = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const t of tasks ?? []) if (t.scheduled_date !== date) m.set(t.scheduled_date, (m.get(t.scheduled_date) ?? 0) + 1)
-    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b))
-  }, [tasks, date])
+  const otherCount = (tasks ?? []).length - dayTasks.length
   const waiting = (tasks ?? []).some((t) => isWaitingForAi(t))
   // request_ID запроса, ответ которого задачи ждут или ждали (для Pull AI result у любого пользователя)
   const aiRequestId = (tasks ?? []).find((t) => t.ai_request_id)?.ai_request_id ?? null
@@ -250,28 +262,20 @@ function Requested({ goProposed }: { goProposed: () => void }) {
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Generate Schedule</h2>
           <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1.5 text-sm text-gray-600">
-              <Calendar size={14} /> Day
-              <Input type="date" className="w-40 py-1" value={date} disabled={busy}
-                onChange={(e) => { if (e.target.value) setDate(e.target.value) }} />
-            </label>
+            <span className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+              <Calendar size={14} /> {dayHeading(date, todayISO())}
+            </span>
             <Badge className="bg-gray-100 text-gray-600">{dayTasks.length} tasks</Badge>
           </div>
         </div>
-        {otherDates.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
-            Other days in Requested:
-            {otherDates.map(([d, n]) => (
-              <button key={d} type="button" disabled={busy} onClick={() => setDate(d)}
-                className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-600 hover:bg-gray-200">
-                {d} · {n}
-              </button>
-            ))}
-          </div>
+        {otherCount > 0 && (
+          <p className="mt-2 text-xs text-gray-500">
+            {otherCount} more requested tasks are on other days — they wait for their day. See them in Tracking.
+          </p>
         )}
         <div className="mt-4 flex items-center justify-between">
           <span className="text-sm text-gray-500">
-            {busy ? 'Sent to AI, waiting for the answer…' : `${dayTasks.length} tasks of ${date} will be analyzed`}
+            {busy ? 'Sent to AI, waiting for the answer…' : `${dayTasks.length} tasks for tomorrow will be analyzed`}
           </span>
           {can('send_to_ai') && (
             <div className="flex gap-2">
@@ -667,10 +671,8 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
   })
   // последний AI-прогон — только для модалки Explain Yourself (комментарии)
   const { data: run } = useQuery({ queryKey: ['scheduleRun'], queryFn: () => fetchScheduleRun() })
-  // Proposed может держать несколько дней (Send to AI по выбранному дню) — доска по одному дню
-  const dates = useMemo(() => [...new Set((tasks ?? []).map((t) => t.scheduled_date))].sort(), [tasks])
-  // как в Requested: день выбирается календарём, по умолчанию завтра (Vlad 20.10.2026)
-  const [date, setDate] = useState(() => planningDay(todayISO()))
+  // BAS-1433: Planning всегда на завтра — доска только завтрашнего дня.
+  const date = planningDay(todayISO())
   const dayTasks = useMemo(() => (tasks ?? []).filter((t) => t.scheduled_date === date), [tasks, date])
   const days = useMemo<TeamDay[]>(() => buildTeamDays(dayTasks), [dayTasks])
   const warned = useMemo(() => dayTasks.filter((t) => t.ai_warnings?.length), [dayTasks])
@@ -747,26 +749,16 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
   }
 
   const dayPicker = (
-    <>
-      <label className="flex items-center gap-1.5 text-sm text-gray-600">
-        <Calendar size={14} /> Day
-        <Input type="date" className="w-40 py-1" value={date} onChange={(e) => { if (e.target.value) setDate(e.target.value) }} />
-      </label>
-      {dates.filter((d) => d !== date).map((d) => (
-        <button key={d} type="button" onClick={() => setDate(d)}
-          className="rounded-full bg-accent-50 px-2.5 py-1 text-xs font-semibold text-accent-700 hover:bg-accent-100">
-          📅 {new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-          {' · '}{(tasks ?? []).filter((t) => t.scheduled_date === d).length}
-        </button>
-      ))}
-    </>
+    <span className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
+      <Calendar size={14} /> {dayHeading(date, todayISO())}
+    </span>
   )
 
   if (isLoading) return <p className="text-gray-500">Loading…</p>
   if (!days.length) return (
     <div className="space-y-3">
       <Card className="flex flex-wrap items-center gap-2 p-4">{dayPicker}</Card>
-      <p className="text-gray-500">No proposed tasks for {date}. Run Send to AI on the Requested tab.</p>
+      <p className="text-gray-500">No proposed tasks for tomorrow. Run Send to AI on the Requested tab.</p>
       {can('send_to_ai') && (
         <Button variant="outline" className="text-blue-600" disabled={pull.isPending} onClick={() => pull.mutate()}>
           {pull.isPending ? 'Pulling…' : 'Pull AI result'}
@@ -1859,6 +1851,91 @@ function TeamTaskList({ tasks, badge, onOpen, onEdit }: {
           </div>
         </Card>
       ))}
+    </div>
+  )
+}
+
+/* ---------------- Tracking (BAS-1433) ---------------- */
+/**
+ * Все задачи всех PM на выбранную дату в тех же колонках, что и Planning. Только просмотр.
+ * Proposed и Scheduled бывают только у завтрашнего дня (Planning всегда на завтра) — для
+ * других дат колонки видны, но серые и пустые.
+ */
+function Tracking() {
+  const today = todayISO()
+  const tomorrow = planningDay(today)
+  const [date, setDate] = useState(tomorrow)
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['tasks', 'tracking', date],
+    queryFn: () => fetchTasks(undefined, { date }),
+  })
+  const isTomorrow = date === tomorrow
+  const by = (st: Task['status']) => (data ?? []).filter((t) => t.status === st)
+  const requested = by('requested')
+  const proposed = isTomorrow ? by('proposed') : []
+  const scheduled = isTomorrow ? by('scheduled') : []
+  const [openTask, setOpenTask] = useState<Task | null>(null)
+  // те же вкладки, что в Planning: каждая — на всю ширину
+  const [tab, setTab] = useState<'requested' | 'proposed' | 'scheduled'>('requested')
+  const count = (n: number, active: boolean) => (
+    <span className={cn('ml-1.5 rounded-full px-1.5 text-xs', active ? 'bg-gray-200 text-gray-600' : 'text-gray-300')}>{active ? n : '—'}</span>
+  )
+  const onlyTomorrow = (
+    <Card className="p-4 text-sm text-gray-400 opacity-70">
+      Proposed and Scheduled exist only for tomorrow — {dayHeading(tomorrow, today)}.
+    </Card>
+  )
+
+  return (
+    <div className="space-y-4">
+      <Tabs<'requested' | 'proposed' | 'scheduled'>
+        value={tab}
+        onChange={setTab}
+        tabs={[
+          { key: 'requested', label: <>Requested{count(requested.length, true)}</> },
+          { key: 'proposed', label: <span className={cn(!isTomorrow && 'text-gray-300')}>Proposed{count(proposed.length, isTomorrow)}</span> },
+          { key: 'scheduled', label: <span className={cn(!isTomorrow && 'text-gray-300')}>Scheduled{count(scheduled.length, isTomorrow)}</span> },
+        ]}
+      />
+      <Card className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4">
+        <label className="flex items-center gap-1.5 text-sm text-gray-600">
+          <Calendar size={14} /> Date
+          <Input type="date" className="w-40 py-1" value={date} onChange={(e) => { if (e.target.value) setDate(e.target.value) }} />
+        </label>
+        <span className="font-semibold text-gray-900">{dayHeading(date, today)}</span>
+        {!isTomorrow && (
+          <Button variant="ghost" onClick={() => setDate(tomorrow)}>Tomorrow</Button>
+        )}
+        <span className="text-xs text-gray-500 sm:ml-auto">All PMs · view only</span>
+      </Card>
+      {error && <p className="text-sm text-red-600">⚠ {errMsg(error)}</p>}
+      {isLoading && <p className="text-gray-500">Loading…</p>}
+      {!isLoading && !error && tab === 'requested' && (
+        requested.length === 0
+          ? <p className="text-gray-500">No requested tasks for this date.</p>
+          : (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              {requested.map((t) => (
+                <div key={t.id} role="button" tabIndex={0} className="min-w-0 cursor-pointer"
+                  onClick={() => setOpenTask(t)} onKeyDown={(e) => { if (e.key === 'Enter') setOpenTask(t) }}>
+                  <TaskCardCompact t={t} waiting={isWaitingForAi(t)} canChangePm={false} />
+                </div>
+              ))}
+            </div>
+          )
+      )}
+      {!isLoading && !error && tab === 'proposed' && (
+        !isTomorrow ? onlyTomorrow
+          : proposed.length === 0 ? <p className="text-gray-500">No proposed tasks for this date.</p>
+          : <TeamTaskList tasks={proposed} onOpen={setOpenTask}
+              badge={(t) => (t.ai_warnings?.length ? { label: 'Has warnings', tone: 'warning' } : { label: 'Proposed', tone: 'neutral' })} />
+      )}
+      {!isLoading && !error && tab === 'scheduled' && (
+        !isTomorrow ? onlyTomorrow
+          : scheduled.length === 0 ? <p className="text-gray-500">No scheduled tasks for this date.</p>
+          : <TeamTaskList tasks={scheduled} badge={executionBadge} onOpen={setOpenTask} />
+      )}
+      {openTask && <ReadOnlyTask task={openTask} onClose={() => setOpenTask(null)} />}
     </div>
   )
 }

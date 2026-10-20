@@ -11,6 +11,12 @@ describe('planningDay', () => {
   it('is tomorrow', () => {
     expect(planningDay(today)).toBe('2026-10-20')
   })
+
+  it('skips the weekend: Friday, Saturday and Sunday plan for Monday', () => {
+    expect(planningDay('2026-10-23')).toBe('2026-10-26')
+    expect(planningDay('2026-10-24')).toBe('2026-10-26')
+    expect(planningDay('2026-10-25')).toBe('2026-10-26')
+  })
 })
 
 describe('planningViewOf', () => {
