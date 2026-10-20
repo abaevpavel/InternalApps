@@ -143,6 +143,10 @@ export interface Task {
   /** Задача отправлена в AI и ждёт ответа (BAS-1514, 0040): request_ID запуска и когда отправлена. */
   ai_request_id?: string | null
   ai_sent_at?: string | null
+  /** Вопросы к задаче после ответа AI (0041): оранжевый треугольник в Proposed. */
+  ai_warnings?: import('./ai-overlay').AiWarning[] | null
+  /** Бригада из заявки до ответа AI; возвращается при переносе (0041). */
+  requested_team_id?: string | null
   /** auth uid автора (PM, создавший задачу). У старых задач пусто — «без автора» (BAS-1510). */
   created_by?: string | null
   /** Email PM задачи: проектная — PM проекта, Other — автор, или выбран вручную (0032). */
@@ -199,6 +203,8 @@ export interface ScheduledTask {
   additional_stop?: AdditionalStop | null
   /** ручной override travel — не затирается пересчётом */
   travel_overridden?: boolean
+  /** вопросы к задаче после ответа AI (0041) */
+  ai_warnings?: import('./ai-overlay').AiWarning[] | null
   /** флаг конфликта: не успеваем доехать к якорю */
   conflict?: { overlap_min: number } | null
 }

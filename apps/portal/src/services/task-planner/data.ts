@@ -7,6 +7,7 @@ import { supabase } from '../../lib/supabase'
 import { TP_ROLES } from '../../domain/task-planner/permissions'
 import type { ExecutionStatus, Project, ScheduleRun, Skill, Task, Team, TeamAvailability, TeamSkill } from '../../domain/task-planner/types'
 import { DEFAULT_PRIORITY, toPriority, type TaskPriority } from '../../domain/task-planner/priority'
+import { buildAiApplyItems, type AiUnscheduled, type AiWarning } from '../../domain/task-planner/ai-overlay'
 
 export async function fetchTasks(
   status?: Task['status'],
@@ -66,6 +67,8 @@ function mapDbTask(r: Record<string, any>, teamInfo?: Map<string, { name: string
     task_accepted: r.task_accepted ?? null,
     closed_at: r.closed_at ?? null,
     ai_request_id: r.ai_request_id ?? null,
+    ai_warnings: Array.isArray(r.ai_warnings) && r.ai_warnings.length ? r.ai_warnings : null,
+    requested_team_id: r.requested_team_id ?? null,
     ai_sent_at: r.ai_sent_at ?? null,
     created_by: r.created_by ?? null,
     pm_email: r.pm_email ?? null,
@@ -498,83 +501,6 @@ export async function applyScheduleToTasks(
 }
 
 /**
- * Поля задачи, которые принадлежат ей самой, а не расписанию: при создании копии в Proposed
- * берутся из оригинала как есть. AI их не решает и затирать их нельзя.
- */
-const ORIGINAL_FIELDS = [
-  'title', 'description', 'task_type', 'project_id', 'project_manager', 'address',
-  'priority', 'skill_requirements', 'required_skills', 'skills_from_ia', 'schedule_prompt',
-  'additional_stop', 'additional_stop_duration', 'created_by', 'pm_email',
-] as const
-
-/**
- * Материализация результата AI как НОВЫХ строк tasks (status=proposed) — копий.
- *
- * Оригинал в Requested не трогается: он остаётся эталоном, к которому можно вернуться,
- * если на шаге Send to AI что-то пошло не так (сейчас он лежит в Requested, позже будет
- * уходить в архив). `request_task_id` ссылается на оригинал.
- *
- * Копия = оригинал со всеми его полями (`ORIGINAL_FIELDS`) + то, что решил AI: бригада,
- * дата, время, порядок, длительность, время в пути. Ничего из оригинала не теряется.
- * Если окно времени оригинала было задано (timeframe / exact), оно сохраняется в
- * `scheduled_time.requested`, а `start`/`end` — уже время по расписанию.
- */
-export async function materializeProposedCopies(
-  days: import('../../domain/task-planner/types').TeamDay[],
-): Promise<number> {
-  if (!supabase) throw new Error('Supabase is not configured')
-  const sourceIds = [...new Set(days.flatMap((d) => d.tasks.map((t) => t.task_id)).filter(Boolean))]
-  const sourceById = new Map<string, Record<string, unknown>>()
-  if (sourceIds.length) {
-    const { data: src, error: srcErr } = await supabase
-      .from('tp_tasks')
-      .select(['id', 'scheduled_time', ...ORIGINAL_FIELDS].join(', '))
-      .in('id', sourceIds)
-    if (srcErr) throw srcErr
-    for (const r of (src ?? []) as unknown as Record<string, unknown>[]) sourceById.set(r.id as string, r)
-  }
-  const rows: Record<string, unknown>[] = []
-  for (const day of days) {
-    for (const t of day.tasks) {
-      const orig = sourceById.get(t.task_id)
-      const scheduled_time: Record<string, unknown> = t.anchor
-        ? { start: t.start_time, end: t.end_time, anchor: true, anchor_time: t.anchor_time }
-        : { start: t.start_time, end: t.end_time }
-      if (orig?.scheduled_time) scheduled_time.requested = orig.scheduled_time
-
-      // Поля оригинала; если оригинал не нашёлся (удалён) — то немногое, что вернул AI.
-      const base: Record<string, unknown> = orig
-        ? Object.fromEntries(ORIGINAL_FIELDS.map((f) => [f, orig[f] ?? null]))
-        : {
-            title: (String(t.description ?? '').split('\n')[0] || t.project_name || 'Task').slice(0, 200),
-            description: t.description ?? '',
-            project_id: t.project_id || null,
-            address: t.project_address || null,
-          }
-      if (!base.title) base.title = (String(base.description ?? '').split('\n')[0] || 'Task').slice(0, 200)
-      if (!base.address) base.address = t.project_address || null
-
-      rows.push({
-        ...base,
-        status: 'proposed',
-        request_task_id: t.task_id,
-        // Решения AI / расписания:
-        team_id: day.team_id === 'unassigned' ? null : day.team_id,
-        scheduled_date: day.date || null,
-        scheduled_time,
-        estimated_duration: t.duration_minutes / 60,
-        stop_number: t.scheduled_order,
-        travel_time: t.drive_minutes_from_previous,
-      })
-    }
-  }
-  if (!rows.length) return 0
-  const { error } = await supabase.from('tp_tasks').insert(rows)
-  if (error) throw error
-  return rows.length
-}
-
-/**
  * Люди для выбора PM задачи — Contacts Directory «All employees» через функцию tp_people()
  * (миграция 0032): имя и email.
  */
@@ -604,7 +530,6 @@ export async function fetchExtraPeopleNotes(): Promise<Map<string, string>> {
   return new Map(((data ?? []) as { email: string; note: string | null }[]).map((r) => [r.email, r.note ?? 'added manually']))
 }
 
-/** Удалить все задачи заданного статуса (для кнопки «Удалить все» в Proposed). */
 /**
  * Вернуть утверждённое расписание дня обратно в Proposed одной пачкой (кнопка Back to Proposed
  * во вкладке Scheduled). Только задачи, которые бригада ещё не трогала (`pending`): выполненные
@@ -623,36 +548,76 @@ export async function returnScheduledToProposed(date: string): Promise<number> {
   return (data ?? []).length
 }
 
-export async function deleteTasksByStatus(status: Task['status']): Promise<number> {
-  if (!supabase) throw new Error('Supabase is not configured')
-  const { data, error } = await supabase.from('tp_tasks').delete().eq('status', status).select('id')
-  if (error) throw error
-  return (data ?? []).length
-}
-
 /**
- * Заменить набор proposed результатом расписания: снести старые proposed-копии
- * и вставить новые. Requested остаётся нетронутым.
- */
-export async function replaceProposedWithSchedule(
-  days: import('../../domain/task-planner/types').TeamDay[],
-): Promise<number> {
-  await deleteTasksByStatus('proposed')
-  return materializeProposedCopies(days)
-}
-
-/**
- * Подтянуть результат планировщика (по requestId/последний) и материализовать
- * как proposed-копии. Requested не трогаем. Спасает от таймаута/refresh.
+ * Подтянуть ответ планировщика (по requestId или последний) и наложить его на задачи, которые
+ * ждут этот запрос (TP-1.1). Спасает от таймаута/refresh. Возвращает число применённых задач.
  */
 export async function pullScheduleIntoTasks(requestId?: string): Promise<number> {
   const run = await fetchScheduleRun(requestId)
-  const sched = run?.output_data?.schedule
-  if (!sched?.length) return 0
-  const n = await replaceProposedWithSchedule(sched)
-  // ответ получен — задачи больше не ждут AI (BAS-1514)
-  if (run?.request_id) await clearSentToAi(run.request_id)
-  return n
+  if (!run?.output_data?.schedule) return 0
+  return applyAiRun(run)
+}
+
+/**
+ * Наложить ответ AI на задачи (TP-1.1, миграция 0041): та же строка, из ответа — только поля
+ * расписания, вопросы к задаче — пометками (`buildAiApplyItems`). Применяет функция БД одной
+ * транзакцией и пишет журнал для разработчика. Задачи, которые больше не ждут этот запрос,
+ * пропускаются (в журнал как ignored).
+ */
+export async function applyAiRun(run: ScheduleRun): Promise<number> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const sent = await fetchTasksWaitingFor(run.request_id)
+  if (!sent.length) return 0
+  const date = sent[0].scheduled_date
+  const [teams, unavailable] = await Promise.all([fetchTeams(), fetchAvailability()])
+  const c2 = (run.comments_ai_2 && typeof run.comments_ai_2 === 'object' ? run.comments_ai_2 : {}) as Record<string, unknown>
+  const items = buildAiApplyItems({
+    sent,
+    schedule: run.output_data?.schedule ?? [],
+    unscheduled: Array.isArray(c2.unscheduled) ? (c2.unscheduled as AiUnscheduled[]) : [],
+    teams, unavailable, date,
+  })
+  const { data, error } = await supabase.rpc('tp_ai_apply', { p_request_id: run.request_id, p_date: date, p_items: items })
+  if (error) throw error
+  return (data ?? 0) as number
+}
+
+/** Задачи Requested, которые ждут ответ этого запроса. */
+async function fetchTasksWaitingFor(requestId: string): Promise<Task[]> {
+  const list = await fetchTasks('requested')
+  return list.filter((t) => t.ai_request_id === requestId)
+}
+
+/**
+ * Перенести задачу на другой день (BAS-1437, миграция 0041): та же строка, статус requested,
+ * поля расписания от AI снимаются, бригада и окно времени возвращаются к заявленным.
+ */
+export async function moveTask(taskId: string, date: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { error } = await supabase.rpc('tp_move_task', { p_task_id: taskId, p_date: date })
+  if (error) throw error
+}
+
+/** Строка журнала прогонов AI (только Developer, миграция 0041). */
+export interface AiRunLogRow {
+  id: number
+  request_id: string
+  batch_date: string | null
+  task_id: string | null
+  kind: 'sent' | 'applied' | 'ignored'
+  sent: Record<string, unknown> | null
+  received: unknown
+  applied: { before?: Record<string, unknown>; after?: Record<string, unknown> } | null
+  warnings: AiWarning[] | null
+  note: string | null
+  created_at: string
+}
+
+export async function fetchAiRunLog(limit = 2000): Promise<AiRunLogRow[]> {
+  if (!supabase) return []
+  const { data, error } = await supabase.from('tp_ai_run_log').select('*').order('id', { ascending: false }).limit(limit)
+  if (error) throw error
+  return (data ?? []) as AiRunLogRow[]
 }
 
 export async function fetchScheduleRun(requestId?: string): Promise<ScheduleRun | null> {
@@ -729,12 +694,13 @@ export async function saveTravelCache(entries: { from: string; to: string; minut
  * Пометка «отправлено в AI» (BAS-1514, 0040): задачи, ушедшие в планировщик, недоступны
  * у всех пользователей, пока ждут ответа. Снимается при ответе, ошибке или по времени ожидания.
  */
-export async function markSentToAi(ids: string[], requestId: string): Promise<void> {
-  if (!ids.length) return
+export async function markSentToAi(ids: string[], requestId: string, date: string): Promise<number> {
+  if (!ids.length) return 0
   if (!supabase) throw new Error('Supabase is not configured')
-  const { error } = await supabase.from('tp_tasks')
-    .update({ ai_request_id: requestId, ai_sent_at: new Date().toISOString() }).in('id', ids)
+  // 0041: функция помечает только Requested этого дня и снимает снимок для журнала
+  const { data, error } = await supabase.rpc('tp_ai_mark_sent', { p_request_id: requestId, p_date: date, p_task_ids: ids })
   if (error) throw error
+  return (data ?? 0) as number
 }
 
 export async function clearSentToAi(requestId: string): Promise<void> {

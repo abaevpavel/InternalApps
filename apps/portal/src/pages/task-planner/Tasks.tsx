@@ -17,8 +17,8 @@ import { Button, Card, Input, Badge, StatusBadge, Modal, Tabs, Select } from '..
 import { cn, errMsg } from '../../lib/utils'
 import {
   fetchTasks, fetchTeams, fetchSkills, fetchAvailability,
-  fetchScheduleRun, applyScheduleToTasks, pullScheduleIntoTasks,
-  replaceProposedWithSchedule, returnScheduledToProposed,
+  fetchScheduleRun, applyScheduleToTasks, pullScheduleIntoTasks, applyAiRun, moveTask,
+  returnScheduledToProposed,
   updateTask, deleteTask, type UpdateTaskInput, fetchPeople, setTaskPm,
   markSentToAi, clearSentToAi,
 } from '../../services/task-planner/data'
@@ -35,9 +35,14 @@ import type { ScheduledTask, TeamDay, Task } from '../../domain/task-planner/typ
 import { useTaskPlannerRoles } from './useTaskPlannerRole'
 import { TaskDetailsModal, dayHeading, todayISO } from './MyTasks'
 import { RangeFilter, useRangeFilter } from './RangeFilter'
+import { MoveDateModal } from './MoveDateModal'
+import { AiRunLogButton } from './AiRunLog'
+import { ConfirmModal, useUndoableAction } from './UndoableAction'
 import { planningDay, tasksForView } from '../../domain/task-planner/planning-side'
 import { groupByDay, ownListOf, OWN_LISTS } from '../../domain/task-planner/own-side'
 import { canDeleteTask, canEditTask, editableFields, isWaitingForAi } from '../../domain/task-planner/edit-rules'
+import { shiftDay } from '../../domain/task-planner/own-side'
+import type { AiWarning } from '../../domain/task-planner/ai-overlay'
 
 /** Простой генератор request_ID для запуска планировщика. */
 function newRequestId(): string {
@@ -61,6 +66,7 @@ function taskToScheduled(t: Task): ScheduledTask {
     duration_minutes: t.estimated_duration_min,
     drive_minutes_from_previous: t.travel_time ?? 0,
     additional_stop: t.additional_stop,
+    ai_warnings: t.ai_warnings ?? null,
   }
 }
 
@@ -140,6 +146,14 @@ function Requested({ goProposed }: { goProposed: () => void }) {
   })
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState<Task | null>(null)
+  // День батча (Vlad 20.10.2026): в AI уходят задачи одного дня, по умолчанию — завтра.
+  const [date, setDate] = useState(() => planningDay(todayISO()))
+  const dayTasks = useMemo(() => (tasks ?? []).filter((t) => t.scheduled_date === date), [tasks, date])
+  const otherDates = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const t of tasks ?? []) if (t.scheduled_date !== date) m.set(t.scheduled_date, (m.get(t.scheduled_date) ?? 0) + 1)
+    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b))
+  }, [tasks, date])
   const waiting = (tasks ?? []).some((t) => isWaitingForAi(t))
   // request_ID запроса, ответ которого задачи ждут или ждали (для Pull AI result у любого пользователя)
   const aiRequestId = (tasks ?? []).find((t) => t.ai_request_id)?.ai_request_id ?? null
@@ -151,8 +165,8 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       // Requested перечитываем из базы прямо перед отправкой, а не берём из кэша страницы:
       // иначе в AI уходят устаревшие даты/поля, если задачи поменяли после загрузки экрана
       // (так 13.10 16 задач ушли на 07.10 вместо 14.10).
-      const list = await fetchTasks('requested')
-      if (!list.length) throw new Error('No requested tasks')
+      const list = (await fetchTasks('requested')).filter((t) => t.scheduled_date === date)
+      if (!list.length) throw new Error(`No requested tasks for ${date}`)
       const [teams, skills, unavailable, webhookUrl, priorityRule] = await Promise.all([
         fetchTeams(), fetchSkills(), fetchAvailability(),
         resolveString('task-planner', 'planner_webhook', import.meta.env.VITE_N8N_PLANNER_WEBHOOK as string | undefined),
@@ -164,9 +178,9 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       // результат можно будет подтянуть кнопкой по этому id.
       setPendingRequestId(requestId)
       // BAS-1514: задачи помечаются «отправлено в AI» — у всех они недоступны до ответа.
-      await markSentToAi(list.map((t) => t.id), requestId)
+      // 0041: помечаются только Requested этого дня, снимок уходит в журнал разработчика.
+      await markSentToAi(list.map((t) => t.id), requestId, date)
       void qc.invalidateQueries({ queryKey: ['tasks', 'requested'] })
-      const date = list[0]?.scheduled_date ?? null
       try {
         await sendToAi({
           requestId, date, tasks: list, teams, unavailableTeams: unavailable, skills,
@@ -175,14 +189,9 @@ function Requested({ goProposed }: { goProposed: () => void }) {
         })
         const run = await pollScheduleRun(requestId)
         if (run.status === 'error') throw new Error(run.error || 'AI returned an error')
-        // материализуем AI-расписание как НОВЫЕ proposed-копии; requested-эталон
-        // НЕ трогаем (всегда остаётся для повторных тестов).
-        if (run.output_data?.schedule?.length) {
-          await replaceProposedWithSchedule(run.output_data.schedule)
-        } else {
-          throw new Error('AI returned no schedule (empty)')
-        }
-        await clearSentToAi(requestId)
+        if (!run.output_data?.schedule) throw new Error('AI returned no schedule (empty)')
+        // TP-1.1: ответ ложится на те же задачи — только поля расписания, вопросы — пометками
+        await applyAiRun(run)
         clearPendingRequestId() // результат применён — запрос больше не «висит»
         return run
       } catch (e) {
@@ -227,45 +236,46 @@ function Requested({ goProposed }: { goProposed: () => void }) {
   })
 
 
-  // Удаление задачи прямо из Requested (Edit убран, Delete оставлен).
-  const del = useMutation({
-    mutationFn: (id: string) => deleteTask(id),
-    onSuccess: () => { setError(null); qc.invalidateQueries({ queryKey: ['tasks'] }) },
-    onError: (e: unknown) => setError(errMsg(e)),
-  })
+  // Удаление из Requested: «точно?» и 5 секунд на Undo — в базу уходит только потом (Vlad 20.10.2026).
+  const [deleting, setDeleting] = useState<Task | null>(null)
+  const undoable = useUndoableAction(
+    (e) => setError(errMsg(e)),
+    () => { setError(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) },
+  )
 
   const busy = send.isPending || recover.isPending || waiting
   return (
     <div className="space-y-6">
-      {/* Режим тестов: Requested — постоянный тестовый набор. Send to AI делает proposed-копии,
-          исходные задачи остаются здесь, чтобы прогонять тот же набор снова. Перед релизом
-          это снимается (роадмап TP-1.1–TP-1.3): Proposed/Scheduled — та же строка, Requested
-          пустеет после утверждения. Кнопка Reset test set уже убрана: Requested и так не пустеет. */}
-      <Card className="flex items-start gap-3 border-amber-200 bg-amber-50 p-4">
-        <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" />
-        <div className="text-sm text-amber-900">
-          <div className="font-semibold">Test mode — Requested tasks are locked as a test set</div>
-          <p className="mt-0.5">
-            Send to AI and Approve All work on copies; the tasks below stay in Requested so the same set can be run again.
-            Unlock before release: proposed and scheduled must become the same task, and Requested must empty after approval.
-          </p>
-        </div>
-      </Card>
-
       <Card className="p-5">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Generate Schedule</h2>
           <div className="flex items-center gap-2">
-            <Badge className="bg-gray-100 text-gray-600">{tasks?.length ?? 0} tasks</Badge>
+            <label className="flex items-center gap-1.5 text-sm text-gray-600">
+              <Calendar size={14} /> Day
+              <Input type="date" className="w-40 py-1" value={date} disabled={busy}
+                onChange={(e) => { if (e.target.value) setDate(e.target.value) }} />
+            </label>
+            <Badge className="bg-gray-100 text-gray-600">{dayTasks.length} tasks</Badge>
           </div>
         </div>
+        {otherDates.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
+            Other days in Requested:
+            {otherDates.map(([d, n]) => (
+              <button key={d} type="button" disabled={busy} onClick={() => setDate(d)}
+                className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-600 hover:bg-gray-200">
+                {d} · {n}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="mt-4 flex items-center justify-between">
           <span className="text-sm text-gray-500">
-            {busy ? 'Sent to AI, waiting for the answer…' : `${tasks?.length ?? 0} tasks will be analyzed`}
+            {busy ? 'Sent to AI, waiting for the answer…' : `${dayTasks.length} tasks of ${date} will be analyzed`}
           </span>
           {can('send_to_ai') && (
             <div className="flex gap-2">
-              <Button variant="primary" disabled={busy || !tasks?.length} onClick={() => send.mutate()}>
+              <Button variant="primary" disabled={busy || !dayTasks.length} onClick={() => send.mutate()}>
                 {busy ? <span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Working…</span> : 'Send to AI'}
               </Button>
             </div>
@@ -290,8 +300,8 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       {/* Две группы: с бригадой, заданной вручную (AI её не меняет), и без бригады
           (бригаду подберёт AI). Раньше все задачи шли под одной плашкой «Unassigned». */}
       {([
-        ['assigned', 'Assigned crew', 'success', (tasks ?? []).filter((t) => t.assigned_team_id)],
-        ['unassigned', 'Unassigned — AI picks the crew', 'info', (tasks ?? []).filter((t) => !t.assigned_team_id)],
+        ['assigned', 'Assigned crew', 'success', dayTasks.filter((t) => t.assigned_team_id)],
+        ['unassigned', 'Unassigned — AI picks the crew', 'info', dayTasks.filter((t) => !t.assigned_team_id)],
       ] as const).map(([key, label, tone, list]) =>
         list.length === 0 ? null : (
           <div key={key}>
@@ -304,9 +314,7 @@ function Requested({ goProposed }: { goProposed: () => void }) {
                 <TaskCardCompact key={t.id} t={t} waiting={isWaitingForAi(t)}
                   canChangePm={can('edit_task') && canEditTask(t)}
                   onEdit={can('edit_task') && canEditTask(t) ? () => setEditing(t) : undefined}
-                  onDelete={can('delete_task') && canDeleteTask(t)
-                    ? () => { if (confirm(`Delete task “${t.title ?? t.description}”?`)) del.mutate(t.id) }
-                    : undefined} />
+                  onDelete={can('delete_task') && canDeleteTask(t) ? () => setDeleting(t) : undefined} />
               ))}
             </div>
           </div>
@@ -314,6 +322,16 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       )}
       <TaskEditModal task={editing} onClose={() => setEditing(null)}
         onSaved={() => { setEditing(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) }} />
+      <ConfirmModal open={!!deleting} title="Delete task?" confirmLabel="Delete" danger
+        onCancel={() => setDeleting(null)}
+        onConfirm={() => {
+          const t = deleting
+          setDeleting(null)
+          if (t) undoable.schedule(`“${(t.title ?? t.description).trim()}” deleted`, () => deleteTask(t.id))
+        }}>
+        Delete <b className="text-gray-900">{deleting?.title ?? deleting?.description}</b>? This cannot be reverted after the undo time.
+      </ConfirmModal>
+      {undoable.toast}
     </div>
   )
 }
@@ -649,7 +667,14 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
   })
   // последний AI-прогон — только для модалки Explain Yourself (комментарии)
   const { data: run } = useQuery({ queryKey: ['scheduleRun'], queryFn: () => fetchScheduleRun() })
-  const days = useMemo<TeamDay[]>(() => buildTeamDays(tasks ?? []), [tasks])
+  // Proposed может держать несколько дней (Send to AI по выбранному дню) — доска по одному дню
+  const dates = useMemo(() => [...new Set((tasks ?? []).map((t) => t.scheduled_date))].sort(), [tasks])
+  // как в Requested: день выбирается календарём, по умолчанию завтра (Vlad 20.10.2026)
+  const [date, setDate] = useState(() => planningDay(todayISO()))
+  const dayTasks = useMemo(() => (tasks ?? []).filter((t) => t.scheduled_date === date), [tasks, date])
+  const days = useMemo<TeamDay[]>(() => buildTeamDays(dayTasks), [dayTasks])
+  const warned = useMemo(() => dayTasks.filter((t) => t.ai_warnings?.length), [dayTasks])
+  const [confirmApprove, setConfirmApprove] = useState(false)
   // актуальное (отредактированное на доске) расписание по всем бригадам — для Approve
   const editedRef = useRef<TeamDay[]>(days)
   const [error, setError] = useState<string | null>(null)
@@ -705,10 +730,43 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
     onError: (e: unknown) => { setSaved(false); setError(errMsg(e)) },
   })
 
+  // BAS-1437: перенос задачи на другой день — та же строка уходит в Requested той даты,
+  // доска пересобирается, тайминги остальных пересчитывает движок.
+  const [moving, setMoving] = useState<Task | null>(null)
+  // перенос уходит в базу через 5 секунд — до этого его можно отменить (Vlad 20.10.2026)
+  const undoable = useUndoableAction(
+    (e) => setError(errMsg(e)),
+    () => { setError(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) },
+  )
+  const onPush = can('change_task_date') && canArrange
+    ? (id: string) => { const t = byTaskId.get(id); if (t) setMoving(t) }
+    : undefined
+  const doMove = (t: Task, to: string) => {
+    setMoving(null)
+    undoable.schedule(`“${(t.title ?? t.description).trim()}” → ${to}, back to Requested`, () => moveTask(t.id, to))
+  }
+
+  const dayPicker = (
+    <>
+      <label className="flex items-center gap-1.5 text-sm text-gray-600">
+        <Calendar size={14} /> Day
+        <Input type="date" className="w-40 py-1" value={date} onChange={(e) => { if (e.target.value) setDate(e.target.value) }} />
+      </label>
+      {dates.filter((d) => d !== date).map((d) => (
+        <button key={d} type="button" onClick={() => setDate(d)}
+          className="rounded-full bg-accent-50 px-2.5 py-1 text-xs font-semibold text-accent-700 hover:bg-accent-100">
+          📅 {new Date(d + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+          {' · '}{(tasks ?? []).filter((t) => t.scheduled_date === d).length}
+        </button>
+      ))}
+    </>
+  )
+
   if (isLoading) return <p className="text-gray-500">Loading…</p>
   if (!days.length) return (
     <div className="space-y-3">
-      <p className="text-gray-500">No proposed tasks. Run Send to AI on the Requested tab.</p>
+      <Card className="flex flex-wrap items-center gap-2 p-4">{dayPicker}</Card>
+      <p className="text-gray-500">No proposed tasks for {date}. Run Send to AI on the Requested tab.</p>
       {can('send_to_ai') && (
         <Button variant="outline" className="text-blue-600" disabled={pull.isPending} onClick={() => pull.mutate()}>
           {pull.isPending ? 'Pulling…' : 'Pull AI result'}
@@ -722,12 +780,11 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
   return (
     <div className="space-y-4">
       <Card className="flex flex-wrap items-center gap-2 p-4">
-        {days[0]?.date && (
-          <Badge className="bg-accent-50 font-semibold text-accent-700">
-            📅 {new Date(days[0].date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-          </Badge>
-        )}
+        {dayPicker}
         <Badge className="bg-gray-100 text-gray-600">{total} tasks</Badge>
+        {warned.length > 0 && (
+          <Badge className="bg-amber-50 text-amber-700"><AlertTriangle size={12} className="mr-1 inline" />{warned.length} with warnings</Badge>
+        )}
         <Button variant="outline" className="text-blue-600" disabled={isFetching} onClick={() => refetch()}>
           {isFetching ? 'Refreshing…' : 'Fetch AI Data'}
         </Button>
@@ -743,14 +800,37 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
           </Button>
         )}
         {can('approve_schedule') && (
-          <Button variant="green" disabled={approve.isPending} onClick={() => approve.mutate()}>
+          <Button variant="green" disabled={approve.isPending}
+            onClick={() => (warned.length ? setConfirmApprove(true) : approve.mutate())}>
             {approve.isPending ? 'Approving…' : 'Approve All'}
           </Button>
         )}
         <Button variant="outline" onClick={() => setExplainOpen(true)}>💬 Explain Yourself</Button>
+        <AiRunLogButton />
         {error && <span className="text-sm text-red-600">⚠ {error}</span>}
       </Card>
-      <EditableBoard days={days} readOnly={!canArrange} onEdit={onEdit} onComputed={(d) => { editedRef.current = d }} />
+      <EditableBoard days={days} readOnly={!canArrange} onEdit={onEdit} onPush={onPush} onComputed={(d) => { editedRef.current = d }} />
+
+      <Modal open={confirmApprove} title="Approve with warnings?" onClose={() => setConfirmApprove(false)}
+        footer={<>
+          <Button variant="ghost" onClick={() => setConfirmApprove(false)}>Cancel</Button>
+          <Button variant="green" disabled={approve.isPending}
+            onClick={() => { setConfirmApprove(false); approve.mutate() }}>OK, approve</Button>
+        </>}>
+        <p className="mb-2 text-sm text-gray-600">These tasks have warnings after the AI answer. Approve the schedule anyway?</p>
+        <ul className="max-h-72 space-y-2 overflow-auto text-sm">
+          {warned.map((t) => (
+            <li key={t.id} className="rounded-md bg-amber-50 px-3 py-2">
+              <b className="text-gray-900">{t.title ?? t.description}</b>
+              <ul className="mt-0.5 list-disc pl-5 text-amber-800">{(t.ai_warnings ?? []).map((w, i) => <li key={i}>{w.message}</li>)}</ul>
+            </li>
+          ))}
+        </ul>
+      </Modal>
+
+      <MoveDateModal task={moving} pending={false} onClose={() => setMoving(null)}
+        onMove={(to) => moving && doMove(moving, to)} />
+      {undoable.toast}
       <TaskEditModal task={editing} onClose={() => setEditing(null)}
         onSaved={() => { setEditing(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) }} />
 
@@ -870,8 +950,10 @@ interface TaskProv {
   orderChanged: boolean
 }
 
-function EditableBoard({ days, readOnly = false, onEdit, onComputed }: {
+function EditableBoard({ days, readOnly = false, onEdit, onPush, onComputed }: {
   days: TeamDay[]
+  /** Перенос на другой день (BAS-1437): кнопка Push открывает выбор даты. */
+  onPush?: (taskId: string) => void
   /** Без права раскладки (BAS-1509): перетаскивание выключено. */
   readOnly?: boolean
   /** Правка полей задачи PM-ом (BAS-1514); без права — нет кнопки. */
@@ -1095,6 +1177,7 @@ function EditableBoard({ days, readOnly = false, onEdit, onComputed }: {
             overrides={overrides}
             provByTask={provByTask}
             onEdit={onEdit}
+            onPush={onPush}
             onDuration={(id, v) => setDurations((d) => ({ ...d, [id]: v }))}
             onOverride={(id, v) => setOverrides((o) => {
               if (v == null) { const { [id]: _drop, ...rest } = o; return rest }
@@ -1116,7 +1199,7 @@ function EditableBoard({ days, readOnly = false, onEdit, onComputed }: {
 
 /** Колонка одной бригады в доске: droppable-контейнер + сортируемые задачи. */
 function TeamColumn({
-  day, ids, durations, overrides, provByTask, onEdit, onDuration, onOverride,
+  day, ids, durations, overrides, provByTask, onEdit, onPush, onDuration, onOverride,
 }: {
   day: TeamDay
   ids: string[]
@@ -1124,6 +1207,7 @@ function TeamColumn({
   overrides: Record<string, number>
   provByTask: Map<string, TaskProv>
   onEdit?: (taskId: string) => void
+  onPush?: (taskId: string) => void
   onDuration: (id: string, v: number) => void
   onOverride: (id: string, v: number | null) => void
 }) {
@@ -1148,6 +1232,7 @@ function TeamColumn({
                 duration={durations[t.task_id] ?? t.duration_minutes}
                 prov={provByTask.get(t.task_id)}
                 onEdit={onEdit ? () => onEdit(t.task_id) : undefined}
+                onPush={onPush ? () => onPush(t.task_id) : undefined}
                 onDuration={(v) => onDuration(t.task_id, v)}
                 overridden={overrides[t.task_id] != null}
                 onTravelOverride={(v) => onOverride(t.task_id, v)}
@@ -1504,14 +1589,28 @@ function TaskInfo({ prov }: { prov?: TaskProv }) {
   )
 }
 
+/** Оранжевый треугольник: вопросы к задаче после ответа AI, подсказка по наведению (0041). */
+function AiWarningMark({ warnings }: { warnings: AiWarning[] }) {
+  return (
+    <span className="group relative inline-flex items-center" tabIndex={0} aria-label={`${warnings.length} warnings`}>
+      <AlertTriangle size={16} className="text-orange-500" />
+      <span className="pointer-events-none absolute left-1/2 top-full z-30 mt-1 hidden w-72 -translate-x-1/2 rounded-md border border-orange-200 bg-white p-2 text-xs text-gray-700 shadow-lg group-hover:block group-focus:block">
+        <span className="mb-1 block font-semibold text-orange-700">Check this task</span>
+        {warnings.map((w, i) => <span key={i} className="block">• {w.message}</span>)}
+      </span>
+    </span>
+  )
+}
+
 function SortableTaskRow({
-  t, index, duration, prov, onEdit, onDuration, overridden, onTravelOverride,
+  t, index, duration, prov, onEdit, onPush, onDuration, overridden, onTravelOverride,
 }: {
   t: ScheduledTask
   index: number
   duration: number
   prov?: TaskProv
   onEdit?: () => void
+  onPush?: () => void
   onDuration: (v: number) => void
   overridden: boolean
   onTravelOverride: (v: number | null) => void
@@ -1530,8 +1629,16 @@ function SortableTaskRow({
         <Badge className="bg-accent-50 text-accent-700">Project task</Badge>
         <b className="text-gray-900">{t.description}</b>
         {t.anchor && <StatusBadge tone="danger">anchor</StatusBadge>}
+        {t.ai_warnings?.length ? <AiWarningMark warnings={t.ai_warnings} /> : null}
         {(prov?.teamChanged || prov?.orderChanged) && <span className="text-[10px] font-medium text-blue-500">moved</span>}
         <div className="ml-auto flex items-center gap-2">
+          {onPush && (
+            <button type="button" onClick={onPush}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-gray-500 hover:bg-gray-100 hover:text-accent-700"
+              title="Move the task to another day (back to Requested)">
+              <Calendar size={13} /> Push
+            </button>
+          )}
           {onEdit && (
             <button type="button" onClick={onEdit} className="text-gray-400 hover:text-accent-600" aria-label="edit" title="Edit task">
               <SquarePen size={15} />

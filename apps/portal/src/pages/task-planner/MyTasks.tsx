@@ -36,6 +36,9 @@ import {
 import { useAuth } from '../../auth/AuthProvider'
 import { useTaskPlannerRoles } from './useTaskPlannerRole'
 import { RangeFilter, useRangeFilter } from './RangeFilter'
+import { MoveDateModal } from './MoveDateModal'
+import { useUndoableAction } from './UndoableAction'
+import { moveTask } from '../../services/task-planner/data'
 
 /* ---------------- Даты ---------------- */
 
@@ -81,6 +84,19 @@ export function MyTasksPage() {
   const [closeFor, setCloseFor] = useState<Task | null>(null)
   const [followUpFor, setFollowUpFor] = useState<Task | null>(null)
   const canReview = mode === 'pm' && can('review_task')
+  // BAS-1437: PM переносит свою невыполненную задачу на день, когда работа будет сделана
+  const canMove = mode === 'pm' && can('change_task_date')
+  const [moveFor, setMoveFor] = useState<Task | null>(null)
+  const [moveError, setMoveError] = useState<string | null>(null)
+  // перенос уходит в базу через 5 секунд — до этого его можно отменить
+  const undoable = useUndoableAction(
+    (e) => setMoveError(errMsg(e)),
+    () => {
+      setMoveError(null)
+      void qc.invalidateQueries({ queryKey: ['tp-own-tasks'] })
+      void qc.invalidateQueries({ queryKey: ['tasks'] })
+    },
+  )
 
   const { data, isLoading, error } = useQuery({
     queryKey: isCrew ? ['tp-own-tasks', 'day', day] : ['tp-own-tasks', range?.from ?? null, range?.to ?? null],
@@ -156,6 +172,7 @@ export function MyTasksPage() {
       </div>
 
       {badRange && <Card className="p-4 text-sm text-red-600">The start date is after the end date.</Card>}
+      {moveError && <Card className="p-4 text-sm text-red-600">⚠ {moveError}</Card>}
       {error && <Card className="p-4 text-sm text-red-600">⚠ {errMsg(error)}</Card>}
       {isLoading && <Card className="p-8 text-center text-gray-500">Loading…</Card>}
       {!isLoading && !error && days.length === 0 && !badRange && (
@@ -174,12 +191,21 @@ export function MyTasksPage() {
             <div className="space-y-2">
               {day.tasks.map((t, i) => (
                 <TaskRow key={t.id} task={t} index={i + 1} mode={mode} canReview={canReview}
-                  comments={commentsQ.data?.get(t.id) ?? 0} onOpen={() => setOpenTask(t)} />
+                  comments={commentsQ.data?.get(t.id) ?? 0} onOpen={() => setOpenTask(t)}
+                  onMove={canMove && t.execution_status === 'pending' && !t.request_task_id ? () => setMoveFor(t) : undefined} />
               ))}
             </div>
           </section>
         ))}
       </div>
+
+      <MoveDateModal task={moveFor} pending={false} onClose={() => setMoveFor(null)}
+        onMove={(to) => {
+          const t = moveFor
+          setMoveFor(null)
+          if (t) undoable.schedule(`“${(t.title || t.description).trim()}” → ${to}, back to Requested`, () => moveTask(t.id, to))
+        }} />
+      {undoable.toast}
 
       {openTask && (
         <TaskDetailsModal
@@ -272,8 +298,10 @@ function DayPicker({ day, today, onChange }: { day: string | null; today: string
 
 /* ---------------- Карточка задачи ---------------- */
 
-function TaskRow({ task, index, mode, canReview, comments, onOpen }: {
+function TaskRow({ task, index, mode, canReview, comments, onOpen, onMove }: {
   task: Task
+  /** Перенос на другой день (BAS-1437): PM, только невыполненная задача. */
+  onMove?: () => void
   index: number
   mode: OwnMode
   /** PM может закрыть задачу (BAS-1431). */
@@ -339,9 +367,16 @@ function TaskRow({ task, index, mode, canReview, comments, onOpen }: {
             </div>
           </div>
         </div>
-        <Button variant={actionLabel === 'Details' ? 'subtle' : 'amber'} onClick={onOpen}>
-          {actionLabel}
-        </Button>
+        <div className="flex items-center gap-2">
+          {onMove && (
+            <Button variant="outline" onClick={onMove} title="Carry the task to the day the work will be done">
+              Push to another day
+            </Button>
+          )}
+          <Button variant={actionLabel === 'Details' ? 'subtle' : 'amber'} onClick={onOpen}>
+            {actionLabel}
+          </Button>
+        </div>
       </div>
     </Card>
   )
