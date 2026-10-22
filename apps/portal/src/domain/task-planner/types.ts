@@ -129,6 +129,9 @@ export interface TeamAvailability {
   team_name: string
   start_date: string
   end_date: string
+  /** BAS-1446: vacation | sick_leave | other */
+  kind: import('./availability').AvailabilityKind
+  note: string | null
 }
 
 /** Задача (новая сущность в Supabase) */

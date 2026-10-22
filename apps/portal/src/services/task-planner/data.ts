@@ -5,6 +5,7 @@
  */
 import { supabase } from '../../lib/supabase'
 import { TP_ROLES } from '../../domain/task-planner/permissions'
+import { toAvailabilityKind, type AvailabilityKind } from '../../domain/task-planner/availability'
 import type { ExecutionStatus, Project, ScheduleRun, Skill, Task, Team, TeamAvailability, TeamSkill } from '../../domain/task-planner/types'
 import { DEFAULT_PRIORITY, toPriority, type TaskPriority } from '../../domain/task-planner/priority'
 import { buildAiApplyItems, type AiUnscheduled, type AiWarning } from '../../domain/task-planner/ai-overlay'
@@ -331,22 +332,43 @@ export async function fetchAvailability(): Promise<TeamAvailability[]> {
   // team_availability ссылается на team_id; имя команды подтянем join'ом
   const { data, error } = await supabase
     .from('tp_team_availability')
-    .select('id, team_id, start_date, end_date, teams:tp_teams(name)')
+    .select('id, team_id, start_date, end_date, kind, note, teams:tp_teams(name)')
   if (error) throw error
   return (data ?? []).map((r: Record<string, unknown>): TeamAvailability => ({
     id: r.id as string, team_id: r.team_id as string,
     team_name: (r.teams as { name?: string } | null)?.name ?? '',
     start_date: r.start_date as string, end_date: r.end_date as string,
+    kind: toAvailabilityKind(r.kind), note: (r.note as string | null) ?? null,
   }))
 }
 
-/** Добавить период недоступности команды. */
-export async function createAvailability(teamId: string, startDate: string, endDate: string): Promise<void> {
+export interface AvailabilityInput {
+  teamId: string
+  startDate: string
+  endDate: string
+  kind: AvailabilityKind
+  note?: string | null
+}
+
+/** Добавить период недоступности команды. Возвращает id новой записи. */
+export async function createAvailability(input: AvailabilityInput): Promise<string> {
   if (!supabase) throw new Error('Supabase is not configured')
   const { data: auth } = await supabase.auth.getUser()
-  const { error } = await supabase.from('tp_team_availability').insert({
-    team_id: teamId, start_date: startDate, end_date: endDate, created_by: auth.user?.id ?? null,
-  })
+  const { data, error } = await supabase.from('tp_team_availability').insert({
+    team_id: input.teamId, start_date: input.startDate, end_date: input.endDate,
+    kind: input.kind, note: input.note?.trim() || null, created_by: auth.user?.id ?? null,
+  }).select('id').single()
+  if (error) throw error
+  return data.id as string
+}
+
+/** Изменить период недоступности (BAS-1446). */
+export async function updateAvailability(id: string, input: AvailabilityInput): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { error } = await supabase.from('tp_team_availability').update({
+    team_id: input.teamId, start_date: input.startDate, end_date: input.endDate,
+    kind: input.kind, note: input.note?.trim() || null,
+  }).eq('id', id)
   if (error) throw error
 }
 
@@ -420,6 +442,8 @@ export interface UpdateTaskInput {
   priority?: TaskPriority
   scheduled_date?: string
   address?: string
+  /** Бригада заявки — правится только в Requested (BAS-1446: заменить бригаду в отпуске). */
+  team_id?: string | null
 }
 
 /** UPDATE существующей задачи (точечная правка полей). */
@@ -432,6 +456,7 @@ export async function updateTask(id: string, input: UpdateTaskInput): Promise<vo
   if (input.priority !== undefined) row.priority = input.priority
   if (input.scheduled_date !== undefined) row.scheduled_date = input.scheduled_date
   if (input.address !== undefined) row.address = input.address
+  if (input.team_id !== undefined) row.team_id = input.team_id
   if (!Object.keys(row).length) return
   const { error } = await supabase.from('tp_tasks').update(row).eq('id', id)
   if (error) throw error

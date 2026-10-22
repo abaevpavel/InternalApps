@@ -4,13 +4,14 @@
  *  - удаление — только в Requested; дальше задачу переносят на другой день (BAS-1437), не удаляют;
  *  - правка в Proposed и Scheduled не меняет план: тайминги не пересчитываются, в Slack не уходит.
  *    Поэтому длительность там не правится (её меняет Schedule Manager на доске Proposed),
- *    а дата не правится нигде — перенос делает BAS-1437.
+ *    а дата не правится нигде — перенос делает BAS-1437. Бригада заявки правится только в
+ *    Requested (BAS-1446): дальше бригаду ставит AI и доска Proposed.
  * Пока задачи ждут ответа AI, их не трогают (решение Vlad 19.10.2026).
  * Те же запреты для Completed и Closed держит база (миграция 0040), не только интерфейс.
  */
 import type { Task } from './types'
 
-export type EditableField = 'title' | 'description' | 'duration' | 'priority' | 'address'
+export type EditableField = 'title' | 'description' | 'duration' | 'priority' | 'address' | 'team'
 
 /** Сколько ждём ответа AI, после этого пометка «отправлено в AI» перестаёт действовать (как поллинг). */
 export const AI_WAIT_MS = 10 * 60 * 1000
@@ -39,6 +40,6 @@ export function canDeleteTask(t: RuleTask, now = Date.now()): boolean {
 /** Какие поля правятся в этом статусе. */
 export function editableFields(t: RuleTask): EditableField[] {
   return t.status === 'requested'
-    ? ['title', 'description', 'duration', 'priority', 'address']
+    ? ['title', 'description', 'duration', 'priority', 'address', 'team']
     : ['title', 'description', 'priority', 'address']
 }

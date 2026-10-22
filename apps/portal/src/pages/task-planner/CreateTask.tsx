@@ -5,7 +5,8 @@ import { ChevronDown, X } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Card, Input, Textarea, Field, Select, Tabs } from '../../components/task-planner-ui'
 import { cn, errMsg } from '../../lib/utils'
-import { fetchPeople, fetchProjects, fetchSkills, fetchTeams, fetchTaskTypes, createTask } from '../../services/task-planner/data'
+import { fetchAvailability, fetchPeople, fetchProjects, fetchSkills, fetchTeams, fetchTaskTypes, createTask } from '../../services/task-planner/data'
+import { availabilityKindLabel, periodOn } from '../../domain/task-planner/availability'
 import { useAuth } from '../../auth/AuthProvider'
 import type { Skill, TimeType } from '../../domain/task-planner/types'
 import { DEFAULT_PRIORITY, PRIORITY_OPTIONS, toPriority, type TaskPriority } from '../../domain/task-planner/priority'
@@ -29,6 +30,8 @@ export function CreateTaskPage() {
   const skills = useQuery({ queryKey: ['skills'], queryFn: fetchSkills })
   const taskTypes = useQuery({ queryKey: ['taskTypes'], queryFn: fetchTaskTypes })
   const people = useQuery({ queryKey: ['tp-people'], queryFn: fetchPeople, staleTime: 5 * 60_000 })
+  // BAS-1446: бригада в отпуске в этот день — предупредить (в AI такая задача не уйдёт).
+  const periods = useQuery({ queryKey: ['availability'], queryFn: fetchAvailability })
 
   // поля формы
   const [projectId, setProjectId] = useState('')
@@ -64,6 +67,19 @@ export function CreateTaskPage() {
     return list
   }, [people.data, myEmail])
   const pmName = (people.data ?? []).find((p) => p.email === pmEmail)?.full_name
+  const offFor = (id: string) => {
+    const p = periodOn(periods.data ?? [], id, date)
+    return p ? `${availabilityKindLabel(p.kind)} until ${p.end_date}` : null
+  }
+  const teamOff = teamId ? offFor(teamId) : null
+  // Бригаду, недоступную на дату задачи, выбрать нельзя (Vlad 22.10.2026). Если её выбрали, а потом
+  // сменили дату на её отпуск — выбор снимается с подсказкой.
+  const [clearedTeam, setClearedTeam] = useState<string | null>(null)
+  useEffect(() => {
+    if (!teamOff) return
+    setClearedTeam(teams.data?.find((t) => t.id === teamId)?.name ?? 'The crew')
+    setTeamId('')
+  }, [teamOff, teamId, teams.data])
 
   function buildScheduledTime(): Record<string, unknown> | null {
     if (timeType === 'exact' && exactTime) return { type: 'exact', anchor: true, anchor_time: exactTime, start: exactTime }
@@ -78,6 +94,7 @@ export function CreateTaskPage() {
       if (!date) throw new Error('Date is required')
       if (date < todayISO()) throw new Error('The date cannot be in the past') // BAS-1433
       if (mode === 'other' && !taskAddress.trim()) throw new Error('Task Address is required')
+      if (teamId && offFor(teamId)) throw new Error('The selected crew is unavailable on this date')
       const hours = parseFloat(durationH)
       if (!hours || hours <= 0) throw new Error('Duration must be > 0')
       const proj = projects.data?.find((p) => p.id === projectId)
@@ -179,10 +196,18 @@ export function CreateTaskPage() {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Assigned Team">
-            <Select value={teamId} onChange={(e) => setTeamId(e.target.value)}>
+            <Select value={teamId} onChange={(e) => { setTeamId(e.target.value); setClearedTeam(null) }}>
               <option value="">No preference</option>
-              {teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              {teams.data?.map((t) => {
+                const off = offFor(t.id)
+                return <option key={t.id} value={t.id} disabled={!!off}>{off ? `${t.name} (${off})` : t.name}</option>
+              })}
             </Select>
+            {clearedTeam && (
+              <p className="mt-1 text-xs text-amber-700">
+                ⚠ {clearedTeam} is unavailable on {date} — the crew was cleared. Pick another crew or leave it to AI.
+              </p>
+            )}
           </Field>
           <Field label="Project Manager" hint={pmChoice === null
             ? (mode === 'project'

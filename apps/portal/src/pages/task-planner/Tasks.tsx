@@ -31,7 +31,7 @@ import { setPendingRequestId, getPendingRequestId, clearPendingRequestId } from 
 import { buildTravelMatrix, matrixProvider, edgeKey, type MatrixPoint } from '../../services/task-planner/maps'
 import { recomputeTeamDay, type Point } from '../../domain/task-planner/scheduling-engine'
 import { minToAmPm, hhmmToMin, minToHm, minToHoursLabel } from '../../lib/task-planner-time'
-import type { ScheduledTask, TeamDay, Task } from '../../domain/task-planner/types'
+import type { ScheduledTask, TeamDay, Task, TeamAvailability } from '../../domain/task-planner/types'
 import { useTaskPlannerRoles } from './useTaskPlannerRole'
 import { TaskDetailsModal, dayHeading, todayISO } from './MyTasks'
 import { RangeFilter, useRangeFilter } from './RangeFilter'
@@ -43,6 +43,7 @@ import { groupByDay, ownListOf, OWN_LISTS } from '../../domain/task-planner/own-
 import { canDeleteTask, canEditTask, editableFields, isWaitingForAi } from '../../domain/task-planner/edit-rules'
 import { shiftDay } from '../../domain/task-planner/own-side'
 import type { AiWarning } from '../../domain/task-planner/ai-overlay'
+import { availabilityKindLabel, availableTeamsOn, periodOn, tasksWithUnavailableTeam } from '../../domain/task-planner/availability'
 
 /** Простой генератор request_ID для запуска планировщика. */
 function newRequestId(): string {
@@ -166,6 +167,9 @@ function Requested({ goProposed }: { goProposed: () => void }) {
   const date = planningDay(todayISO())
   const dayTasks = useMemo(() => (tasks ?? []).filter((t) => t.scheduled_date === date), [tasks, date])
   const otherCount = (tasks ?? []).length - dayTasks.length
+  // BAS-1446: недоступные бригады в AI не уходят; задачи, назначенные им, надо исправить до отправки.
+  const { data: periods } = useQuery({ queryKey: ['availability'], queryFn: fetchAvailability })
+  const offTasks = useMemo(() => tasksWithUnavailableTeam(dayTasks, periods ?? []), [dayTasks, periods])
   const waiting = (tasks ?? []).some((t) => isWaitingForAi(t))
   // request_ID запроса, ответ которого задачи ждут или ждали (для Pull AI result у любого пользователя)
   const aiRequestId = (tasks ?? []).find((t) => t.ai_request_id)?.ai_request_id ?? null
@@ -185,6 +189,14 @@ function Requested({ goProposed }: { goProposed: () => void }) {
         // BAS-1434: правило «High раньше в дне» — в Persistent Prompt (сценарий n8n не меняется).
         resolveString('task-planner', 'planner_priority_rule', PRIORITY_RULE),
       ])
+      // BAS-1446: задачу на бригаду в отпуске не отправляем — сначала поменять бригаду или день.
+      const blocked = tasksWithUnavailableTeam(list, unavailable)
+      if (blocked.length) {
+        throw new Error(`${blocked.length} task(s) are assigned to a crew that is unavailable on ${date}: `
+          + blocked.map((t) => `${t.title ?? t.description ?? 'task'} (${t.assigned_team_name ?? 'crew'})`).join('; ')
+          + '. Change the crew or move the task to another day.')
+      }
+      const aiTeams = availableTeamsOn(teams, unavailable, date)
       const requestId = newRequestId()
       // запоминаем запрос ДО ожидания — если поллинг прервётся (таймаут/refresh),
       // результат можно будет подтянуть кнопкой по этому id.
@@ -195,7 +207,7 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       void qc.invalidateQueries({ queryKey: ['tasks', 'requested'] })
       try {
         await sendToAi({
-          requestId, date, tasks: list, teams, unavailableTeams: unavailable, skills,
+          requestId, date, tasks: list, teams: aiTeams, skills,
           webhookUrl: webhookUrl ?? undefined,
           persistentPrompt: priorityRule || PRIORITY_RULE,
         })
@@ -279,7 +291,8 @@ function Requested({ goProposed }: { goProposed: () => void }) {
           </span>
           {can('send_to_ai') && (
             <div className="flex gap-2">
-              <Button variant="primary" disabled={busy || !dayTasks.length} onClick={() => send.mutate()}>
+              <Button variant="primary" disabled={busy || !dayTasks.length || offTasks.length > 0} onClick={() => send.mutate()}
+                title={offTasks.length ? 'Some tasks are assigned to an unavailable crew' : undefined}>
                 {busy ? <span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Working…</span> : 'Send to AI'}
               </Button>
             </div>
@@ -287,6 +300,18 @@ function Requested({ goProposed }: { goProposed: () => void }) {
         </div>
         {error && <p className="mt-3 text-sm text-red-600">⚠ {error}</p>}
       </Card>
+
+      {offTasks.length > 0 && (
+        <Card className="flex items-start gap-3 border-amber-200 bg-amber-50 p-4">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" />
+          <div className="text-sm text-amber-800">
+            <p className="font-medium">
+              {offTasks.length} task(s) are assigned to a crew that is unavailable on this day. Send to AI is blocked until they are fixed.
+            </p>
+            <p className="mt-1">Change the crew (Edit task) or move the task to another day.</p>
+          </div>
+        </Card>
+      )}
 
       {pendingId && !send.isPending && !waiting && can('send_to_ai') && (
         <Card className="flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50 p-4">
@@ -316,6 +341,7 @@ function Requested({ goProposed }: { goProposed: () => void }) {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               {list.map((t) => (
                 <TaskCardCompact key={t.id} t={t} waiting={isWaitingForAi(t)}
+                  offLabel={offLabelFor(periods, t)}
                   canChangePm={can('edit_task') && canEditTask(t)}
                   onEdit={can('edit_task') && canEditTask(t) ? () => setEditing(t) : undefined}
                   onDelete={can('delete_task') && canDeleteTask(t) ? () => setDeleting(t) : undefined} />
@@ -340,9 +366,17 @@ function Requested({ goProposed }: { goProposed: () => void }) {
   )
 }
 
+/** «Vacation until 2026-10-30» — бригада задачи недоступна в день задачи (BAS-1446). */
+function offLabelFor(periods: TeamAvailability[] | undefined, t: { assigned_team_id?: string | null; scheduled_date?: string | null }): string | null {
+  const p = periodOn(periods ?? [], t.assigned_team_id, t.scheduled_date)
+  return p ? `${availabilityKindLabel(p.kind)} until ${p.end_date}` : null
+}
+
 /** Компактная карточка задачи (Requested). Просмотр, правка и смена PM (PM модуля), удаление. */
-function TaskCardCompact({ t, waiting, canChangePm, onEdit, onDelete }: {
+function TaskCardCompact({ t, waiting, offLabel, canChangePm, onEdit, onDelete }: {
   t: Task
+  /** Бригада недоступна в день задачи (BAS-1446) — задача в AI не уйдёт. */
+  offLabel?: string | null
   /** Отправлена в AI и ждёт ответа (BAS-1514): карточка приглушена, действия недоступны. */
   waiting: boolean
   canChangePm: boolean
@@ -386,6 +420,7 @@ function TaskCardCompact({ t, waiting, canChangePm, onEdit, onDelete }: {
         {t.scheduled_date && <span className="flex items-center gap-1"><Calendar size={13} /> {t.scheduled_date}</span>}
         <span className="flex items-center gap-1">
           <Users size={13} /> {t.assigned_team_name ?? (t.assigned_team_id ? 'assigned' : <span className="text-accent-600">N/A</span>)}
+          {offLabel && <span className="flex items-center gap-1 font-medium text-amber-700"><AlertTriangle size={12} /> {offLabel}</span>}
         </span>
         <span className="flex items-center gap-1">
           <Wrench size={13} /> {skillCount ? `${skillCount} skills` : <span className="text-accent-600">N/A</span>}
@@ -576,6 +611,10 @@ function TaskEditModal({ task, onClose, onSaved }: {
   const [form, setForm] = useState<UpdateTaskInput>({})
   const [error, setError] = useState<string | null>(null)
   const fields = task ? editableFields(task) : []
+  // BAS-1446: бригада заявки правится в Requested — чтобы заменить бригаду, которая в отпуске.
+  const teamEditable = fields.includes('team')
+  const { data: teams } = useQuery({ queryKey: ['teams'], queryFn: fetchTeams, enabled: teamEditable })
+  const { data: periods } = useQuery({ queryKey: ['availability'], queryFn: fetchAvailability, enabled: teamEditable })
 
   useEffect(() => {
     if (!task) return
@@ -585,9 +624,13 @@ function TaskEditModal({ task, onClose, onSaved }: {
       estimated_duration_min: task.estimated_duration_min,
       priority: task.priority,
       address: task.task_address,
+      team_id: task.assigned_team_id ?? null,
     })
     setError(null)
   }, [task])
+  const offFor = (teamId: string | null | undefined) =>
+    offLabelFor(periods, { assigned_team_id: teamId ?? null, scheduled_date: task?.scheduled_date ?? null })
+  const teamOff = teamEditable ? offFor(form.team_id) : null
 
   const save = useMutation({
     mutationFn: () => {
@@ -596,6 +639,7 @@ function TaskEditModal({ task, onClose, onSaved }: {
       return updateTask(task!.id, {
         title: f.title, description: f.description, priority: f.priority, address: f.address,
         ...(fields.includes('duration') ? { estimated_duration_min: f.estimated_duration_min } : {}),
+        ...(teamEditable ? { team_id: f.team_id ?? null } : {}),
       })
     },
     onSuccess: onSaved,
@@ -653,6 +697,24 @@ function TaskEditModal({ task, onClose, onSaved }: {
           <label className="mb-1 block text-xs font-medium text-gray-500">Address</label>
           <Input value={form.address ?? ''} onChange={(e) => set({ address: e.target.value })} />
         </div>
+        {teamEditable && (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">Assigned crew</label>
+            <Select value={form.team_id ?? ''} onChange={(e) => set({ team_id: e.target.value || null })}>
+              <option value="">No preference — AI picks the crew</option>
+              {(teams ?? []).map((tm) => {
+                const off = offFor(tm.id)
+                // бригаду в отпуске на дату задачи выбрать нельзя (Vlad 22.10.2026)
+                return <option key={tm.id} value={tm.id} disabled={!!off}>{off ? `${tm.name} (${off})` : tm.name}</option>
+              })}
+            </Select>
+            {teamOff && (
+              <p className="mt-1 flex items-center gap-1 text-xs text-amber-700">
+                <AlertTriangle size={12} /> Unavailable on {task?.scheduled_date} ({teamOff}). The task will not be sent to AI with this crew.
+              </p>
+            )}
+          </div>
+        )}
         {error && <p className="text-sm text-red-600">⚠ {error}</p>}
       </div>
     </Modal>

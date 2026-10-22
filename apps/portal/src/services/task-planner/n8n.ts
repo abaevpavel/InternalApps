@@ -1,5 +1,5 @@
 /** n8n-клиент: отправка задач планировщику и расписания в Slack. */
-import type { Task, Team, TeamAvailability, Skill, TeamDay } from '../../domain/task-planner/types'
+import type { Task, Team, Skill, TeamDay } from '../../domain/task-planner/types'
 
 // Фолбэк-дефолт; основной источник URL вебхука — настройка app_settings (Админка).
 import { resolveString } from '../app-settings'
@@ -12,8 +12,11 @@ export interface SendToAiParams {
   requestId: string
   date: string | null
   tasks: Task[]
+  /**
+   * Только бригады, доступные в этот день (BAS-1446): недоступные портал отсекает сам
+   * (`availableTeamsOn`), в n8n они не попадают. Список «Unavailable teams» поэтому всегда пуст.
+   */
   teams: Team[]
-  unavailableTeams: TeamAvailability[]
   skills: Skill[]
   persistentPrompt?: string
   oneTimePrompt?: string
@@ -86,7 +89,9 @@ export async function sendToAi(p: SendToAiParams): Promise<{ request_ID: string 
       team_name: t.name, team_address: t.home_address,
       team_latitude: t.lat, team_longitude: t.lng, skills: t.skills,
     })),
-    'Unavailable teams': p.unavailableTeams.map((u) => ({ team_name: u.team_name })),
+    // Ключ оставлен для контракта сценария (`filter unavailable` его читает), но пустой:
+    // раньше сюда шли все периоды без дат, и бригада выпадала из каждого прогона навсегда.
+    'Unavailable teams': [],
     Skills: p.skills.map((s) => s.name),
     total: p.tasks.length,
   }
