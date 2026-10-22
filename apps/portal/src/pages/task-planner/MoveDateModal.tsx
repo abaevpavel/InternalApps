@@ -4,14 +4,16 @@ import { shiftDay } from '../../domain/task-planner/own-side'
 import type { Task } from '../../domain/task-planner/types'
 
 /** Выбор даты переноса (BAS-1437). */
-export function MoveDateModal({ task, pending, onClose, onMove }: {
+export function MoveDateModal({ task, pending, defaultDate, onClose, onMove }: {
   task: Task | null
   pending: boolean
+  /** Дата по умолчанию; без неё — следующий день после даты задачи. */
+  defaultDate?: string
   onClose: () => void
   onMove: (date: string) => void
 }) {
   const [date, setDate] = useState('')
-  useEffect(() => { if (task) setDate(shiftDay(task.scheduled_date, 1)) }, [task])
+  useEffect(() => { if (task) setDate(defaultDate ?? shiftDay(task.scheduled_date, 1)) }, [task, defaultDate])
   return (
     <Modal open={!!task} title="Push to another day" onClose={onClose}
       footer={<>
@@ -24,7 +26,7 @@ export function MoveDateModal({ task, pending, onClose, onMove }: {
         <b className="text-gray-900">{task?.title ?? task?.description}</b> goes back to Requested on the new day.
         The crew and time window return to what was requested; the AI placement is dropped.
       </p>
-      <label className="mb-1 block text-xs font-medium text-gray-500">New day (next day by default)</label>
+      <label className="mb-1 block text-xs font-medium text-gray-500">New day{defaultDate ? '' : ' (next day by default)'}</label>
       <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
       <p className="mt-2 text-xs text-gray-400">You will have 5 seconds to undo.</p>
     </Modal>

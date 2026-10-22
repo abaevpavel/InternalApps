@@ -1863,12 +1863,14 @@ function ReadOnlyTask({ task, onClose }: { task: Task; onClose: () => void }) {
 const OWN_LABEL = Object.fromEntries(OWN_LISTS.map((l) => [l.key, l.label])) as Record<string, string>
 
 /** Список задач по бригадам: строка — время, задача, проект и бейдж статуса; клик — карточка. */
-function TeamTaskList({ tasks, badge, onOpen, onEdit }: {
+function TeamTaskList({ tasks, badge, onOpen, onEdit, onPush }: {
   tasks: Task[]
   badge: (t: Task) => { label: string; tone: 'neutral' | 'warning' | 'success' | 'danger' }
   onOpen: (t: Task) => void
   /** Правка (BAS-1514); кнопка только у задач, которые можно править. */
   onEdit?: (t: Task) => void
+  /** Перенос на другой день (BAS-1437); null — у этой задачи кнопки нет. */
+  onPush?: (t: Task) => (() => void) | null
 }) {
   const days = useMemo(() => buildTeamDays(tasks), [tasks])
   const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
@@ -1907,6 +1909,15 @@ function TeamTaskList({ tasks, badge, onOpen, onEdit }: {
                   </div>
                 </button>
                 {onEdit && canEditTask(t) && <EditIconButton onClick={() => onEdit(t)} />}
+                {(() => {
+                  const push = onPush?.(t)
+                  return push ? (
+                    <button type="button" onClick={push} title="Push to another day" aria-label="Push to another day"
+                      className="mr-2 flex shrink-0 items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-white">
+                      <Calendar size={13} /> Push
+                    </button>
+                  ) : null
+                })()}
                 </div>
               )
             })}
@@ -1920,10 +1931,18 @@ function TeamTaskList({ tasks, badge, onOpen, onEdit }: {
 /* ---------------- Tracking (BAS-1433) ---------------- */
 /**
  * Все задачи всех PM на выбранную дату в тех же колонках, что и Planning. Только просмотр.
- * Proposed и Scheduled бывают только у завтрашнего дня (Planning всегда на завтра) — для
- * других дат колонки видны, но серые и пустые.
+ *
+ * ВРЕМЕННОЕ РЕШЕНИЕ до ответа клиента (Vlad 22.10.2026). В BAS 1433 «Proposed and Scheduled
+ * exist only for tomorrow… never populated» спорит с «see what was or will be scheduled for a
+ * given date», а случай «Proposed не утвердили до наступления дня» не описан нигде. Пока:
+ *  - Tracking показывает все статусы на выбранную дату, серых вкладок нет;
+ *  - Proposed с датой раньше завтрашней — «Not approved», Schedule Manager переносит его
+ *    в Requested на другой день (как Push в Proposed, BAS-1437);
+ *  - Scheduled прошлых дней — со статусом выполнения (Uncompleted / Completed / Closed).
  */
 function Tracking() {
+  const qc = useQueryClient()
+  const { can } = useTaskPlannerRoles()
   const today = todayISO()
   const tomorrow = planningDay(today)
   const [date, setDate] = useState(tomorrow)
@@ -1932,21 +1951,34 @@ function Tracking() {
     queryFn: () => fetchTasks(undefined, { date }),
   })
   const isTomorrow = date === tomorrow
+  // день уже наступил или прошёл, а утвердить уже некому — Proposed «завис»
+  const isStale = date < tomorrow
   const by = (st: Task['status']) => (data ?? []).filter((t) => t.status === st)
   const requested = by('requested')
-  const proposed = isTomorrow ? by('proposed') : []
-  const scheduled = isTomorrow ? by('scheduled') : []
+  const proposed = by('proposed')
+  const scheduled = by('scheduled')
   const [openTask, setOpenTask] = useState<Task | null>(null)
   // те же вкладки, что в Planning: каждая — на всю ширину
   const [tab, setTab] = useState<'requested' | 'proposed' | 'scheduled'>('requested')
-  const count = (n: number, active: boolean) => (
-    <span className={cn('ml-1.5 rounded-full px-1.5 text-xs', active ? 'bg-gray-200 text-gray-600' : 'text-gray-300')}>{active ? n : '—'}</span>
+  const count = (n: number) => (
+    <span className="ml-1.5 rounded-full bg-gray-200 px-1.5 text-xs text-gray-600">{n}</span>
   )
-  const onlyTomorrow = (
-    <Card className="p-4 text-sm text-gray-400 opacity-70">
-      Proposed and Scheduled exist only for tomorrow — {dayHeading(tomorrow, today)}.
-    </Card>
+
+  // Перенос зависшего Proposed: та же строка уходит в Requested выбранного дня, 5 секунд на Undo.
+  const [moveError, setMoveError] = useState<string | null>(null)
+  const [moving, setMoving] = useState<Task | null>(null)
+  const undoable = useUndoableAction(
+    (e) => setMoveError(errMsg(e)),
+    () => { setMoveError(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) },
   )
+  // Копии старого режима тестов перенести нельзя (база не даст) — у них кнопки нет.
+  const onPush = isStale && can('rearrange_proposed')
+    ? (t: Task) => (t.request_task_id ? null : () => setMoving(t))
+    : undefined
+  const doMove = (t: Task, to: string) => {
+    setMoving(null)
+    undoable.schedule(`“${(t.title ?? t.description).trim()}” → ${to}, back to Requested`, () => moveTask(t.id, to))
+  }
 
   return (
     <div className="space-y-4">
@@ -1954,9 +1986,9 @@ function Tracking() {
         value={tab}
         onChange={setTab}
         tabs={[
-          { key: 'requested', label: <>Requested{count(requested.length, true)}</> },
-          { key: 'proposed', label: <span className={cn(!isTomorrow && 'text-gray-300')}>Proposed{count(proposed.length, isTomorrow)}</span> },
-          { key: 'scheduled', label: <span className={cn(!isTomorrow && 'text-gray-300')}>Scheduled{count(scheduled.length, isTomorrow)}</span> },
+          { key: 'requested', label: <>Requested{count(requested.length)}</> },
+          { key: 'proposed', label: <>Proposed{count(proposed.length)}</> },
+          { key: 'scheduled', label: <>Scheduled{count(scheduled.length)}</> },
         ]}
       />
       <Card className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4">
@@ -1971,6 +2003,16 @@ function Tracking() {
         <span className="text-xs text-gray-500 sm:ml-auto">All PMs · view only</span>
       </Card>
       {error && <p className="text-sm text-red-600">⚠ {errMsg(error)}</p>}
+      {moveError && <p className="text-sm text-red-600">⚠ {moveError}</p>}
+      {isStale && proposed.length > 0 && (
+        <Card className="flex items-start gap-3 border-amber-200 bg-amber-50 p-4">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" />
+          <p className="text-sm text-amber-800">
+            {proposed.length} proposed task(s) were never approved for this day.
+            {can('rearrange_proposed') ? ' Push them to another day — they go back to Requested.' : ' The Schedule Manager can push them to another day.'}
+          </p>
+        </Card>
+      )}
       {isLoading && <p className="text-gray-500">Loading…</p>}
       {!isLoading && !error && tab === 'requested' && (
         requested.length === 0
@@ -1987,17 +2029,19 @@ function Tracking() {
           )
       )}
       {!isLoading && !error && tab === 'proposed' && (
-        !isTomorrow ? onlyTomorrow
-          : proposed.length === 0 ? <p className="text-gray-500">No proposed tasks for this date.</p>
-          : <TeamTaskList tasks={proposed} onOpen={setOpenTask}
-              badge={(t) => (t.ai_warnings?.length ? { label: 'Has warnings', tone: 'warning' } : { label: 'Proposed', tone: 'neutral' })} />
+        proposed.length === 0 ? <p className="text-gray-500">No proposed tasks for this date.</p>
+          : <TeamTaskList tasks={proposed} onOpen={setOpenTask} onPush={onPush}
+              badge={(t) => (isStale ? { label: 'Not approved', tone: 'danger' }
+                : t.ai_warnings?.length ? { label: 'Has warnings', tone: 'warning' } : { label: 'Proposed', tone: 'neutral' })} />
       )}
       {!isLoading && !error && tab === 'scheduled' && (
-        !isTomorrow ? onlyTomorrow
-          : scheduled.length === 0 ? <p className="text-gray-500">No scheduled tasks for this date.</p>
+        scheduled.length === 0 ? <p className="text-gray-500">No scheduled tasks for this date.</p>
           : <TeamTaskList tasks={scheduled} badge={executionBadge} onOpen={setOpenTask} />
       )}
       {openTask && <ReadOnlyTask task={openTask} onClose={() => setOpenTask(null)} />}
+      <MoveDateModal task={moving} pending={false} defaultDate={tomorrow} onClose={() => setMoving(null)}
+        onMove={(to) => moving && doMove(moving, to)} />
+      {undoable.toast}
     </div>
   )
 }
