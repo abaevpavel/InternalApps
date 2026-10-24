@@ -408,7 +408,8 @@ function TaskCardCompact({ t, waiting, offLabel, anchorCheck, onAnchorEdit, canC
   const durH = (t.estimated_duration_min ?? 0) / 60
   const prio = priorityTone(t.priority)
   return (
-    <Card className={cn('p-3 sm:p-4', waiting && 'pointer-events-none select-none opacity-50')} aria-disabled={waiting}>
+    // Бригада недоступна в этот день — красная рамка: такие задачи держат Send to AI (BAS-1446).
+    <Card className={cn('p-3 sm:p-4', offLabel && 'border-red-400 ring-1 ring-red-400', waiting && 'pointer-events-none select-none opacity-50')} aria-disabled={waiting}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
