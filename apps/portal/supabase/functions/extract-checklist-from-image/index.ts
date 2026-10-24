@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.53.0";
+import { isViewAsSession, VIEW_AS_READONLY } from '../_shared/view-as-guard.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -56,6 +57,13 @@ async function callerUserId(req: Request, body: Record<string, unknown>): Promis
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // View As (миграция 0046): из сессии «глазами пользователя» ничего не меняем.
+  if (await isViewAsSession(req.headers.get('Authorization'))) {
+    return new Response(JSON.stringify({ error: VIEW_AS_READONLY }), {
+      status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {

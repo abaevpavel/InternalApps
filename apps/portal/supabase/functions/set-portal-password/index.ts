@@ -13,6 +13,7 @@
 // способ на этом стеке): `sub` из payload + подтверждение подписи запросом через шлюз
 // `/rest`. Токен принимаем и из тела: платформа умеет портить заголовок Authorization.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { isViewAsSession, VIEW_AS_READONLY } from '../_shared/view-as-guard.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -38,6 +39,8 @@ Deno.serve(async (req) => {
     const headerToken = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim()
     const token = String(body.access_token ?? '') || headerToken
     if (!token) return json({ error: 'Missing token (header and body both empty)' }, 401)
+    // View As (миграция 0046): из сессии «глазами пользователя» ничего не меняем.
+    if (await isViewAsSession(token)) return json({ error: VIEW_AS_READONLY }, 403)
 
     const b64 = (s: string) => {
       s = s.replace(/-/g, '+').replace(/_/g, '/')

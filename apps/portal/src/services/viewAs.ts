@@ -169,3 +169,51 @@ export function appRoleLabel(app: string, role: string): string {
   const apps: Record<string, string> = { 'task-planner': 'Task Planner' }
   return `${apps[app] ?? app}: ${roles[role] ?? role}`
 }
+
+/* ---------------- Защита в браузере ---------------- */
+
+/** Серверные функции, которые только читают, — в режиме просмотра их звать можно. */
+const READ_ONLY_FUNCTIONS = new Set(['view-as', 'list-schedule-projects'])
+export const VIEW_AS_BLOCKED_EVENT = 'portal:view-as-blocked'
+
+/**
+ * В режиме View As не выпускаем из браузера ничего, что меняет данные вне базы: вызовы
+ * edge-функций (кроме читающих) и не-GET запросы во внешние сервисы (n8n, Make, Slack…).
+ * Запись в саму базу и хранилище отклоняет база (миграция 0046), запросы к ним пропускаем.
+ * Ставится один раз при старте; без режима просмотра ничего не меняет.
+ */
+export function installViewAsGuard() {
+  if (!readViewAs()) return
+  const base = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, '') ?? ''
+  const original = window.fetch.bind(window)
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!readViewAs()) return original(input, init)
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
+    let blocked = false
+    if (base && url.startsWith(base)) {
+      const fn = /\/functions\/v1\/([^/?#]+)/.exec(url)?.[1]
+      blocked = !!fn && !READ_ONLY_FUNCTIONS.has(fn)
+    } else if (/^https?:/i.test(url) && new URL(url).origin !== window.location.origin) {
+      blocked = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS'
+    }
+    if (!blocked) {
+      const res = original(input, init)
+      // Запись в базу/хранилище отклонила база — то же уведомление на плашке.
+      if (method !== 'GET' && method !== 'HEAD' && base && url.startsWith(base)) {
+        void res.then((r) => {
+          if (r.ok) return
+          void r.clone().text().then((t) => {
+            if (t.includes('View As is read-only')) window.dispatchEvent(new CustomEvent(VIEW_AS_BLOCKED_EVENT))
+          }).catch(() => {})
+        }).catch(() => {})
+      }
+      return res
+    }
+    window.dispatchEvent(new CustomEvent(VIEW_AS_BLOCKED_EVENT))
+    return Promise.resolve(new Response(
+      JSON.stringify({ error: 'View As is read-only: this action is not available while viewing as another user' }),
+      { status: 403, headers: { 'Content-Type': 'application/json' } },
+    ))
+  }
+}

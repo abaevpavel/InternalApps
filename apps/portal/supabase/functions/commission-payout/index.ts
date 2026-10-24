@@ -23,6 +23,7 @@
 // payload + запрос к /rest с его токеном (тот же приём, что list-schedule-projects и
 // sync-receipt-employees).
 
+import { isViewAsSession, VIEW_AS_READONLY } from '../_shared/view-as-guard.ts'
 const CORS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -291,6 +292,10 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'POST only.' }, 405)
 
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>
+  // View As (миграция 0046): из сессии «глазами пользователя» ничего не меняем.
+  if (await isViewAsSession(String(body.access_token ?? '') || req.headers.get('Authorization'))) {
+    return json({ error: VIEW_AS_READONLY }, 403)
+  }
   const caller = await whoCalls(req, body)
   if (!caller.ok) return json({ error: caller.error }, caller.status)
 

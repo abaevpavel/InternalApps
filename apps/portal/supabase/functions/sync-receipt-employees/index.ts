@@ -26,6 +26,7 @@
 // Secrets: AIRTABLE_EMPLOYEES_TOKEN — PAT с data.records:read на base «All employees» (синк) и
 // data.records:read + write на 05-Contacts Directory (добавление человека); RECEIPT_SYNC_SECRET.
 
+import { isViewAsSession, VIEW_AS_READONLY } from '../_shared/view-as-guard.ts'
 const CORS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-sync-secret',
@@ -227,6 +228,8 @@ async function whoCalls(req: Request, body: Record<string, unknown>): Promise<Ca
   } catch { /* ignore */ }
   // anon-ключ подписан проектом, но пользователя за ним нет.
   if (!sub) return { kind: 'denied', status: 401, error: 'Sign in to run the sync.' }
+  // View As (миграция 0046): из сессии «глазами пользователя» ничего не меняем.
+  if (await isViewAsSession(token)) return { kind: 'denied', status: 403, error: VIEW_AS_READONLY }
 
   const r = await fetch(`${SUPABASE_URL}/rest/v1/receipt_matcher_employees?select=id&limit=1`, {
     headers: { Authorization: `Bearer ${token}`, apikey: ANON_KEY },

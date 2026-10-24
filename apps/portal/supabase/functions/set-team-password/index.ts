@@ -3,6 +3,7 @@
 // Опознание вызывающего — через клиент, привязанный к его Authorization (надёжнее,
 // чем getUser(jwt) на service-role). Привилегированные операции — service_role.
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { isViewAsSession, VIEW_AS_READONLY } from '../_shared/view-as-guard.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -32,6 +33,8 @@ Deno.serve(async (req) => {
     // Тело в приоритете: платформа может портить заголовок Authorization.
     const token = String(body.access_token ?? '') || headerToken
     if (!token) return json({ error: 'Missing token (header and body both empty)' }, 401)
+    // View As (миграция 0046): из сессии «глазами пользователя» ничего не меняем.
+    if (await isViewAsSession(token)) return json({ error: VIEW_AS_READONLY }, 403)
 
     // Декодим sub из токена. Доверяем ему ТОЛЬКО потому, что запрос ниже под этим же
     // токеном идёт через шлюз /rest — шлюз проверяет подпись (поддельный токен → 401).

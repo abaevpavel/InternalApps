@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, Eye, Loader2, LogOut, Search } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
 import { listMyAppRoles } from '../services/app-user-roles'
-import { appRoleLabel, endViewAs, listViewAsUsers, readViewAs, startViewAs, type ViewAsState, type ViewAsUser } from '../services/viewAs'
+import { appRoleLabel, endViewAs, listViewAsUsers, readViewAs, startViewAs, VIEW_AS_BLOCKED_EVENT, type ViewAsState, type ViewAsUser } from '../services/viewAs'
 import { cn, errMsg } from '../lib/utils'
 
 /** Сейчас портал открыт «как другой пользователь» (журнал в этом браузере + чужая сессия). */
@@ -185,9 +185,25 @@ export function ViewAsBar() {
     enabled: !!state && !!authUser,
   })
   if (!state) return null
+  return <ViewAsBarInner state={state} tpRoles={tpRoles.data ?? []} profileRoles={(profile?.roles ?? []).map((r) => r.name)} />
+}
+
+function ViewAsBarInner({ state, tpRoles, profileRoles }: { state: ViewAsState; tpRoles: string[]; profileRoles: string[] }) {
+  // Попытка что-то изменить — короткое уведомление прямо на плашке.
+  const [blocked, setBlocked] = useState(false)
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | undefined
+    const on = () => {
+      setBlocked(true)
+      clearTimeout(t)
+      t = setTimeout(() => setBlocked(false), 4000)
+    }
+    window.addEventListener(VIEW_AS_BLOCKED_EVENT, on)
+    return () => { window.removeEventListener(VIEW_AS_BLOCKED_EVENT, on); clearTimeout(t) }
+  }, [])
   const roles = [
-    ...(profile?.roles ?? []).map((r) => r.name),
-    ...(tpRoles.data ?? []).map((r) => appRoleLabel('task-planner', r)),
+    ...profileRoles,
+    ...tpRoles.map((r) => appRoleLabel('task-planner', r)),
   ]
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 bg-amber-400 px-4 py-2 text-sm text-amber-950 sm:px-6">
@@ -196,6 +212,9 @@ export function ViewAsBar() {
       <span className="truncate text-amber-900/80">{state.target.email}</span>
       {roles.length > 0 && <span className="text-amber-900/80">· {roles.join(', ')}</span>}
       <span className="rounded bg-amber-950/10 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide">Read-only</span>
+      {blocked && (
+        <span className="rounded bg-amber-950 px-2 py-0.5 text-xs font-medium text-white">Not saved — View As is read-only</span>
+      )}
     </div>
   )
 }
