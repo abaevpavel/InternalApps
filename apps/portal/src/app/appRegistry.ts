@@ -243,7 +243,7 @@ export const APPS: AppConfig[] = [
     // Пункты меню по ролям модуля (BAS-1509), источник списков — матрица прав
     // `domain/task-planner/permissions.ts`; те же списки стоят гейтами на роутах (App.tsx).
     nav: [
-      { to: '/task-planner', label: 'Tasks', icon: ListChecks, appRoles: rolesFor('view_schedule') },
+      { to: '/task-planner/tasks', label: 'Tasks', icon: ListChecks, appRoles: rolesFor('view_schedule') },
       { to: '/task-planner/my-tasks', label: 'My Tasks', icon: ClipboardCheck, appRoles: rolesFor('view_own_side') },
       { to: '/task-planner/create', label: 'Create Task', icon: Plus, appRoles: rolesFor('create_task') },
       { to: '/task-planner/availability', label: 'Teams Availability', icon: CalendarDays, appRoles: rolesFor('manage_availability') },

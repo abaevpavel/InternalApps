@@ -4,6 +4,7 @@
  * позже без изменения UI (фаза 2).
  */
 import { supabase } from '../../lib/supabase'
+import { unescapeNewlines } from '../../lib/utils'
 import { TP_ROLES } from '../../domain/task-planner/permissions'
 import { toAvailabilityKind, type AvailabilityKind } from '../../domain/task-planner/availability'
 import type { ExecutionStatus, Project, ScheduleRun, Skill, Task, Team, TeamAvailability, TeamSkill } from '../../domain/task-planner/types'
@@ -78,7 +79,9 @@ function mapDbTask(r: Record<string, any>, teamInfo?: Map<string, { name: string
     project_id: r.project_id ?? null,
     project_name: proj?.name,
     title: r.title,
-    description: r.description ?? r.title ?? '',
+    // В описаниях из синка переносы строк приходят буквами «\n» (49 из 54 задач на 24.10.2026) —
+    // показываем их как настоящие переносы (BAS-1512).
+    description: unescapeNewlines(r.description ?? r.title ?? ''),
     scheduled_date: r.scheduled_date ?? '',
     time_type: isAnchor ? 'exact' : st?.start ? 'timeframe' : null,
     // exact-якорь хранится как {type:'exact', time} (новый формат) или {start/anchor_time} (старый)

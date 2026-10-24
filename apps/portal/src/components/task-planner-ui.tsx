@@ -1,8 +1,10 @@
 /** Лёгкие UI-примитивы на Tailwind (без внешнего UI-кита). Стиль — светлый/воздушный. */
 import {
+  useEffect, useRef, useState,
   type ButtonHTMLAttributes, type InputHTMLAttributes,
   type ReactNode, type Key,
 } from 'react'
+import { Info } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 /* ---------------- Button ---------------- */
@@ -112,14 +114,15 @@ export function Tabs<T extends string>({
   tabs, value, onChange, className,
 }: { tabs: { key: T; label: ReactNode }[]; value: T; onChange: (v: T) => void; className?: string }) {
   return (
-    // На узком экране вкладки не переносят подписи, а прокручиваются вбок.
+    // На телефоне вкладки ужаты, чтобы пять штук помещались в 390 px (BAS-1512); если подписи
+    // длиннее — не переносятся, а прокручиваются вбок.
     <div className={cn('flex gap-1 overflow-x-auto rounded-lg bg-gray-100 p-1', className)}>
       {tabs.map((t) => (
         <button
           key={t.key}
           onClick={() => onChange(t.key)}
           className={cn(
-            'flex-1 shrink-0 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition',
+            'flex-1 shrink-0 whitespace-nowrap rounded-md px-1.5 py-2 text-[13px] font-medium transition sm:px-3 sm:text-sm',
             value === t.key ? 'bg-white text-gray-900 shadow-card' : 'text-gray-500 hover:text-gray-700',
           )}
         >
@@ -251,14 +254,56 @@ export function Modal({
 
 /* ---------------- Page title ---------------- */
 
-export function PageTitle({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
+/** `hint` — пояснение к экрану в подсказке ⓘ у заголовка (не занимает место, в отличие от subtitle). */
+export function PageTitle({ title, subtitle, hint, actions }: { title: string; subtitle?: string; hint?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-6">
+    <div className="mb-3 flex flex-wrap items-start justify-between gap-3 sm:mb-6">
       <div className="max-w-2xl">
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">{title}</h1>
-        {subtitle && <p className="mt-1.5 text-sm leading-relaxed text-gray-500">{subtitle}</p>}
+        <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-gray-900 sm:text-3xl">
+          {title}
+          {hint && <InfoHint text={hint} />}
+        </h1>
+        {subtitle && <p className="mt-1 text-xs leading-relaxed text-gray-500 sm:mt-1.5 sm:text-sm">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
+  )
+}
+
+/* ---------------- Info hint ---------------- */
+
+/**
+ * Иконка ⓘ с подсказкой: при наведении (компьютер) и по нажатию (телефон, там наведения нет).
+ * Для пояснений, которые не обязательно держать на экране.
+ */
+export function InfoHint({ text, className }: { text: ReactNode; className?: string }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('pointerdown', onDown)
+    return () => document.removeEventListener('pointerdown', onDown)
+  }, [open])
+  return (
+    <span ref={ref} className={cn('group relative inline-flex align-middle', className)}>
+      <button
+        type="button"
+        aria-label="More info"
+        onClick={() => setOpen((v) => !v)}
+        className="rounded-full p-0.5 text-gray-400 transition hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
+      >
+        <Info size={16} />
+      </button>
+      <span
+        role="tooltip"
+        className={cn(
+          'pointer-events-none absolute left-1/2 top-full z-30 mt-1.5 w-64 -translate-x-1/2 rounded-lg bg-gray-900 px-3 py-2 text-xs font-normal leading-relaxed text-white shadow-lg transition',
+          open ? 'visible opacity-100' : 'invisible opacity-0 group-hover:visible group-hover:opacity-100',
+        )}
+      >
+        {text}
+      </span>
+    </span>
   )
 }

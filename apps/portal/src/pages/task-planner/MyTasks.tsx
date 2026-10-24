@@ -136,7 +136,7 @@ export function MyTasksPage() {
     <>
       <PageTitle title={viewerName ? `My Tasks (${viewerName})` : 'My Tasks'} subtitle={subtitle} />
 
-      <div className="mb-4 flex flex-col gap-3">
+      <div className="mb-3 flex flex-col gap-2 sm:mb-4 sm:gap-3">
         {modes.length > 1 && (
           <Tabs
             className="max-w-xs"
@@ -320,7 +320,7 @@ function TaskRow({ task, index, mode, canReview, comments, onOpen, onMove }: {
     mode === 'crew' && !done ? 'Complete' : canReview && task.execution_status !== 'closed' ? 'Review' : 'Details'
 
   return (
-    <Card className="p-4">
+    <Card className="p-3 sm:p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 gap-3">
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-amber-50 text-sm font-bold text-amber-700">

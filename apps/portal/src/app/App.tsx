@@ -140,11 +140,12 @@ function Shell() {
           <Route path="/commission-app" element={<CommissionAppPage />} />
           {/* Task Planner — роуты портала, общая БД (таблицы tp_*) */}
           <Route path="/task-planner" element={<TaskPlannerLayout />}>
-            {/* Корень апки: кто видит общее расписание — Tasks, Lead Carpenter — его My Tasks
-                (карточка на «My Applications» ведёт сюда всех). */}
-            <Route index element={<PlannerHome scheduleScreen={<TasksPage />} />} />
+            {/* Корень апки ведёт на стартовый экран роли: Schedule Manager и Admin — Tasks,
+                PM и Lead Carpenter — My Tasks (карточка на «My Applications» ведёт сюда всех). */}
+            <Route index element={<PlannerHome />} />
             {/* Экраны — по правам из матрицы ролей модуля (BAS-1509, domain/task-planner/permissions.ts).
                 В БД тем же ролям соответствует RLS из миграции 0028. */}
+            <Route path="tasks" element={<RequireTpCapability cap="view_schedule"><TasksPage /></RequireTpCapability>} />
             <Route path="my-tasks" element={<RequireTpCapability cap="view_own_side"><MyTasksPage /></RequireTpCapability>} />
             <Route path="create" element={<RequireTpCapability cap="create_task"><CreateTaskPage /></RequireTpCapability>} />
             <Route path="availability" element={<RequireTpCapability cap="manage_availability"><AvailabilityPage /></RequireTpCapability>} />

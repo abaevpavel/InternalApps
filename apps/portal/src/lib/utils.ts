@@ -34,3 +34,8 @@ export function initials(name?: string | null, email?: string | null): string {
   }
   return (email ?? '?').slice(0, 2).toUpperCase()
 }
+
+/** Переносы строк, записанные буквами («\n», «\r\n»), → настоящие переносы. */
+export function unescapeNewlines(text: string): string {
+  return text.replace(/\\r\\n|\\n/g, '\n')
+}

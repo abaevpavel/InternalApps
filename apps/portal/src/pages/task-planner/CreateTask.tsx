@@ -124,7 +124,7 @@ export function CreateTaskPage() {
       setError(null)
       qc.invalidateQueries({ queryKey: ['tasks'] })
       // BAS-1410: роута /tasks нет — человек улетал на главную портала. Requested — корень апки.
-      nav('/task-planner')
+      nav('/task-planner/tasks')
     },
     onError: (e: unknown) => setError(errMsg(e)),
   })
@@ -141,7 +141,7 @@ export function CreateTaskPage() {
         ]}
       />
 
-      <Card className="space-y-5 p-6">
+      <Card className="space-y-4 p-4 sm:space-y-5 sm:p-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {mode === 'project' && (
             <Field label="Select Project" required>

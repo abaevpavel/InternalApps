@@ -562,10 +562,10 @@ export function Modal({
 
 export function PageTitle({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
   return (
-    <div className="mb-4 flex flex-wrap items-start justify-between gap-3 sm:mb-6">
+    <div className="mb-3 flex flex-wrap items-start justify-between gap-3 sm:mb-6">
       <div className="max-w-2xl">
-        <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">{title}</h1>
-        {subtitle && <p className="mt-1.5 text-sm leading-relaxed text-gray-500">{subtitle}</p>}
+        <h1 className="text-xl font-bold tracking-tight text-gray-900 sm:text-3xl">{title}</h1>
+        {subtitle && <p className="mt-1 text-xs leading-relaxed text-gray-500 sm:mt-1.5 sm:text-sm">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>

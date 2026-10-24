@@ -4,6 +4,7 @@ import { usePublishAppRoles } from '../../app/AppRoleContext'
 import type { TpCapability } from '../../domain/task-planner/permissions'
 import { useTaskPlannerRoles } from './useTaskPlannerRole'
 import { useTpAutoSync } from './useTpAutoSync'
+import { readViewAs } from '../../services/viewAs'
 
 /**
  * Контейнер экранов Task Planner. Портальный Layout даёт голый <main>, а страницы
@@ -21,7 +22,8 @@ export function TaskPlannerLayout() {
   const { roles, loading } = useTaskPlannerRoles()
   usePublishAppRoles(loading ? null : roles)
   // Синк с Airtable при входе (не чаще раза в 10 минут) и его время в шапке портала.
-  useTpAutoSync(!loading && roles.length > 0)
+  // В режиме View As синк не запускаем: просмотр ничего не меняет, даже через сервер.
+  useTpAutoSync(!loading && roles.length > 0 && !readViewAs())
 
   if (loading) return <div className="p-10 text-gray-500">Loading…</div>
   if (!roles.length) {
@@ -31,7 +33,7 @@ export function TaskPlannerLayout() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8">
+    <div className="mx-auto w-full max-w-[1200px] px-3 py-3 sm:px-6 sm:py-8">
       <Outlet />
     </div>
   )
@@ -49,12 +51,15 @@ export function RequireTpCapability({ cap, children }: { cap: TpCapability; chil
 }
 
 /**
- * Корень апки (`/task-planner`). Карточка на «My Applications» ведёт сюда всех: кто видит
- * общее расписание — получает Tasks, Lead Carpenter без других ролей — свой My Tasks.
+ * Корень апки (`/task-planner`). Карточка на «My Applications» ведёт сюда всех, отсюда —
+ * на стартовый экран роли. Кто строит расписание (Schedule Manager, Admin) — Tasks.
+ * PM и Lead Carpenter работают в основном со своими задачами — им My Tasks; Tasks у PM
+ * остаётся в меню (Vlad 24.10.2026).
  */
-export function PlannerHome({ scheduleScreen }: { scheduleScreen: React.ReactNode }) {
-  const { can, loading } = useTaskPlannerRoles()
+export function PlannerHome() {
+  const { can, roles, loading } = useTaskPlannerRoles()
   if (loading) return <div className="p-10 text-gray-500">Loading…</div>
-  if (can('view_schedule')) return <>{scheduleScreen}</>
-  return <Navigate to="/task-planner/my-tasks" replace />
+  const buildsSchedule = roles.includes('schedule_manager') || roles.includes('admin')
+  const home = can('view_own_side') && !buildsSchedule ? '/task-planner/my-tasks' : '/task-planner/tasks'
+  return <Navigate to={home} replace />
 }

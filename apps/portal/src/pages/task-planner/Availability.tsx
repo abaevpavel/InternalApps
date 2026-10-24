@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { SquarePen, Trash2 } from 'lucide-react'
-import { Button, Card, Input, Field, Select, PageTitle, Badge } from '../../components/task-planner-ui'
+import { Button, Card, Input, Field, Select, PageTitle, Badge, InfoHint } from '../../components/task-planner-ui'
 import { fetchAvailability, fetchTeams, createAvailability, updateAvailability, deleteAvailability } from '../../services/task-planner/data'
 import {
   AVAILABILITY_KINDS, availabilityKindLabel, coversDate, overlappingPeriod, splitByDate, toAvailabilityKind,
@@ -114,22 +114,27 @@ export function AvailabilityPage() {
   return (
     <div>
       <PageTitle title="Teams Availability"
-        subtitle="Vacations, sick leaves and other days off. A crew that is unavailable on the planning day is not sent to AI." />
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card className={cn('p-6 transition', editingId && 'border-green-500 ring-2 ring-green-500')}>
-          <h2 className="mb-1 text-lg font-semibold text-gray-900">{editingId ? 'Edit Unavailable Period' : 'Add Unavailable Period'}</h2>
-          <p className="mb-4 text-sm text-gray-500">Select a team and specify when and why they will be unavailable</p>
-          <Field label="Team" className="mb-4">
-            <Select value={teamId} onChange={(e) => setTeamId(e.target.value)} disabled={teams.isLoading}>
-              <option value="">Select a team</option>
-              {teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </Select>
-          </Field>
-          <Field label="Reason" className="mb-4">
-            <Select value={kind} onChange={(e) => setKind(toAvailabilityKind(e.target.value))}>
-              {AVAILABILITY_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
-            </Select>
-          </Field>
+        hint="Vacations, sick leaves and other days off. A crew that is unavailable on the planning day is not sent to AI." />
+      <div className="grid grid-cols-1 gap-3 sm:gap-6 lg:grid-cols-2">
+        <Card className={cn('p-4 sm:p-6 transition', editingId && 'border-green-500 ring-2 ring-green-500')}>
+          <h2 className="mb-3 flex items-center gap-1.5 text-lg font-semibold text-gray-900 sm:mb-4">
+            {editingId ? 'Edit Unavailable Period' : 'Add Unavailable Period'}
+            <InfoHint text="Select a team and specify when and why they will be unavailable." />
+          </h2>
+          {/* Бригада и причина — в одну строку (бригада шире: имена длинные). */}
+          <div className="mb-4 grid grid-cols-[3fr_2fr] gap-3">
+            <Field label="Team">
+              <Select value={teamId} onChange={(e) => setTeamId(e.target.value)} disabled={teams.isLoading}>
+                <option value="">Select a team</option>
+                {teams.data?.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Reason">
+              <Select value={kind} onChange={(e) => setKind(toAvailabilityKind(e.target.value))}>
+                {AVAILABILITY_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
+              </Select>
+            </Field>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Start Date"><Input type="date" value={start} onChange={(e) => setStart(e.target.value)} /></Field>
             <Field label="End Date"><Input type="date" value={end} min={start || undefined} onChange={(e) => setEnd(e.target.value)} /></Field>
@@ -146,9 +151,11 @@ export function AvailabilityPage() {
           </div>
         </Card>
 
-        <Card className="p-6">
-          <h2 className="mb-1 text-lg font-semibold text-gray-900">Current and Upcoming</h2>
-          <p className="mb-4 text-sm text-gray-500">These crews are not sent to AI on these days</p>
+        <Card className="p-4 sm:p-6">
+          <h2 className="mb-3 flex items-center gap-1.5 text-lg font-semibold text-gray-900 sm:mb-4">
+            Current and Upcoming
+            <InfoHint text="These crews are not sent to AI on these days." />
+          </h2>
           {periods.isLoading && <p className="text-sm text-gray-400">Loading…</p>}
           {periods.isError && <p className="text-sm text-red-600">⚠ {errMsg(periods.error)}</p>}
           {!periods.isLoading && !upcoming.length && <p className="text-sm text-gray-500">No current or upcoming periods.</p>}

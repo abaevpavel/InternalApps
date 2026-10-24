@@ -14,7 +14,7 @@ import {
   ArrowRight, AlertTriangle, CheckCircle2, Lock, LockOpen, Trash2, Info, RefreshCw, ChevronDown, Check,
 } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { Button, Card, Input, Badge, StatusBadge, Modal, Tabs, Select } from '../../components/task-planner-ui'
+import { Button, Card, Input, Badge, StatusBadge, Modal, Tabs, Select, Textarea } from '../../components/task-planner-ui'
 import { cn, errMsg } from '../../lib/utils'
 import {
   fetchTasks, fetchTeams, fetchSkills, fetchAvailability,
@@ -112,10 +112,10 @@ export function TasksPage() {
   const [tab, setTab] = useState<Tab>('requested')
   return (
     <div>
-      <div className="mb-4 flex gap-6 border-b border-gray-200">
+      <div className="mb-3 flex gap-6 border-b border-gray-200 sm:mb-4">
         {([['planning', 'Planning', 'tomorrow'], ['tracking', 'Tracking', 'any date']] as const).map(([key, label, hint]) => (
           <button key={key} type="button" onClick={() => setSide(key)}
-            className={cn('-mb-px border-b-2 px-1 pb-2 text-base font-semibold transition',
+            className={cn('-mb-px border-b-2 px-1 pb-1.5 text-sm font-semibold transition sm:pb-2 sm:text-base',
               side === key ? 'border-accent-600 text-gray-900' : 'border-transparent text-gray-400 hover:text-gray-600')}>
             {label} <span className="hidden text-xs font-normal text-gray-400 sm:inline">· {hint}</span>
           </button>
@@ -124,7 +124,7 @@ export function TasksPage() {
       {side === 'tracking' && <Tracking />}
       {side === 'planning' && <>
       <Tabs<Tab>
-        className="mb-6"
+        className="mb-3 sm:mb-6"
         value={tab}
         onChange={setTab}
         tabs={[
@@ -277,11 +277,11 @@ function Requested({ goProposed }: { goProposed: () => void }) {
 
   const busy = send.isPending || recover.isPending || waiting
   return (
-    <div className="space-y-6">
-      <Card className="p-5">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Generate Schedule</h2>
-          <div className="flex items-center gap-2">
+    <div className="space-y-3 sm:space-y-6">
+      <Card className="p-3 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <h2 className="whitespace-nowrap text-base font-semibold text-gray-900 sm:text-lg">Generate Schedule</h2>
+          <div className="flex items-center gap-2 whitespace-nowrap">
             <span className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
               <Calendar size={14} /> {dayHeading(date, todayISO())}
             </span>
@@ -293,12 +293,12 @@ function Requested({ goProposed }: { goProposed: () => void }) {
             {otherCount} more requested tasks are on other days — they wait for their day. See them in Tracking.
           </p>
         )}
-        <div className="mt-4 flex items-center justify-between">
+        <div className="mt-2 flex items-center justify-between gap-3 sm:mt-4">
           <span className="text-sm text-gray-500">
             {busy ? 'Sent to AI, waiting for the answer…' : `${dayTasks.length} tasks for tomorrow will be analyzed`}
           </span>
           {can('send_to_ai') && (
-            <div className="flex gap-2">
+            <div className="flex shrink-0 gap-2 whitespace-nowrap">
               <Button variant="primary" disabled={busy || !dayTasks.length || offTasks.length > 0} onClick={() => send.mutate()}
                 title={offTasks.length ? 'Some tasks are assigned to an unavailable crew' : undefined}>
                 {busy ? <span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Working…</span> : 'Send to AI'}
@@ -310,9 +310,9 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       </Card>
 
       {offTasks.length > 0 && (
-        <Card className="flex items-start gap-3 border-amber-200 bg-amber-50 p-4">
-          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" />
-          <div className="text-sm text-amber-800">
+        <Card className="flex items-start gap-3 border-amber-200 bg-amber-50 p-3 sm:p-4">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
+          <div className="text-xs text-amber-800 sm:text-sm">
             <p className="font-medium">
               {offTasks.length} task(s) are assigned to a crew that is unavailable on this day. Send to AI is blocked until they are fixed.
             </p>
@@ -322,7 +322,7 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       )}
 
       {pendingId && !send.isPending && !waiting && can('send_to_ai') && (
-        <Card className="flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50 p-4">
+        <Card className="flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50 p-3 sm:p-4">
           <AlertTriangle size={18} className="text-amber-600" />
           <span className="text-sm text-amber-800">
             There's an unfinished AI request — polling may have been interrupted (timeout/refresh). You can pull the result.
@@ -342,11 +342,11 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       ] as const).map(([key, label, tone, list]) =>
         list.length === 0 ? null : (
           <div key={key}>
-            <div className="mb-3 flex items-center gap-2">
+            <div className="mb-2 flex items-center gap-2 sm:mb-3">
               <StatusBadge tone={tone}>{label}</StatusBadge>
               <span className="text-sm text-gray-500">{list.length} tasks</span>
             </div>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:gap-3 md:grid-cols-2">
               {list.map((t) => (
                 <TaskCardCompact key={t.id} t={t} waiting={isWaitingForAi(t)}
                   offLabel={offLabelFor(periods, t)}
@@ -406,7 +406,7 @@ function TaskCardCompact({ t, waiting, offLabel, anchorCheck, onAnchorEdit, canC
   const durH = (t.estimated_duration_min ?? 0) / 60
   const prio = priorityTone(t.priority)
   return (
-    <Card className={cn('p-4', waiting && 'pointer-events-none select-none opacity-50')} aria-disabled={waiting}>
+    <Card className={cn('p-3 sm:p-4', waiting && 'pointer-events-none select-none opacity-50')} aria-disabled={waiting}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
@@ -447,7 +447,7 @@ function TaskCardCompact({ t, waiting, offLabel, anchorCheck, onAnchorEdit, canC
         </div>
       )}
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-600">
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 sm:mt-3 sm:gap-y-1.5">
         <StatusBadge tone={prio.tone}>{prio.label}</StatusBadge>
         <span className="flex items-center gap-1"><Clock size={13} /> {durH.toFixed(1)}h</span>
         {t.exact_time && (onAnchorEdit
@@ -762,7 +762,8 @@ function TaskEditModal({ task, onClose, onSaved }: {
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-500">Description</label>
-          <Input value={form.description ?? ''} onChange={(e) => set({ description: e.target.value })} />
+          {/* Многострочное: однострочный Input выкидывает переносы строк, и описание сохранилось бы слитно. */}
+          <Textarea rows={4} value={form.description ?? ''} onChange={(e) => set({ description: e.target.value })} />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {fields.includes('duration') && (
@@ -2081,7 +2082,7 @@ function Tracking() {
           { key: 'scheduled', label: <>Scheduled{count(scheduled.length)}</> },
         ]}
       />
-      <Card className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4">
+      <Card className="flex flex-wrap items-center gap-x-3 gap-y-2 p-3 sm:p-4">
         <label className="flex items-center gap-1.5 text-sm text-gray-600">
           <Calendar size={14} /> Date
           <Input type="date" className="w-40 py-1" value={date} onChange={(e) => { if (e.target.value) setDate(e.target.value) }} />
@@ -2095,7 +2096,7 @@ function Tracking() {
       {error && <p className="text-sm text-red-600">⚠ {errMsg(error)}</p>}
       {moveError && <p className="text-sm text-red-600">⚠ {moveError}</p>}
       {isStale && proposed.length > 0 && (
-        <Card className="flex items-start gap-3 border-amber-200 bg-amber-50 p-4">
+        <Card className="flex items-start gap-3 border-amber-200 bg-amber-50 p-3 sm:p-4">
           <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" />
           <p className="text-sm text-amber-800">
             {proposed.length} proposed task(s) were never approved for this day.
@@ -2108,7 +2109,7 @@ function Tracking() {
         requested.length === 0
           ? <p className="text-gray-500">No requested tasks for this date.</p>
           : (
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:gap-3 md:grid-cols-2">
               {requested.map((t) => (
                 <div key={t.id} role="button" tabIndex={0} className="min-w-0 cursor-pointer"
                   onClick={() => setOpenTask(t)} onKeyDown={(e) => { if (e.key === 'Enter') setOpenTask(t) }}>
