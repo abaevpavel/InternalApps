@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { UsTimeInput } from '../../components/UsTimeInput'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   DndContext, closestCenter, closestCorners, PointerSensor, useSensor, useSensors,
@@ -9,7 +10,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  GripVertical, SquarePen, Clock, Calendar, Users, Wrench, MapPin, Loader2,
+  Anchor, GripVertical, SquarePen, Clock, Calendar, Users, Wrench, MapPin, Loader2,
   ArrowRight, AlertTriangle, CheckCircle2, Lock, LockOpen, Trash2, Info, RefreshCw, ChevronDown, Check,
 } from 'lucide-react'
 import { createPortal } from 'react-dom'
@@ -20,7 +21,7 @@ import {
   fetchScheduleRun, applyScheduleToTasks, pullScheduleIntoTasks, applyAiRun, moveTask,
   returnScheduledToProposed,
   updateTask, deleteTask, type UpdateTaskInput, fetchPeople, setTaskPm,
-  markSentToAi, clearSentToAi,
+  markSentToAi, clearSentToAi, setTaskAnchor,
 } from '../../services/task-planner/data'
 import { sendToAi, sendToSlack, buildSlackPayload } from '../../services/task-planner/n8n'
 import { executionBadge } from '../../services/task-planner/execution'
@@ -167,6 +168,13 @@ function Requested({ goProposed }: { goProposed: () => void }) {
   const date = planningDay(todayISO())
   const dayTasks = useMemo(() => (tasks ?? []).filter((t) => t.scheduled_date === date), [tasks, date])
   const otherCount = (tasks ?? []).length - dayTasks.length
+  // BAS-1436: задача с якорем перенесена на другой день — время проверяют здесь.
+  const [anchorFor, setAnchorFor] = useState<Task | null>(null)
+  const keepAnchor = useMutation({
+    mutationFn: (id: string) => setTaskAnchor(id),
+    onSuccess: () => { setError(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) },
+    onError: (e: unknown) => setError(errMsg(e)),
+  })
   // BAS-1446: недоступные бригады в AI не уходят; задачи, назначенные им, надо исправить до отправки.
   const { data: periods } = useQuery({ queryKey: ['availability'], queryFn: fetchAvailability })
   const offTasks = useMemo(() => tasksWithUnavailableTeam(dayTasks, periods ?? []), [dayTasks, periods])
@@ -342,6 +350,10 @@ function Requested({ goProposed }: { goProposed: () => void }) {
               {list.map((t) => (
                 <TaskCardCompact key={t.id} t={t} waiting={isWaitingForAi(t)}
                   offLabel={offLabelFor(periods, t)}
+                  onAnchorEdit={t.anchor && can('edit_task') && canEditTask(t) ? () => setAnchorFor(t) : undefined}
+                  anchorCheck={t.anchor_moved_from && can('change_task_date') && !isWaitingForAi(t)
+                    ? { onKeep: () => keepAnchor.mutate(t.id), onChange: () => setAnchorFor(t), busy: keepAnchor.isPending }
+                    : undefined}
                   canChangePm={can('edit_task') && canEditTask(t)}
                   onEdit={can('edit_task') && canEditTask(t) ? () => setEditing(t) : undefined}
                   onDelete={can('delete_task') && canDeleteTask(t) ? () => setDeleting(t) : undefined} />
@@ -352,6 +364,8 @@ function Requested({ goProposed }: { goProposed: () => void }) {
       )}
       <TaskEditModal task={editing} onClose={() => setEditing(null)}
         onSaved={() => { setEditing(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) }} />
+      <AnchorTimeModal task={anchorFor} onClose={() => setAnchorFor(null)}
+        onSaved={() => { setAnchorFor(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) }} />
       <ConfirmModal open={!!deleting} title="Delete task?" confirmLabel="Delete" danger
         onCancel={() => setDeleting(null)}
         onConfirm={() => {
@@ -373,8 +387,12 @@ function offLabelFor(periods: TeamAvailability[] | undefined, t: { assigned_team
 }
 
 /** Компактная карточка задачи (Requested). Просмотр, правка и смена PM (PM модуля), удаление. */
-function TaskCardCompact({ t, waiting, offLabel, canChangePm, onEdit, onDelete }: {
+function TaskCardCompact({ t, waiting, offLabel, anchorCheck, onAnchorEdit, canChangePm, onEdit, onDelete }: {
   t: Task
+  /** BAS-1436: поменять или снять время якоря — это правка задачи, только PM (матрица BAS-1509). */
+  onAnchorEdit?: () => void
+  /** BAS-1436: якорь перенесли с другого дня — проверить время (оставить или поменять). */
+  anchorCheck?: { onKeep: () => void; onChange: () => void; busy: boolean }
   /** Бригада недоступна в день задачи (BAS-1446) — задача в AI не уйдёт. */
   offLabel?: string | null
   /** Отправлена в AI и ждёт ответа (BAS-1514): карточка приглушена, действия недоступны. */
@@ -412,11 +430,31 @@ function TaskCardCompact({ t, waiting, offLabel, canChangePm, onEdit, onDelete }
         </div>
       </div>
       {waiting && <p className="mt-1 text-xs text-gray-500">Sent to AI, waiting…</p>}
+      {t.anchor_moved_from && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-accent-200 bg-accent-50 px-2.5 py-1.5 text-xs text-accent-800">
+          <Anchor size={13} className="shrink-0" />
+          <span className="min-w-0 flex-1">
+            Moved from {t.anchor_moved_from} with exact time <b>{t.exact_time || t.anchor_time ? minToAmPm(hhmmToMin(t.exact_time || t.anchor_time || '')) : '—'}</b> — check it fits this day.
+          </span>
+          {anchorCheck && (
+            <span className="flex shrink-0 gap-1.5">
+              <button type="button" disabled={anchorCheck.busy} onClick={(e) => { e.stopPropagation(); anchorCheck.onKeep() }}
+                className="rounded-md border border-accent-300 bg-white px-2 py-0.5 font-medium hover:bg-accent-100 disabled:opacity-50">Keep</button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); anchorCheck.onChange() }}
+                className="rounded-md bg-accent-600 px-2 py-0.5 font-medium text-white hover:bg-accent-700">Change time</button>
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-600">
         <StatusBadge tone={prio.tone}>{prio.label}</StatusBadge>
         <span className="flex items-center gap-1"><Clock size={13} /> {durH.toFixed(1)}h</span>
-        {t.exact_time && <span className="font-semibold text-accent-700">{t.exact_time}</span>}
+        {t.exact_time && (onAnchorEdit
+          ? <button type="button" onClick={onAnchorEdit} title="Change the exact time" className="rounded-full hover:ring-2 hover:ring-accent-300">
+              <AnchorBadge time={t.exact_time} editable />
+            </button>
+          : <AnchorBadge time={t.exact_time} />)}
         {t.scheduled_date && <span className="flex items-center gap-1"><Calendar size={13} /> {t.scheduled_date}</span>}
         <span className="flex items-center gap-1">
           <Users size={13} /> {t.assigned_team_name ?? (t.assigned_team_id ? 'assigned' : <span className="text-accent-600">N/A</span>)}
@@ -603,6 +641,45 @@ function TaskPmPicker({ t }: { t: Task }) {
  * (перенос — BAS-1437). Правка не меняет план: тайминги не пересчитываются, в Slack ничего не уходит.
  * Удаления здесь нет — оно только в Requested, иконкой на карточке.
  */
+/** Пометка якоря в списках задач (BAS-1436): видно сразу, что у задачи точное время. */
+function AnchorBadge({ time, editable = false }: { time?: string | null; editable?: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-accent-50 px-2 py-0.5 text-xs font-semibold text-accent-700"
+      title={editable ? undefined : 'Exact time: the task must start at this time'}>
+      <Anchor size={12} /> Exact {time ? minToAmPm(hhmmToMin(time)) : ''}
+      {editable && <SquarePen size={11} className="opacity-70" />}
+    </span>
+  )
+}
+
+/** Новое время якоря или снять якорь у задачи в Requested (BAS-1436). */
+function AnchorTimeModal({ task, onClose, onSaved }: { task: Task | null; onClose: () => void; onSaved: () => void }) {
+  const [time, setTime] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => { if (task) { setTime(task.exact_time || task.anchor_time || ''); setError(null) } }, [task])
+  const save = useMutation({
+    mutationFn: (anchor: string) => setTaskAnchor(task!.id, anchor),
+    onSuccess: onSaved,
+    onError: (e: unknown) => setError(errMsg(e)),
+  })
+  return (
+    <Modal open={!!task} title="Exact time" onClose={onClose}
+      footer={<>
+        <Button variant="ghost" disabled={save.isPending} onClick={() => save.mutate('')}>No exact time</Button>
+        <Button variant="primary" disabled={save.isPending || !/^\d{2}:\d{2}$/.test(time)} onClick={() => save.mutate(time)}>
+          {save.isPending ? 'Saving…' : 'Save time'}
+        </Button>
+      </>}>
+      <p className="mb-3 text-sm text-gray-600">
+        <b className="text-gray-900">{task?.title ?? task?.description}</b> on {task?.scheduled_date}.
+        Set the time it must start, or remove the exact time and let AI place it.
+      </p>
+      <UsTimeInput value={time} onChange={setTime} />
+      {error && <p className="mt-3 text-sm text-red-600">⚠ {error}</p>}
+    </Modal>
+  )
+}
+
 function TaskEditModal({ task, onClose, onSaved }: {
   task: Task | null
   onClose: () => void
@@ -615,6 +692,11 @@ function TaskEditModal({ task, onClose, onSaved }: {
   const teamEditable = fields.includes('team')
   const { data: teams } = useQuery({ queryKey: ['teams'], queryFn: fetchTeams, enabled: teamEditable })
   const { data: periods } = useQuery({ queryKey: ['availability'], queryFn: fetchAvailability, enabled: teamEditable })
+  // BAS-1436: точное время якоря правится в Requested; '' — якорь снят.
+  const anchorEditable = task?.status === 'requested' && !!task.anchor
+  const initialAnchor = task?.anchor ? (task.exact_time || task.anchor_time || '') : ''
+  const [anchorTime, setAnchorTime] = useState('')
+  useEffect(() => { setAnchorTime(initialAnchor) }, [task, initialAnchor])
 
   useEffect(() => {
     if (!task) return
@@ -633,9 +715,13 @@ function TaskEditModal({ task, onClose, onSaved }: {
   const teamOff = teamEditable ? offFor(form.team_id) : null
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       // пишем только поля, которые в этом статусе правятся
       const f = form
+      if (anchorEditable && anchorTime !== initialAnchor) {
+        if (anchorTime && !/^\d{2}:\d{2}$/.test(anchorTime)) throw new Error('Exact time must be HH:MM')
+        await setTaskAnchor(task!.id, anchorTime)
+      }
       return updateTask(task!.id, {
         title: f.title, description: f.description, priority: f.priority, address: f.address,
         ...(fields.includes('duration') ? { estimated_duration_min: f.estimated_duration_min } : {}),
@@ -697,6 +783,17 @@ function TaskEditModal({ task, onClose, onSaved }: {
           <label className="mb-1 block text-xs font-medium text-gray-500">Address</label>
           <Input value={form.address ?? ''} onChange={(e) => set({ address: e.target.value })} />
         </div>
+        {anchorEditable && (
+          <div>
+            <label className="mb-1 flex items-center gap-1 text-xs font-medium text-gray-500"><Anchor size={12} /> Exact time</label>
+            <div className="flex items-center gap-2">
+              <UsTimeInput value={anchorTime} onChange={setAnchorTime} />
+              {anchorTime
+                ? <button type="button" className="text-xs text-gray-500 hover:text-red-600" onClick={() => setAnchorTime('')}>Remove exact time</button>
+                : <span className="text-xs text-gray-500">No exact time — AI picks the time</span>}
+            </div>
+          </div>
+        )}
         {teamEditable && (
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-500">Assigned crew</label>
@@ -805,9 +902,9 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
   const onPush = can('change_task_date') && canArrange
     ? (id: string) => { const t = byTaskId.get(id); if (t) setMoving(t) }
     : undefined
-  const doMove = (t: Task, to: string) => {
+  const doMove = (t: Task, to: string, anchor?: string) => {
     setMoving(null)
-    undoable.schedule(`“${(t.title ?? t.description).trim()}” → ${to}, back to Requested`, () => moveTask(t.id, to))
+    undoable.schedule(`“${(t.title ?? t.description).trim()}” → ${to}, back to Requested`, () => moveTask(t.id, to, anchor))
   }
 
   const dayPicker = (
@@ -883,7 +980,7 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
       </Modal>
 
       <MoveDateModal task={moving} pending={false} onClose={() => setMoving(null)}
-        onMove={(to) => moving && doMove(moving, to)} />
+        onMove={(to, anchor) => moving && doMove(moving, to, anchor)} />
       {undoable.toast}
       <TaskEditModal task={editing} onClose={() => setEditing(null)}
         onSaved={() => { setEditing(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) }} />
@@ -1383,12 +1480,6 @@ function EditableTeamDay({ day, onComputed }: { day: TeamDay; onComputed?: (d: T
   // сообщаем актуальный (применённый) день наверх — для Approve
   useEffect(() => { onComputed?.(computed) }, [computed, onComputed])
 
-  // якорь, который сменит позицию при предложенной перестановке
-  const movedAnchor = useMemo(() => {
-    if (!pending) return null
-    return day.tasks.find((t) => t.anchor && order.indexOf(t.task_id) !== pending.indexOf(t.task_id)) ?? null
-  }, [pending, order, day.tasks])
-
   function onDragEnd(e: DragEndEvent) {
     const { active, over } = e
     if (!over || active.id === over.id) return
@@ -1441,7 +1532,6 @@ function EditableTeamDay({ day, onComputed }: { day: TeamDay; onComputed?: (d: T
         loading={travelLoading}
         before={computed}
         after={preview}
-        movedAnchor={movedAnchor}
         onCancel={() => setPending(null)}
         onApply={applyPending}
       />
@@ -1459,13 +1549,12 @@ function fmtDelta(min: number): { text: string; cls: string } {
 }
 
 function RecalcModal({
-  open, loading, before, after, movedAnchor, onCancel, onApply,
+  open, loading, before, after, onCancel, onApply,
 }: {
   open: boolean
   loading: boolean
   before: TeamDay
   after: TeamDay | null
-  movedAnchor: ScheduledTask | null
   onCancel: () => void
   onApply: () => void
 }) {
@@ -1491,7 +1580,9 @@ function RecalcModal({
   }, [before, after])
 
   const tEl = (hhmm: string) => minToAmPm(hhmmToMin(hhmm))
-  const hasAnchorRisk = !!movedAnchor || (diff?.newConflicts.length ?? 0) > 0
+  // BAS-1436: перестановка якоря больше не предупреждается — якорь двигают как любую задачу.
+  // Остаётся только реальный конфликт: бригада не успевает к времени якоря.
+  const hasAnchorRisk = (diff?.newConflicts.length ?? 0) > 0
 
   return (
     <Modal
@@ -1516,16 +1607,6 @@ function RecalcModal({
         </div>
       ) : (
         <div className="space-y-4">
-          {/* предупреждение про якорь */}
-          {movedAnchor && (
-            <div className="flex items-start gap-2 rounded-lg border border-accent-200 bg-accent-50 px-3 py-2 text-accent-700">
-              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-              <span>
-                Moving a task with a fixed <b>Exact time ({movedAnchor.anchor_time})</b>.
-                This may break the anchor and cause conflicts.
-              </span>
-            </div>
-          )}
           {/* новые конфликты */}
           {diff.newConflicts.map((t) => (
             <div key={t.task_id} className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-700">
@@ -1813,9 +1894,9 @@ function Scheduled({ goProposed }: { goProposed: () => void }) {
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-bold text-accent-600">{i + 1}</span> <b className="text-gray-900">{t.description}</b>
+                      {t.anchor && <AnchorBadge time={t.anchor_time} />}
                     </div>
                     <div className="text-gray-600">
-                      {t.anchor && <span className="text-accent-700">Exact: {t.anchor_time} · </span>}
                       Time: {minToAmPm(hhmmToMin(t.start_time))} – {minToAmPm(hhmmToMin(t.end_time))} · {t.duration_minutes}m
                     </div>
                   </button>
@@ -1893,6 +1974,7 @@ function TeamTaskList({ tasks, badge, onOpen, onEdit, onPush }: {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-bold text-accent-600">{i + 1}</span> <b className="text-gray-900">{st.description}</b>
+                      {st.anchor && <AnchorBadge time={st.anchor_time} />}
                     </div>
                     <div className="text-gray-600">
                       {st.start_time && <>Time: {minToAmPm(hhmmToMin(st.start_time))} – {minToAmPm(hhmmToMin(st.end_time))} · </>}
@@ -1975,10 +2057,18 @@ function Tracking() {
   const onPush = isStale && can('rearrange_proposed')
     ? (t: Task) => (t.request_task_id ? null : () => setMoving(t))
     : undefined
-  const doMove = (t: Task, to: string) => {
+  const doMove = (t: Task, to: string, anchor?: string) => {
     setMoving(null)
-    undoable.schedule(`“${(t.title ?? t.description).trim()}” → ${to}, back to Requested`, () => moveTask(t.id, to))
+    undoable.schedule(`“${(t.title ?? t.description).trim()}” → ${to}, back to Requested`, () => moveTask(t.id, to, anchor))
   }
+  // BAS-1436: якорь, перенесённый на день дальше завтрашнего, виден только здесь — проверить время
+  // можно и отсюда (часть переноса, поэтому и у Schedule Manager).
+  const [anchorFor, setAnchorFor] = useState<Task | null>(null)
+  const keepAnchor = useMutation({
+    mutationFn: (id: string) => setTaskAnchor(id),
+    onSuccess: () => { setMoveError(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) },
+    onError: (e: unknown) => setMoveError(errMsg(e)),
+  })
 
   return (
     <div className="space-y-4">
@@ -2022,7 +2112,10 @@ function Tracking() {
               {requested.map((t) => (
                 <div key={t.id} role="button" tabIndex={0} className="min-w-0 cursor-pointer"
                   onClick={() => setOpenTask(t)} onKeyDown={(e) => { if (e.key === 'Enter') setOpenTask(t) }}>
-                  <TaskCardCompact t={t} waiting={isWaitingForAi(t)} canChangePm={false} />
+                  <TaskCardCompact t={t} waiting={isWaitingForAi(t)} canChangePm={false}
+                    anchorCheck={t.anchor_moved_from && can('change_task_date') && !isWaitingForAi(t)
+                      ? { onKeep: () => keepAnchor.mutate(t.id), onChange: () => setAnchorFor(t), busy: keepAnchor.isPending }
+                      : undefined} />
                 </div>
               ))}
             </div>
@@ -2039,8 +2132,10 @@ function Tracking() {
           : <TeamTaskList tasks={scheduled} badge={executionBadge} onOpen={setOpenTask} />
       )}
       {openTask && <ReadOnlyTask task={openTask} onClose={() => setOpenTask(null)} />}
+      <AnchorTimeModal task={anchorFor} onClose={() => setAnchorFor(null)}
+        onSaved={() => { setAnchorFor(null); void qc.invalidateQueries({ queryKey: ['tasks'] }) }} />
       <MoveDateModal task={moving} pending={false} defaultDate={tomorrow} onClose={() => setMoving(null)}
-        onMove={(to) => moving && doMove(moving, to)} />
+        onMove={(to, anchor) => moving && doMove(moving, to, anchor)} />
       {undoable.toast}
     </div>
   )

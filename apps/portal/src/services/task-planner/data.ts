@@ -69,6 +69,7 @@ function mapDbTask(r: Record<string, any>, teamInfo?: Map<string, { name: string
     closed_at: r.closed_at ?? null,
     ai_request_id: r.ai_request_id ?? null,
     ai_warnings: Array.isArray(r.ai_warnings) && r.ai_warnings.length ? r.ai_warnings : null,
+    anchor_moved_from: r.anchor_moved_from ?? null,
     requested_team_id: r.requested_team_id ?? null,
     ai_sent_at: r.ai_sent_at ?? null,
     created_by: r.created_by ?? null,
@@ -616,10 +617,23 @@ async function fetchTasksWaitingFor(requestId: string): Promise<Task[]> {
 /**
  * Перенести задачу на другой день (BAS-1437, миграция 0041): та же строка, статус requested,
  * поля расписания от AI снимаются, бригада и окно времени возвращаются к заявленным.
+ * Якорь (BAS-1436, 0043): anchor не передан — время прежнее, задачу пометят «проверить время»;
+ * '' — снять якорь; 'HH:MM' — новое точное время.
  */
-export async function moveTask(taskId: string, date: string): Promise<void> {
+export async function moveTask(taskId: string, date: string, anchor?: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured')
-  const { error } = await supabase.rpc('tp_move_task', { p_task_id: taskId, p_date: date })
+  const { error } = await supabase.rpc('tp_move_task', {
+    p_task_id: taskId, p_date: date, ...(anchor !== undefined ? { p_anchor: anchor } : {}),
+  })
+  if (error) throw error
+}
+
+/** Поменять ('HH:MM'), снять ('') или подтвердить (без параметра) время якоря в Requested (BAS-1436). */
+export async function setTaskAnchor(taskId: string, anchor?: string): Promise<void> {
+  if (!supabase) throw new Error('Supabase is not configured')
+  const { error } = await supabase.rpc('tp_set_task_anchor', {
+    p_task_id: taskId, ...(anchor !== undefined ? { p_anchor: anchor } : {}),
+  })
   if (error) throw error
 }
 

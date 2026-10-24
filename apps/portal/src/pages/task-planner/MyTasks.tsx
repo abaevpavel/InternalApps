@@ -200,10 +200,10 @@ export function MyTasksPage() {
       </div>
 
       <MoveDateModal task={moveFor} pending={false} onClose={() => setMoveFor(null)}
-        onMove={(to) => {
+        onMove={(to, anchor) => {
           const t = moveFor
           setMoveFor(null)
-          if (t) undoable.schedule(`“${(t.title || t.description).trim()}” → ${to}, back to Requested`, () => moveTask(t.id, to))
+          if (t) undoable.schedule(`“${(t.title || t.description).trim()}” → ${to}, back to Requested`, () => moveTask(t.id, to, anchor))
         }} />
       {undoable.toast}
 
@@ -427,10 +427,30 @@ export function TaskDetailsModal({ task, canAct, canReview, onClose, onCloseTask
     onSuccess: () => { setNote(''); setErr(null); invalidate() },
     onError,
   })
+  // BAS-1442: фото грузятся по одному — на телефоне 10 фото разом съедают память; прогресс
+  // «2 of 5», ошибка по конкретному файлу, остальные всё равно загружаются.
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null)
   const upload = useMutation({
-    mutationFn: (files: File[]) => Promise.all(files.map((f) => uploadTaskPhoto(task.id, f))).then(() => undefined),
+    mutationFn: async (files: File[]) => {
+      const failed: string[] = []
+      setUploadProgress({ done: 0, total: files.length })
+      for (const [i, f] of files.entries()) {
+        try {
+          await uploadTaskPhoto(task.id, f)
+        } catch (e) {
+          failed.push(`${f.name}: ${errMsg(e)}`)
+        }
+        setUploadProgress({ done: i + 1, total: files.length })
+        // каждое загруженное фото видно сразу, не дожидаясь остальных
+        void qc.invalidateQueries({ queryKey: ['tp-task-photos', task.id] })
+      }
+      if (failed.length) {
+        throw new Error(`${failed.length} of ${files.length} photo(s) were not uploaded — ${failed.join('; ')}`)
+      }
+    },
     onSuccess: () => { setErr(null); invalidate() },
-    onError,
+    onError: (e: unknown) => { onError(e); invalidate() },
+    onSettled: () => setUploadProgress(null),
   })
   // Удалить фото — бригада, пока задача не закрыта; проверка ещё и в БД (0033).
   const canRemovePhotos = canAct && task.execution_status !== 'closed'
@@ -545,7 +565,9 @@ export function TaskDetailsModal({ task, canAct, canReview, onClose, onCloseTask
             {canAct && task.execution_status !== 'closed' && (
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-brand-amber px-3.5 py-2 text-sm font-medium text-black transition hover:brightness-95">
               <Upload size={16} />
-              {upload.isPending ? 'Uploading…' : 'Upload Photos'}
+              {upload.isPending
+                ? `Uploading${uploadProgress && uploadProgress.total > 1 ? ` ${Math.min(uploadProgress.done + 1, uploadProgress.total)} of ${uploadProgress.total}` : ''}…`
+                : 'Upload Photos'}
               <input
                 type="file"
                 accept="image/*"

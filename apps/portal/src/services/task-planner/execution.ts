@@ -15,7 +15,7 @@
  * это снимки объектов клиентов, наружу по прямому URL они уходить не должны.
  */
 import { requireSupabase, supabase } from '../../lib/supabase'
-import { compressToJpeg } from '../../lib/imageCompression'
+import { compressPhoto } from '../../lib/photoCompression'
 import type { ExecutionStatus, Task, TaskEvent, TaskPhoto } from '../../domain/task-planner/types'
 import { fetchTasks } from './data'
 
@@ -160,12 +160,13 @@ export async function addTaskNote(taskId: string, comment: string): Promise<void
 
 /**
  * Загрузка фото: перед загрузкой каждое фото сжимается в JPEG — длинная сторона до 1600 px,
- * размер до ~400 КБ (бригадиры снимают с телефона, исходники по 3–8 МБ). Затем файл кладётся
- * в приватный бакет, а путь регистрируется через RPC (она же пишет событие в журнал).
+ * размер до ~400 КБ (бригадиры снимают с телефона, исходники по 3–8 МБ; BAS-1442 — библиотекой,
+ * HEIC с iPhone конвертируется). Затем файл кладётся в приватный бакет (лимит 2 МБ, 0044),
+ * а путь регистрируется через RPC (она же пишет событие в журнал).
  */
 export async function uploadTaskPhoto(taskId: string, file: File): Promise<void> {
   const sb = requireSupabase()
-  const body = await compressToJpeg(file, 400, 1600)
+  const body = await compressPhoto(file, { maxKB: 400, maxDimension: 1600 })
   const path = `${taskId}/${crypto.randomUUID()}.jpg`
   const { error: upErr } = await sb.storage
     .from(PHOTO_BUCKET)

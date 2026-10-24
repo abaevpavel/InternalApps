@@ -1,4 +1,5 @@
 import { AddressAutocomplete } from './AddressAutocomplete'
+import { UsTimeInput } from '../../components/UsTimeInput'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronDown, X } from 'lucide-react'
@@ -182,10 +183,11 @@ export function CreateTaskPage() {
                 <SegBtn active={timeType === 'timeframe'} onClick={() => setTimeType('timeframe')}>TIMEFRAME</SegBtn>
               </div>
             </div>
-            {timeType === 'exact' && <Input type="time" value={exactTime} onChange={(e) => setExactTime(e.target.value)} />}
-            {timeType === 'timeframe' && <div className="flex gap-2">
-              <Input type="time" value={tfStart} onChange={(e) => setTfStart(e.target.value)} />
-              <Input type="time" value={tfEnd} onChange={(e) => setTfEnd(e.target.value)} />
+            {timeType === 'exact' && <UsTimeInput value={exactTime} onChange={setExactTime} />}
+            {timeType === 'timeframe' && <div className="flex flex-wrap items-center gap-2">
+              <UsTimeInput value={tfStart} onChange={setTfStart} allowEmpty />
+              <span className="text-sm text-gray-400">to</span>
+              <UsTimeInput value={tfEnd} onChange={setTfEnd} allowEmpty />
             </div>}
             {!timeType && <Input disabled placeholder="Select time type above" />}
           </div>

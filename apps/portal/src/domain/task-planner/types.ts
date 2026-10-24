@@ -148,6 +148,8 @@ export interface Task {
   ai_sent_at?: string | null
   /** Вопросы к задаче после ответа AI (0041): оранжевый треугольник в Proposed. */
   ai_warnings?: import('./ai-overlay').AiWarning[] | null
+  /** BAS-1436: задачу с якорем перенесли с этой даты, время ещё не проверили. */
+  anchor_moved_from?: string | null
   /** Бригада из заявки до ответа AI; возвращается при переносе (0041). */
   requested_team_id?: string | null
   /** auth uid автора (PM, создавший задачу). У старых задач пусто — «без автора» (BAS-1510). */
