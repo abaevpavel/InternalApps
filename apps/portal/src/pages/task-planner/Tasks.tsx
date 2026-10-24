@@ -280,48 +280,36 @@ function Requested({ goProposed }: { goProposed: () => void }) {
   const busy = send.isPending || recover.isPending || waiting
   return (
     <div className="space-y-3 sm:space-y-6">
-      <Card className="p-3 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-          <h2 className="whitespace-nowrap text-base font-semibold text-gray-900 sm:text-lg">Generate Schedule</h2>
-          <div className="flex items-center gap-2 whitespace-nowrap">
-            <span className="flex items-center gap-1.5 text-sm font-medium text-gray-700">
-              <Calendar size={14} /> {dayHeading(date, todayISO())}
+      {/* Одна строка: день, число задач, Send to AI. Под ней — только то, что требует действия. */}
+      <Card className="px-3 py-2.5 sm:px-4 sm:py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+            <span className="flex items-center gap-1.5 whitespace-nowrap font-semibold text-gray-900">
+              <Calendar size={14} className="text-gray-500" /> {dayHeading(date, todayISO())}
             </span>
-            <Badge className="bg-gray-100 text-gray-600">{dayTasks.length} tasks</Badge>
+            <span className="whitespace-nowrap text-gray-500">· {dayTasks.length} tasks</span>
+            {busy && <span className="whitespace-nowrap text-gray-500">· waiting for AI…</span>}
+            {otherCount > 0 && !busy && (
+              <span className="whitespace-nowrap text-xs text-gray-400" title="They wait for their day — see them in Tracking.">
+                +{otherCount} on other days
+              </span>
+            )}
           </div>
-        </div>
-        {otherCount > 0 && (
-          <p className="mt-2 text-xs text-gray-500">
-            {otherCount} more requested tasks are on other days — they wait for their day. See them in Tracking.
-          </p>
-        )}
-        <div className="mt-2 flex items-center justify-between gap-3 sm:mt-4">
-          <span className="text-sm text-gray-500">
-            {busy ? 'Sent to AI, waiting for the answer…' : `${dayTasks.length} tasks for tomorrow will be analyzed`}
-          </span>
           {can('send_to_ai') && (
-            <div className="flex shrink-0 gap-2 whitespace-nowrap">
-              <Button variant="primary" disabled={busy || !dayTasks.length || offTasks.length > 0} onClick={() => send.mutate()}
-                title={offTasks.length ? 'Some tasks are assigned to an unavailable crew' : undefined}>
-                {busy ? <span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Working…</span> : 'Send to AI'}
-              </Button>
-            </div>
+            <Button variant="primary" className="shrink-0 whitespace-nowrap" disabled={busy || !dayTasks.length || offTasks.length > 0} onClick={() => send.mutate()}
+              title={offTasks.length ? 'Some tasks are assigned to an unavailable crew' : undefined}>
+              {busy ? <span className="flex items-center gap-2"><Loader2 size={16} className="animate-spin" /> Working…</span> : 'Send to AI'}
+            </Button>
           )}
         </div>
-        {error && <p className="mt-3 text-sm text-red-600">⚠ {error}</p>}
+        {offTasks.length > 0 && (
+          <p className="mt-1.5 flex items-center gap-1.5 text-xs text-red-600">
+            <AlertTriangle size={13} className="shrink-0" />
+            {offTasks.length} {offTasks.length === 1 ? 'task has' : 'tasks have'} an unavailable crew — change the crew or move {offTasks.length === 1 ? 'it' : 'them'} (marked red)
+          </p>
+        )}
+        {error && <p className="mt-1.5 text-xs text-red-600">⚠ {error}</p>}
       </Card>
-
-      {offTasks.length > 0 && (
-        <Card className="flex items-start gap-3 border-amber-200 bg-amber-50 p-3 sm:p-4">
-          <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
-          <div className="text-xs text-amber-800 sm:text-sm">
-            <p className="font-medium">
-              {offTasks.length} task(s) are assigned to a crew that is unavailable on this day. Send to AI is blocked until they are fixed.
-            </p>
-            <p className="mt-1">Change the crew (Edit task) or move the task to another day.</p>
-          </div>
-        </Card>
-      )}
 
       {pendingId && !send.isPending && !waiting && can('send_to_ai') && (
         <Card className="flex flex-wrap items-center gap-3 border-amber-200 bg-amber-50 p-3 sm:p-4">
