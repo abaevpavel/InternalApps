@@ -4,6 +4,7 @@ import type { Task, Team, Skill, TeamDay } from '../../domain/task-planner/types
 // Фолбэк-дефолт; основной источник URL вебхука — настройка app_settings (Админка).
 import { resolveString } from '../app-settings'
 import { PRIORITY_RANK } from '../../domain/task-planner/priority'
+import { maxWorkingMinutes } from '../../domain/task-planner/overtime'
 
 const PLANNER = import.meta.env.VITE_N8N_PLANNER_WEBHOOK as string | undefined
 const SLACK_ENV = import.meta.env.VITE_N8N_SLACK_WEBHOOK as string | undefined
@@ -39,6 +40,14 @@ function buildScheduledTime(t: Task): Record<string, string> | null {
   return null
 }
 
+/**
+ * Лимит переработки бригады (BAS-1445): сверх 8 часов — не больше overtime_limit_minutes;
+ * max_working_minutes = 480 + лимит, больше AI ставить не должен.
+ */
+function teamLimits(t: Team) {
+  return { overtime_limit_minutes: t.overtime_limit_min, max_working_minutes: maxWorkingMinutes(t.overtime_limit_min) }
+}
+
 /** Task → элемент tasks[] в форме, которую ждёт прод-воркфлоу (вложенные project/team). */
 function toWebhookTask(t: Task, teamsById: Map<string, Team>) {
   const tm = t.assigned_team_id ? teamsById.get(t.assigned_team_id) : undefined
@@ -69,6 +78,7 @@ function toWebhookTask(t: Task, teamsById: Map<string, Team>) {
           team_name: tm.name,
           team_address: tm.home_address,
           team_airtable_id: tm.airtable_id,
+          ...teamLimits(tm),
         }
       : null,
   }
@@ -88,6 +98,7 @@ export async function sendToAi(p: SendToAiParams): Promise<{ request_ID: string 
     Teams: p.teams.map((t) => ({
       team_name: t.name, team_address: t.home_address,
       team_latitude: t.lat, team_longitude: t.lng, skills: t.skills,
+      ...teamLimits(t),
     })),
     // Ключ оставлен для контракта сценария (`filter unavailable` его читает), но пустой:
     // раньше сюда шли все периоды без дат, и бригада выпадала из каждого прогона навсегда.

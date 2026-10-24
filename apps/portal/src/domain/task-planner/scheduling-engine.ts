@@ -19,6 +19,7 @@
 
 import type { ScheduledTask, AdditionalStop, TeamDay } from './types'
 import { hhmmToMin, minToHHMM } from '../../lib/task-planner-time'
+import { dayCategory } from './overtime'
 
 export interface Point {
   lat: number | null
@@ -36,12 +37,12 @@ export interface RecomputeInput {
   home: Point
   home_address: string
   tasks: ScheduledTask[]
+  /** Лимит переработки бригады, минут сверх 8 часов (BAS-1445). */
+  overtime_limit_min?: number | null
   pointOf: (t: ScheduledTask) => Point
   travel: TravelProvider
 }
 
-const OVERTIME_8 = 480
-const OVERTIME_10 = 600
 
 function stopPoint(s: AdditionalStop): Point {
   return { lat: s.lat ?? null, lng: s.lng ?? null, key: s.address }
@@ -120,8 +121,8 @@ export function recomputeTeamDay(input: RecomputeInput): TeamDay {
   const workingMin = totalDuration + totalTravel
   const startMin = out.length ? hhmmToMin(out[0].start_time) : 0
   const endMin = out.length ? Math.max(...out.map((t) => hhmmToMin(t.end_time))) : 0
-  const category =
-    workingMin <= OVERTIME_8 ? 'normal' : workingMin <= OVERTIME_10 ? 'overtime_8_to_10' : 'overtime_over_10'
+  // Переработка — по лимиту бригады (BAS-1445), без лимита — прежние +2 часа.
+  const category = dayCategory(workingMin, input.overtime_limit_min)
 
   return {
     team_id: input.team_id,

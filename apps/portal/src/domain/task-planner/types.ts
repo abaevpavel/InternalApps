@@ -106,6 +106,8 @@ export interface Team {
   lng: number | null
   slack_user_id?: string | null
   skills: TeamSkill[]
+  /** Лимит переработки, минут сверх 8 часов (BAS-1445). */
+  overtime_limit_min: number
 }
 
 export interface Skill {

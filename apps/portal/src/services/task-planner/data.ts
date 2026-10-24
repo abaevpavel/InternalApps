@@ -5,6 +5,7 @@
  */
 import { supabase } from '../../lib/supabase'
 import { unescapeNewlines } from '../../lib/utils'
+import { DEFAULT_OVERTIME_LIMIT_MIN } from '../../domain/task-planner/overtime'
 import { TP_ROLES } from '../../domain/task-planner/permissions'
 import { toAvailabilityKind, type AvailabilityKind } from '../../domain/task-planner/availability'
 import type { ExecutionStatus, Project, ScheduleRun, Skill, Task, Team, TeamAvailability, TeamSkill } from '../../domain/task-planner/types'
@@ -134,6 +135,7 @@ export async function fetchTeams(): Promise<Team[]> {
     home_address: r.address ?? '', lat: r.latitude, lng: r.longitude,
     slack_user_id: r.slack_id,
     skills: r.airtable_id ? skillsByTeam.get(r.airtable_id) ?? [] : [],
+    overtime_limit_min: r.overtime_limit_minutes ?? DEFAULT_OVERTIME_LIMIT_MIN,
   }))
 }
 
@@ -749,5 +751,15 @@ export async function clearSentToAi(requestId: string): Promise<void> {
   if (!supabase) throw new Error('Supabase is not configured')
   const { error } = await supabase.from('tp_tasks')
     .update({ ai_request_id: null, ai_sent_at: null }).eq('ai_request_id', requestId)
+  if (error) throw error
+}
+
+/**
+ * Лимит переработки бригады (BAS-1445): минут сверх 8 часов. Права — Admin, PM, Schedule Manager
+ * (проверяет функция в базе, миграция 0045); смена попадает в History.
+ */
+export async function setTeamOvertimeLimit(teamId: string, minutes: number): Promise<void> {
+  if (!supabase) return
+  const { error } = await supabase.rpc('tp_set_team_overtime_limit', { p_team_id: teamId, p_minutes: minutes })
   if (error) throw error
 }

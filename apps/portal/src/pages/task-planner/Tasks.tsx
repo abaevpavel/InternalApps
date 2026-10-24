@@ -45,6 +45,7 @@ import { canDeleteTask, canEditTask, editableFields, isWaitingForAi } from '../.
 import { shiftDay } from '../../domain/task-planner/own-side'
 import type { AiWarning } from '../../domain/task-planner/ai-overlay'
 import { availabilityKindLabel, availableTeamsOn, periodOn, tasksWithUnavailableTeam } from '../../domain/task-planner/availability'
+import { dayCategory, DEFAULT_OVERTIME_LIMIT_MIN, NORMAL_DAY_MIN, overtimeLimitLabel } from '../../domain/task-planner/overtime'
 
 /** Простой генератор request_ID для запуска планировщика. */
 function newRequestId(): string {
@@ -73,7 +74,7 @@ function taskToScheduled(t: Task): ScheduledTask {
 }
 
 /** Группировка задач по бригадам → дни расписания. */
-function buildTeamDays(tasks: Task[]): TeamDay[] {
+function buildTeamDays(tasks: Task[], limits?: Map<string, number>): TeamDay[] {
   const groups = new Map<string, Task[]>()
   for (const t of tasks) {
     const key = t.assigned_team_id ?? 'unassigned'
@@ -94,8 +95,9 @@ function buildTeamDays(tasks: Task[]): TeamDay[] {
       workday_start_time: st[0]?.start_time ?? '', workday_end_time: st[st.length - 1]?.end_time ?? '',
       morning_commute_minutes: 0, end_of_day_commute_minutes: 0,
       total_working_minutes: working,
-      day_length_category: working <= 480 ? 'normal' : working <= 600 ? 'overtime_8_to_10' : 'overtime_over_10',
-      overtime: working > 480, tasks: st,
+      // переработка — по лимиту бригады (BAS-1445)
+      day_length_category: dayCategory(working, limits?.get(key)),
+      overtime: working > NORMAL_DAY_MIN, tasks: st,
       summary: { total_tasks: st.length, total_travel_in_day_minutes: totalTravel },
     })
   }
@@ -834,7 +836,8 @@ function Proposed({ goScheduled }: { goScheduled: () => void }) {
   // BAS-1433: Planning всегда на завтра — доска только завтрашнего дня.
   const date = planningDay(todayISO())
   const dayTasks = useMemo(() => (tasks ?? []).filter((t) => t.scheduled_date === date), [tasks, date])
-  const days = useMemo<TeamDay[]>(() => buildTeamDays(dayTasks), [dayTasks])
+  const limits = useOvertimeLimits()
+  const days = useMemo<TeamDay[]>(() => buildTeamDays(dayTasks, limits), [dayTasks, limits])
   const warned = useMemo(() => dayTasks.filter((t) => t.ai_warnings?.length), [dayTasks])
   const [confirmApprove, setConfirmApprove] = useState(false)
   // актуальное (отредактированное на доске) расписание по всем бригадам — для Approve
@@ -1112,6 +1115,7 @@ function EditableBoard({ days, readOnly = false, onEdit, onPush, onComputed }: {
   onEdit?: (taskId: string) => void
   onComputed?: (computed: TeamDay[]) => void
 }) {
+  const limits = useOvertimeLimits()
   const allTasks = useMemo(() => days.flatMap((d) => d.tasks), [days])
   const byId = useMemo(() => Object.fromEntries(allTasks.map((t) => [t.task_id, t])), [allTasks])
   const meta = useMemo(() => Object.fromEntries(days.map((d) => [d.team_id, d])), [days])
@@ -1206,8 +1210,9 @@ function EditableBoard({ days, readOnly = false, onEdit, onPush, onComputed }: {
     return recomputeTeamDay({
       team_id: tid, team_name: m.team_name, date: m.date, timezone: m.timezone,
       home: { lat: null, lng: null, key: 'home' }, home_address: m.team_home_base, tasks, pointOf, travel,
+      overtime_limit_min: limits.get(tid),
     })
-  }, [cols, byId, durations, overrides, matrices, seeds, meta])
+  }, [cols, byId, durations, overrides, matrices, seeds, meta, limits])
 
   const computedDays = useMemo(() => teamIds.map((tid) => computeTeam(tid)), [teamIds, computeTeam])
   useEffect(() => { onComputed?.(computedDays) }, [computedDays, onComputed])
@@ -1372,7 +1377,7 @@ function TeamColumn({
         <Badge className="bg-blue-50 text-blue-700">Total: {minToHm(day.total_working_minutes)}</Badge>
         <Badge className="bg-green-50 text-green-700">Duration: {minToHoursLabel(day.tasks.reduce((s, t) => s + t.duration_minutes, 0))}</Badge>
         <Badge className="bg-purple-50 text-purple-700">Travel: {day.summary?.total_travel_in_day_minutes}m</Badge>
-        {day.overtime && <StatusBadge tone="danger">overtime +{minToHm(Math.max(0, day.total_working_minutes - 480))}</StatusBadge>}
+        <OvertimeBadge teamId={day.team_id} totalMin={day.total_working_minutes} />
       </div>
 
       <div ref={setNodeRef} className={cn('min-h-[48px] rounded-lg', isOver && 'bg-accent-50/60 ring-1 ring-accent-200')}>
@@ -1406,6 +1411,7 @@ function TeamColumn({
 
 /** Редактируемый день: drag-and-drop + Duration → движок пересчитывает, якорь держится. */
 function EditableTeamDay({ day, onComputed }: { day: TeamDay; onComputed?: (d: TeamDay) => void }) {
+  const limits = useOvertimeLimits()
   const [durations, setDurations] = useState<Record<string, number>>(
     () => Object.fromEntries(day.tasks.map((t) => [t.task_id, t.duration_minutes])),
   )
@@ -1472,8 +1478,9 @@ function EditableTeamDay({ day, onComputed }: { day: TeamDay; onComputed?: (d: T
     return recomputeTeamDay({
       team_id: day.team_id, team_name: day.team_name, date: day.date, timezone: day.timezone,
       home: { lat: null, lng: null, key: 'home' }, home_address: day.team_home_base, tasks, pointOf, travel,
+      overtime_limit_min: limits.get(day.team_id),
     })
-  }, [day, durations, byId, matrix, seed, overrides])
+  }, [day, durations, byId, matrix, seed, overrides, limits])
 
   const computed = useMemo(() => computeForOrder(order), [computeForOrder, order])
   const preview = useMemo(() => (pending ? computeForOrder(pending) : null), [computeForOrder, pending])
@@ -1499,7 +1506,7 @@ function EditableTeamDay({ day, onComputed }: { day: TeamDay; onComputed?: (d: T
         <Badge className="bg-blue-50 text-blue-700">Total: {minToHm(computed.total_working_minutes)}</Badge>
         <Badge className="bg-green-50 text-green-700">Duration: {minToHoursLabel(computed.tasks.reduce((s, t) => s + t.duration_minutes, 0))}</Badge>
         <Badge className="bg-purple-50 text-purple-700">Travel: {computed.summary?.total_travel_in_day_minutes}m</Badge>
-        {computed.overtime && <StatusBadge tone="danger">overtime +{minToHm(Math.max(0, computed.total_working_minutes - 480))}</StatusBadge>}
+        <OvertimeBadge teamId={day.team_id} totalMin={computed.total_working_minutes} />
         {travelLoading && (
           <span className="flex items-center gap-1 text-xs text-gray-400">
             <Loader2 size={12} className="animate-spin" /> travel…
@@ -1832,7 +1839,8 @@ function Scheduled({ goProposed }: { goProposed: () => void }) {
     queryFn: () => fetchTasks('scheduled', { date: day }),
   })
   const tasks = useMemo(() => tasksForView(data ?? [], 'scheduled', today), [data, today])
-  const days = useMemo(() => buildTeamDays(tasks), [tasks])
+  const limits = useOvertimeLimits()
+  const days = useMemo(() => buildTeamDays(tasks, limits), [tasks, limits])
   const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
   const [openTask, setOpenTask] = useState<Task | null>(null)
   // Правка PM-ом (BAS-1514): план не меняется, в Slack повторно не уходит.
@@ -1921,9 +1929,7 @@ function TeamDayHeader({ day }: { day: TeamDay }) {
       <span className="font-semibold text-accent-700">👥 {day.team_name}</span>
       <Badge className="bg-gray-800 text-white">{day.tasks.length} tasks</Badge>
       <Badge className="bg-blue-50 text-blue-700">Total: {minToHm(day.total_working_minutes)}</Badge>
-      {day.total_working_minutes > 480 && (
-        <StatusBadge tone="danger">overtime +{minToHm(day.total_working_minutes - 480)}</StatusBadge>
-      )}
+      <OvertimeBadge teamId={day.team_id} totalMin={day.total_working_minutes} />
     </div>
   )
 }
@@ -1954,7 +1960,8 @@ function TeamTaskList({ tasks, badge, onOpen, onEdit, onPush }: {
   /** Перенос на другой день (BAS-1437); null — у этой задачи кнопки нет. */
   onPush?: (t: Task) => (() => void) | null
 }) {
-  const days = useMemo(() => buildTeamDays(tasks), [tasks])
+  const limits = useOvertimeLimits()
+  const days = useMemo(() => buildTeamDays(tasks, limits), [tasks, limits])
   const byId = useMemo(() => new Map(tasks.map((t) => [t.id, t])), [tasks])
   return (
     <div className="space-y-3">
@@ -2221,5 +2228,30 @@ function Closed() {
       ))}
       {openTask && <ReadOnlyTask task={openTask} onClose={() => setOpenTask(null)} />}
     </div>
+  )
+}
+
+/** Лимиты переработки бригад: id бригады → минут сверх 8 часов (BAS-1445). */
+function useOvertimeLimits(): Map<string, number> {
+  const { data } = useQuery({ queryKey: ['teams'], queryFn: fetchTeams, staleTime: 5 * 60 * 1000 })
+  return useMemo(() => new Map((data ?? []).map((t) => [t.id, t.overtime_limit_min])), [data])
+}
+
+/**
+ * Переработка дня бригады (BAS-1445): в пределах её лимита — жёлтая, сверх лимита — красная
+ * «over limit». До 8 часов — ничего.
+ */
+function OvertimeBadge({ teamId, totalMin }: { teamId: string; totalMin: number }) {
+  const limits = useOvertimeLimits()
+  if (totalMin <= NORMAL_DAY_MIN) return null
+  const limit = limits.get(teamId) ?? DEFAULT_OVERTIME_LIMIT_MIN
+  const over = dayCategory(totalMin, limit) === 'overtime_over_10'
+  const extra = minToHm(totalMin - NORMAL_DAY_MIN)
+  return (
+    <span title={`Crew overtime limit: ${overtimeLimitLabel(limit)}`}>
+      {over
+        ? <StatusBadge tone="danger">over limit · +{extra} (max {overtimeLimitLabel(limit)})</StatusBadge>
+        : <StatusBadge tone="warning">overtime +{extra}</StatusBadge>}
+    </span>
   )
 }
