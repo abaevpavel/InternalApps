@@ -7,6 +7,7 @@ import { currentAppForPath, visibleNavItems } from './appRegistry'
 import { useCurrentAppRoles } from './AppRoleContext'
 import { useAppHeaderNote } from './AppHeaderNote'
 import { ReleasesBell } from '../components/ReleasesBell'
+import { ViewAsBar, ViewAsButton } from '../components/ViewAs'
 import { useUnsavedRegistry } from './UnsavedChangesContext'
 import { Button, Modal } from '../components/ui'
 import { cn } from '../lib/utils'
@@ -113,7 +114,8 @@ export function Layout() {
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-        {/* Обновления приложений — только роль Developer (компонент сам скрывается для остальных). */}
+        {/* View As и обновления приложений — только роль Developer (компоненты сами скрываются). */}
+        <ViewAsButton />
         <ReleasesBell />
         <div ref={menuRef}>
           <button
@@ -175,13 +177,14 @@ export function Layout() {
         </div>
         </div>
       </header>
+      <ViewAsBar />
 
       {/* Возврат к списку приложений — отдельной строкой под шапкой, а не внутри неё.
           Виден только внутри апки: на самой «My Applications» возвращаться некуда.
           Внутренние «Back» на экранах апок это не заменяет — те ведут на шаг назад,
           а этот выходит из апки целиком. */}
       {currentApp && (
-        <div className="px-6 pt-4">
+        <div className="px-3 pt-2 sm:px-6 sm:pt-4">
           <button
             onClick={handleBack}
             className="inline-flex items-center gap-1.5 text-sm text-gray-500 transition hover:text-gray-900"

@@ -54,3 +54,6 @@ verify_jwt = true
 # сама по токену и праву читать receipt_matcher_employees (см. index.ts).
 [functions.sync-receipt-employees]
 verify_jwt = false
+
+[functions.view-as]
+verify_jwt = true
